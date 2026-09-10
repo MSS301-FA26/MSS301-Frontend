@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Production builds
+build/
+dist/
+dist-ssr/
+coverage/
+
+# OS and logs
+.DS_Store
+*.log
+*.bak
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+
+# Vite cache
+.vite/
+
+# Design hook artifacts & logs
+.impeccable/
