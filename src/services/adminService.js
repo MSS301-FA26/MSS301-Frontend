@@ -138,6 +138,8 @@ export const adminService = {
   createAdminFoodCombo: (token, payload)     => foodCombosApi.create(token, payload),
   updateAdminFoodItem:  (token, id, payload) => foodItemsApi.update(token, id, payload),
   updateAdminFoodCombo: (token, id, payload) => foodCombosApi.update(token, id, payload),
+  deleteAdminFoodItem:  (token, id)          => foodItemsApi.remove(token, id),
+  deleteAdminFoodCombo: (token, id)          => foodCombosApi.remove(token, id),
 
   // ── Reports ────────────────────────────────────────────────────────────────
   getRevenueReport:  (token, params = {}) => request(`/api/v1/admin/reports/revenue${buildQueryString(params)}`, { token }),

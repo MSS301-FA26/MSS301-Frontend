@@ -686,6 +686,18 @@ export default function BookingView() {
     })
     .filter(Boolean);
 
+  const buildQuoteFoodRequests = () => Object.entries(selectedCombos)
+    .map(([id, quantity]) => {
+      const item = concessions.find(candidate => candidate.id === id);
+      if (!item) return null;
+      return {
+        productId: item.foodComboId ?? item.foodItemId ?? item.backendId,
+        isCombo: Boolean(item.foodComboId),
+        quantity
+      };
+    })
+    .filter(Boolean);
+
   useEffect(() => {
     if (!selectedShowtime?.id || selectedSeats.length === 0) {
       setTicketPriceValidation(null);
@@ -698,10 +710,11 @@ export default function BookingView() {
     }
     const tickets = buildTicketSelections();
     let cancelled = false;
-    bookingService.validateTicketPrice(accessToken, {
+    bookingService.getCheckoutQuote(accessToken, {
       showtimeId: selectedShowtime.id,
-      holiday: false,
-      tickets
+      seatIds: selectedSeats.map(seat => seat.seatId),
+      tickets,
+      foods: buildQuoteFoodRequests()
     })
       .then((result) => {
         if (!cancelled) setTicketPriceValidation(result);
@@ -710,7 +723,7 @@ export default function BookingView() {
         if (!cancelled) setTicketPriceValidation(null);
       });
     return () => { cancelled = true; };
-  }, [selectedShowtime?.id, selectedSeats]);
+  }, [selectedShowtime?.id, selectedSeats, selectedCombos, concessions]);
 
   const validationLines = Array.isArray(ticketPriceValidation?.tickets) ? ticketPriceValidation.tickets : [];
   const getSeatValidationLine = (seat) => {
@@ -784,7 +797,16 @@ export default function BookingView() {
       };
     })
     : [];
-  const localFoodRows = Object.entries(selectedCombos)
+  const quotedFoodRows = Array.isArray(ticketPriceValidation?.foods)
+    ? ticketPriceValidation.foods.map(food => ({
+      id: `${food.isCombo ? 'combo' : 'item'}-${food.productId}`,
+      name: food.productName,
+      unitPrice: Number(food.unitPrice || 0),
+      quantity: Number(food.quantity || 0),
+      lineTotal: Number(food.lineTotal || 0)
+    }))
+    : null;
+  const localFoodRows = quotedFoodRows || Object.entries(selectedCombos)
     .map(([id, quantity]) => {
       const item = concessions.find(candidate => candidate.id === id);
       if (!item) return null;
@@ -1237,10 +1259,11 @@ export default function BookingView() {
         await releaseHeldBooking();
       }
 
-      const validation = await bookingService.validateTicketPrice(accessToken, {
+      const validation = await bookingService.getCheckoutQuote(accessToken, {
         showtimeId: selectedShowtime.id,
-        holiday: false,
-        tickets: buildTicketSelections()
+        seatIds: selectedSeats.map(seat => seat.seatId),
+        tickets: buildTicketSelections(),
+        foods: buildQuoteFoodRequests()
       });
       setTicketPriceValidation(validation);
       if (validation?.eligible === false) {

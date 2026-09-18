@@ -128,6 +128,26 @@ export default function AdminFoodsPanel({ ctx }) {
     onFoodCatalogChanged,
     isAdmin
   } = ctx;
+
+  const handleDeleteFood = async (food, kind) => {
+    if (!window.confirm(`Xóa món "${food.name}" khỏi danh mục?`)) return;
+    const token = getAdminToken();
+    if (!token) return;
+    try {
+      if (kind === 'combo') {
+        await adminService.deleteAdminFoodCombo(token, food.id);
+        setFoodCombos((items) => items.filter((item) => item.id !== food.id));
+      } else {
+        await adminService.deleteAdminFoodItem(token, food.id);
+        setFoodItems((items) => items.filter((item) => item.id !== food.id));
+      }
+      addAuditLog('Xóa bắp nước', food.name);
+      onFoodCatalogChanged();
+    } catch (error) {
+      showToast(error.message || 'Không thể xóa món bắp nước.');
+    }
+  };
+
   const [foodPage, setFoodPage] = React.useState(1);
   const [salesSummary, setSalesSummary] = React.useState(null);
   const [isSalesSummaryLoading, setIsSalesSummaryLoading] = React.useState(true);
@@ -494,6 +514,14 @@ export default function AdminFoodsPanel({ ctx }) {
                                 >
                                   {item.status === 'OUT_OF_STOCK' ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
                                 </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteFood(item, item.kind)}
+                                  className="p-2 text-rose-400 border border-rose-500/20 bg-rose-500/5 hover:bg-rose-500 hover:text-black transition"
+                                  title="Xóa món"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -538,5 +566,4 @@ export default function AdminFoodsPanel({ ctx }) {
     </>
   );
 }
-
 
