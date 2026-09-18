@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { getStoredAuth } from '../../../services/authService';
+import { Link } from 'react-router-dom';
+import { getStoredAuth, request } from '../../../services/authService';
 import { adminService } from '../../../services/adminService';
 import {
   BadgeCheck,
@@ -29,6 +30,13 @@ const EMPTY_STAFF_FORM = {
   fullName: '',
   phone: '',
   birthYear: ''
+};
+const EMPTY_MANAGER_FORM = {
+  email: '',
+  password: '',
+  fullName: '',
+  phone: '',
+  cinemaIds: []
 };
 const EMPTY_PROFILE_FORM = {
   employeeCode: '',
@@ -87,6 +95,14 @@ export default function AdminUsersPanel({ ctx }) {
   const [showStaffPassword, setShowStaffPassword] = useState(false);
   const [staffForm, setStaffForm] = useState(EMPTY_STAFF_FORM);
   const [staffFormErrors, setStaffFormErrors] = useState({});
+  const [isManagerFormOpen, setIsManagerFormOpen] = useState(false);
+  const [showManagerPassword, setShowManagerPassword] = useState(false);
+  const [managerForm, setManagerForm] = useState(EMPTY_MANAGER_FORM);
+  const [managerFormErrors, setManagerFormErrors] = useState({});
+  const [managerCinemas, setManagerCinemas] = useState([]);
+  const [isManagerCinemasLoading, setIsManagerCinemasLoading] = useState(false);
+  const [isManagerCreating, setIsManagerCreating] = useState(false);
+  const [managerFormNotice, setManagerFormNotice] = useState('');
   const [staffProfiles, setStaffProfiles] = useState([]);
   const [profileForm, setProfileForm] = useState(EMPTY_PROFILE_FORM);
   const [profileError, setProfileError] = useState('');
@@ -123,6 +139,29 @@ export default function AdminUsersPanel({ ctx }) {
   }, [activeTab]);
 
   useEffect(() => {
+    if (activeTab !== 'users' || !isManagerFormOpen) return undefined;
+    let cancelled = false;
+    const loadCinemas = async () => {
+      const { accessToken } = getStoredAuth();
+      if (!accessToken) return;
+      setIsManagerCinemasLoading(true);
+      try {
+        const cinemas = await request('/api/v1/admin/users/managers/cinemas', { token: accessToken });
+        if (!cancelled) setManagerCinemas(Array.isArray(cinemas) ? cinemas : []);
+      } catch (error) {
+        if (!cancelled) setManagerFormErrors((prev) => ({
+          ...prev,
+          cinemas: error.message || 'Không thể tải danh sách rạp.'
+        }));
+      } finally {
+        if (!cancelled) setIsManagerCinemasLoading(false);
+      }
+    };
+    loadCinemas();
+    return () => { cancelled = true; };
+  }, [activeTab, isManagerFormOpen]);
+
+  useEffect(() => {
     if (selectedStaffProfile) {
       setProfileForm({
         employeeCode: selectedStaffProfile.employeeCode || '',
@@ -141,6 +180,24 @@ export default function AdminUsersPanel({ ctx }) {
   const updateStaffForm = (field, value) => {
     setStaffForm((prev) => ({ ...prev, [field]: value }));
     setStaffFormErrors((prev) => ({ ...prev, [field]: '' }));
+  };
+
+  const updateManagerForm = (field, value) => {
+    setManagerForm((prev) => ({ ...prev, [field]: value }));
+    setManagerFormErrors((prev) => ({ ...prev, [field]: '' }));
+    setManagerFormNotice('');
+  };
+
+  const toggleManagerCinema = (cinemaId) => {
+    const id = Number(cinemaId);
+    setManagerForm((prev) => ({
+      ...prev,
+      cinemaIds: prev.cinemaIds.includes(id)
+        ? prev.cinemaIds.filter((item) => item !== id)
+        : [...prev.cinemaIds, id]
+    }));
+    setManagerFormErrors((prev) => ({ ...prev, cinemas: '' }));
+    setManagerFormNotice('');
   };
 
   const updateProfileForm = (field, value) => {
@@ -230,6 +287,50 @@ export default function AdminUsersPanel({ ctx }) {
     }
   };
 
+  const submitManagerForm = async (event) => {
+    event.preventDefault();
+    const errors = {};
+    const email = managerForm.email.trim();
+    const fullName = managerForm.fullName.trim();
+    const phone = managerForm.phone.trim();
+
+    if (!email) errors.email = 'Email là bắt buộc.';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = 'Email không hợp lệ.';
+    if (!fullName) errors.fullName = 'Họ tên là bắt buộc.';
+    if (!isStrongPassword(managerForm.password)) errors.password = PASSWORD_VALIDATION_MESSAGE;
+    if (phone && !/^\+?[0-9]{10,15}$/.test(phone)) errors.phone = 'Số điện thoại gồm 10-15 chữ số.';
+    if (!managerForm.cinemaIds.length) errors.cinemas = 'Chọn ít nhất một rạp cho Manager quản lý.';
+
+    if (Object.keys(errors).length > 0) {
+      setManagerFormErrors(errors);
+      return;
+    }
+
+    const { accessToken } = getStoredAuth();
+    if (!accessToken) {
+      setManagerFormErrors({ general: 'Phiên đăng nhập admin không hợp lệ.' });
+      return;
+    }
+
+    setIsManagerCreating(true);
+    setManagerFormErrors({});
+    try {
+      await request('/api/v1/admin/users/managers', {
+        method: 'POST',
+        token: accessToken,
+        body: { email, password: managerForm.password, fullName, phone: phone || null, cinemaIds: managerForm.cinemaIds }
+      });
+      setManagerForm(EMPTY_MANAGER_FORM);
+      setShowManagerPassword(false);
+      setManagerFormNotice('Đã cấp tài khoản MANAGER và phân công rạp thành công.');
+      fetchAdminUsers();
+    } catch (error) {
+      setManagerFormErrors({ general: error.message || 'Không thể cấp tài khoản MANAGER.' });
+    } finally {
+      setIsManagerCreating(false);
+    }
+  };
+
   const query = userSearch.trim().toLowerCase();
   const filteredUsers = adminUsers.filter((user) => {
     if (!query) return true;
@@ -266,6 +367,18 @@ export default function AdminUsersPanel({ ctx }) {
           </h2>
         </div>
 
+        <button
+          type="button"
+          onClick={() => {
+            setIsManagerFormOpen((prev) => !prev);
+            setManagerFormErrors({});
+            setManagerFormNotice('');
+          }}
+          className="flex items-center justify-center gap-2 border border-sky-500/60 bg-sky-500/10 px-4 py-2 text-[10px] font-mono font-black uppercase tracking-widest text-sky-200 transition hover:bg-sky-400 hover:text-black"
+        >
+          {isManagerFormOpen ? <X className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
+          {isManagerFormOpen ? 'Đóng biểu mẫu Manager' : 'Cấp tài khoản MANAGER'}
+        </button>
         <button
           type="button"
           onClick={() => setIsStaffFormOpen((prev) => !prev)}
@@ -361,6 +474,104 @@ export default function AdminUsersPanel({ ctx }) {
             >
               {isStaffCreating ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <UserPlus className="h-3.5 w-3.5" />}
               {isStaffCreating ? 'Đang cấp tài khoản...' : 'Tạo tài khoản STAFF'}
+            </button>
+          </div>
+        </motion.form>
+      )}
+
+      {isManagerFormOpen && (
+        <motion.form
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          onSubmit={submitManagerForm}
+          className="border border-sky-500/30 bg-[#05080b] p-5"
+        >
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-4 border-b border-sky-500/15 pb-4">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-sky-200">
+                <Plus className="h-4 w-4" />
+                Cấp tài khoản MANAGER
+              </div>
+              <p className="mt-1 text-[10px] text-neutral-300">
+                Tài khoản được kích hoạt ngay. Chọn rạp để giới hạn phạm vi vận hành của Manager.
+              </p>
+            </div>
+            <Link to="/admin/managers" className="border border-sky-500/35 px-2 py-1 text-[8px] font-black uppercase tracking-widest text-sky-200 hover:bg-sky-500/10">
+              Quản lý phân công
+            </Link>
+          </div>
+
+          {managerFormErrors.general && (
+            <div className="mb-4 border border-rose-500/35 bg-rose-950/20 px-3 py-2 text-[10px] text-rose-200">
+              {managerFormErrors.general}
+            </div>
+          )}
+          {managerFormNotice && (
+            <div className="mb-4 border border-emerald-500/35 bg-emerald-950/20 px-3 py-2 text-[10px] text-emerald-200">
+              {managerFormNotice}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {[
+              { field: 'fullName', label: 'Họ và tên *', placeholder: 'Nguyễn Văn A', type: 'text' },
+              { field: 'email', label: 'Email đăng nhập *', placeholder: 'manager@cinepremier.vn', type: 'email' },
+              { field: 'phone', label: 'Số điện thoại', placeholder: '0901234567', type: 'tel' }
+            ].map(({ field, label, placeholder, type }) => (
+              <label key={field} className="space-y-1.5">
+                <span className="text-[9px] font-black uppercase tracking-widest text-neutral-200">{label}</span>
+                <input
+                  type={type}
+                  value={managerForm[field]}
+                  onChange={(event) => updateManagerForm(field, event.target.value)}
+                  placeholder={placeholder}
+                  className={`w-full border bg-black px-3 py-2.5 text-xs text-white outline-none transition placeholder:text-neutral-200 focus:border-sky-400 ${managerFormErrors[field] ? 'border-rose-500' : 'border-white/[0.06]'}`}
+                />
+                {managerFormErrors[field] && <span className="block text-[9px] text-rose-300">{managerFormErrors[field]}</span>}
+              </label>
+            ))}
+
+            <label className="space-y-1.5">
+              <span className="text-[9px] font-black uppercase tracking-widest text-neutral-200">Mật khẩu cấp ban đầu *</span>
+              <div className="relative">
+                <input
+                  type={showManagerPassword ? 'text' : 'password'}
+                  value={managerForm.password}
+                  onChange={(event) => updateManagerForm('password', event.target.value)}
+                  placeholder="Tối thiểu 8 ký tự, có chữ hoa, chữ thường, số và ký tự đặc biệt"
+                  className={`w-full border bg-black px-3 py-2.5 pr-10 text-xs text-white outline-none transition placeholder:text-neutral-200 focus:border-sky-400 ${managerFormErrors.password ? 'border-rose-500' : 'border-white/[0.06]'}`}
+                />
+                <button type="button" onClick={() => setShowManagerPassword((prev) => !prev)} className="absolute right-2.5 top-2.5 text-neutral-300 transition hover:text-white" aria-label={showManagerPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}>
+                  {showManagerPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              {managerFormErrors.password && <span className="block text-[9px] text-rose-300">{managerFormErrors.password}</span>}
+            </label>
+          </div>
+
+          <fieldset className="mt-5 border border-white/[0.06] bg-black/50 p-4">
+            <legend className="px-1 text-[9px] font-black uppercase tracking-widest text-neutral-200">Rạp được phân công *</legend>
+            {isManagerCinemasLoading ? (
+              <p className="text-[10px] text-neutral-300">Đang tải danh sách rạp...</p>
+            ) : managerCinemas.length ? (
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {managerCinemas.map((cinema) => (
+                  <label key={cinema.id} className="flex cursor-pointer items-center gap-2 border border-white/[0.07] px-3 py-2 text-xs text-neutral-100 hover:border-sky-400/60">
+                    <input type="checkbox" checked={managerForm.cinemaIds.includes(Number(cinema.id))} onChange={() => toggleManagerCinema(cinema.id)} className="accent-sky-400" />
+                    <span>{cinema.name || `Rạp #${cinema.id}`}</span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[10px] text-neutral-300">Chưa có rạp để phân công. Hãy tạo rạp trước.</p>
+            )}
+            {managerFormErrors.cinemas && <span className="mt-2 block text-[9px] text-rose-300">{managerFormErrors.cinemas}</span>}
+          </fieldset>
+
+          <div className="mt-5 flex justify-end">
+            <button type="submit" disabled={isManagerCreating || isManagerCinemasLoading || !managerCinemas.length} className="flex items-center gap-2 border border-sky-300 bg-sky-400 px-5 py-2.5 text-[10px] font-black uppercase tracking-widest text-black transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-50">
+              {isManagerCreating ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <UserPlus className="h-3.5 w-3.5" />}
+              {isManagerCreating ? 'Đang cấp tài khoản...' : 'Tạo tài khoản MANAGER'}
             </button>
           </div>
         </motion.form>
@@ -641,5 +852,3 @@ export default function AdminUsersPanel({ ctx }) {
     </motion.div>
   );
 }
-
-

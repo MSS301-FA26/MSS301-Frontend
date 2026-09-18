@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Plus, Trash2, Edit3, Calendar, Clock, MapPin, Film,
@@ -486,10 +486,13 @@ export default function AdminShowtimesPanel({ ctx }) {
   /* state */
   const [showtimes, setShowtimes] = useState([]);
   const [rooms, setRooms] = useState([]);
+  const [adminMovies, setAdminMovies] = useState([]);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [filters, setFilters] = useState({ movieId: '', roomId: '', status: '', date: '' });
+  const filtersRef = useRef(filters);
+  useEffect(() => { filtersRef.current = filters; }, [filters]);
   const dateFilterRef = useRef(null);
 
   const [mode, setMode] = useState('list'); // 'list' | 'create' | 'bulk' | 'edit' | 'refunds'
@@ -516,10 +519,14 @@ export default function AdminShowtimesPanel({ ctx }) {
   const [isCopying, setIsCopying] = useState(false);
   const [detailModal, setDetailModal] = useState(null); // showtime object
   const [roomSeatTypesById, setRoomSeatTypesById] = useState({});
+  const allMovies = useMemo(() => {
+    const source = adminMovies.length > 0 ? adminMovies : (moviesList || []);
+    return [...source].sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'vi'));
+  }, [adminMovies, moviesList]);
 
   const findUiMovie = useCallback((movieId) => (
-    (moviesList || []).find(m => getMovieOptionId(m) === String(movieId))
-  ), [moviesList]);
+    allMovies.find(m => String(m.backendId ?? m.id) === String(movieId) || String(m.id) === String(movieId))
+  ), [allMovies]);
 
   // Tải gợi ý khung giờ trống (debounced) khi đã chọn đủ phim + phòng + ngày ở form tạo suất
   const slotSuggestionDate = form.startTime ? String(form.startTime).split('T')[0] : '';
@@ -573,7 +580,7 @@ export default function AdminShowtimesPanel({ ctx }) {
     return null;
   }, [getMovieReleaseWindow]);
 
-  /* fetch rooms once */
+  /* fetch rooms and admin movies once */
   useEffect(() => {
     const token = getTokenRef.current?.();
     if (!token) return;
@@ -581,6 +588,15 @@ export default function AdminShowtimesPanel({ ctx }) {
       const list = Array.isArray(data) ? data : (data?.content || data?.items || []);
       setRooms(list);
     }).catch(() => { });
+
+    adminService.searchAdminMovies(token, { size: 500 }).then(data => {
+      const list = Array.isArray(data) ? data : (data?.content || data?.items || []);
+      if (Array.isArray(list) && list.length > 0) {
+        setAdminMovies(list);
+      }
+    }).catch(err => {
+      console.warn('Failed to load admin movies in showtimes panel:', err);
+    });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -602,13 +618,20 @@ export default function AdminShowtimesPanel({ ctx }) {
   }, [detailModal, roomSeatTypesById]);
 
   /* fetch showtimes */
-  const fetchShowtimes = useCallback(async (p = 0) => {
+  const fetchShowtimes = useCallback(async (p = 0, overrideFilters = null) => {
     const token = getTokenRef.current?.();
     if (!token) return;
     setLoading(true);
     try {
-      const params = { page: p, size: 10, ...filters };
-      Object.keys(params).forEach(k => { if (!params[k]) delete params[k]; });
+      const activeFilters = overrideFilters != null ? overrideFilters : filtersRef.current;
+      const params = { page: p, size: 10, ...activeFilters };
+      Object.keys(params).forEach(k => {
+        if (params[k] === '' || params[k] === null || params[k] === undefined) {
+          delete params[k];
+        }
+      });
+      if (params.movieId) params.movieId = Number(params.movieId);
+      if (params.roomId) params.roomId = Number(params.roomId);
       const data = await adminService.getAdminShowtimes(token, params);
       const items = data?.content || data?.items || (Array.isArray(data) ? data : []);
       const sortedItems = [...items].sort((a, b) => {
@@ -624,7 +647,7 @@ export default function AdminShowtimesPanel({ ctx }) {
     } finally {
       setLoading(false);
     }
-  }, [filters, showToast]);
+  }, [showToast]);
 
 
   useEffect(() => { fetchShowtimes(0); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -975,7 +998,16 @@ export default function AdminShowtimesPanel({ ctx }) {
     setMode('edit');
   };
 
-  const activeMovies = (moviesList || []).filter(m => m.status === 'ACTIVE' || m.status === 'NOW_SHOWING' || m.status === 'UPCOMING');
+  const activeMovies = useMemo(() => (
+    allMovies.filter(m =>
+      (m.approvalStatus === 'APPROVED' || (!m.approvalStatus && m.status !== 'INACTIVE')) &&
+      m.approvalStatus !== 'DRAFT' &&
+      m.approvalStatus !== 'PENDING_APPROVAL' &&
+      m.approvalStatus !== 'REJECTED' &&
+      m.publicationStatus !== 'ARCHIVED' &&
+      m.status !== 'INACTIVE'
+    )
+  ), [allMovies]);
   const formMovie = findUiMovie(form.movieId);
   const formReleaseWindow = getMovieReleaseWindow(formMovie);
   const formAllowsChildTickets = allowsChildTicketsForMovie(formMovie);
@@ -1633,7 +1665,7 @@ export default function AdminShowtimesPanel({ ctx }) {
               className="bg-black border border-white/[0.08] text-xs text-neutral-200 px-2.5 py-2 focus:outline-none focus:border-amber-400 cursor-pointer"
             >
               <option value="">Tất cả phim</option>
-              {(moviesList || []).map(m => <option key={m.id} value={m.backendId ?? m.id}>{m.title}</option>)}
+              {allMovies.map(m => <option key={m.id} value={m.backendId ?? m.id}>{m.title}</option>)}
             </select>
           </div>
 
@@ -1719,7 +1751,8 @@ export default function AdminShowtimesPanel({ ctx }) {
                 <tbody>
                   {showtimes.map((st, idx) => {
                     const meta = STATUS_META[st.status] || STATUS_META.SCHEDULED;
-                    const movieTitle = st.movieTitle ?? st.movie?.title ?? '—';
+                    const resolvedMovie = findUiMovie(st.movieId);
+                    const movieTitle = st.movieTitle ?? st.movie?.title ?? resolvedMovie?.title ?? '—';
                     const roomName = st.roomName ?? st.room?.name ?? '—';
                     return (
                       <tr key={st.id ?? idx}

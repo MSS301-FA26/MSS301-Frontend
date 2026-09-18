@@ -29,6 +29,11 @@ export const hasBackendAdminAccess = (accessToken, user = null) => {
   return roleValues.includes('ADMIN') || roleValues.includes('ROLE_ADMIN');
 };
 
+export const hasBackendManagerAccess = (accessToken, user = null) => {
+  const roleValues = getRoleValues(accessToken, user);
+  return roleValues.includes('MANAGER') || roleValues.includes('ROLE_MANAGER');
+};
+
 export const hasBackendStaffAccess = (accessToken, user = null) => {
   const roleValues = getRoleValues(accessToken, user);
   return roleValues.includes('STAFF') || roleValues.includes('ROLE_STAFF');
@@ -37,6 +42,7 @@ export const hasBackendStaffAccess = (accessToken, user = null) => {
 const resolveRole = (roles = []) => {
   const normalized = roles.map((role) => String(role).toUpperCase());
   if (ADMIN_ACCESS_OVERRIDE || normalized.includes('ADMIN') || normalized.includes('ROLE_ADMIN')) return 'admin';
+  if (normalized.includes('MANAGER') || normalized.includes('ROLE_MANAGER')) return 'manager';
   if (normalized.includes('STAFF') || normalized.includes('ROLE_STAFF')) return 'staff';
   return 'user';
 };

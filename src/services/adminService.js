@@ -16,6 +16,7 @@ const pricingRules   = createCrudApi('/api/v1/admin/ticket-pricing/rules');
 const pricingCombos  = createCrudApi('/api/v1/admin/ticket-pricing/combos');
 const foodItemsApi   = createCrudApi('/api/v1/admin/foods/items');
 const foodCombosApi  = createCrudApi('/api/v1/admin/foods/combos');
+const foodCategoriesApi = createCrudApi('/api/v1/admin/foods/categories');
 const bookingsApi    = createCrudApi('/api/v1/admin/bookings');
 
 const normalizePageResponse = (payload = {}) => {
@@ -34,7 +35,7 @@ const normalizePageResponse = (payload = {}) => {
 // ─── Admin Service ──────────────────────────────────────────────────────────
 export const adminService = {
 
-  // ── Movies ─────────────────────────────────────────────────────────────────
+  // ── Movies & Approval Workflow ──────────────────────────────────────────────
   searchAdminMovies:        (token, params = {}) => moviesApi.getAll(token, params).then(normalizeMovieListResponse),
   searchAdminMoviesPage:    (token, params = {}) => moviesApi.getAll(token, params).then(normalizeMoviePageResponse),
   getAdminMovieDetail:      (token, movieId)     => moviesApi.getOne(token, movieId).then(normalizeMovie),
@@ -42,6 +43,15 @@ export const adminService = {
   updateAdminMovie:         (token, movieId, payload) => moviesApi.update(token, movieId, payload).then(normalizeMovie),
   updateAdminMovieStatus:   (token, movieId, status)  => moviesApi.patchBody(token, movieId, { status }).then(normalizeMovie),
   deleteAdminMovie:         (token, movieId)     => moviesApi.remove(token, movieId),
+  submitAdminMovie:         (token, movieId)     => request(`/api/v1/admin/movies/${enc(movieId)}/submit`, { method: 'POST', token }).then(normalizeMovie),
+  withdrawAdminMovie:       (token, movieId)     => request(`/api/v1/admin/movies/${enc(movieId)}/withdraw`, { method: 'POST', token }).then(normalizeMovie),
+  approveAdminMovie:        (token, movieId, note = '') => request(`/api/v1/admin/movies/${enc(movieId)}/approve${note ? `?note=${enc(note)}` : ''}`, { method: 'POST', token }).then(normalizeMovie),
+  rejectAdminMovie:         (token, movieId, reason) => request(`/api/v1/admin/movies/${enc(movieId)}/reject`, { method: 'POST', token, body: { reason } }).then(normalizeMovie),
+  publishAdminMovie:        (token, movieId)     => request(`/api/v1/admin/movies/${enc(movieId)}/publish`, { method: 'POST', token }).then(normalizeMovie),
+  unpublishAdminMovie:      (token, movieId)     => request(`/api/v1/admin/movies/${enc(movieId)}/unpublish`, { method: 'POST', token }).then(normalizeMovie),
+  archiveAdminMovie:        (token, movieId)     => request(`/api/v1/admin/movies/${enc(movieId)}/archive`, { method: 'POST', token }).then(normalizeMovie),
+  unarchiveAdminMovie:      (token, movieId)     => request(`/api/v1/admin/movies/${enc(movieId)}/unarchive`, { method: 'POST', token }).then(normalizeMovie),
+  getAdminMovieApprovalHistory: (token, movieId) => request(`/api/v1/admin/movies/${enc(movieId)}/approval-history`, { token }).then(unwrapListPayload),
 
   // ── Actors ─────────────────────────────────────────────────────────────────
   getAdminActors:   (token, params = {}) => actorsApi.getAll(token, params).then(unwrapListPayload),
@@ -132,14 +142,35 @@ export const adminService = {
   deleteAdminTicketCombo: (token, id)          => pricingCombos.remove(token, id),
 
   // ── Foods ──────────────────────────────────────────────────────────────────
-  getAdminFoodItems:    (token)              => foodItemsApi.getAll(token).then(unwrapListPayload),
-  getAdminFoodCombos:   (token)              => foodCombosApi.getAll(token).then(unwrapListPayload),
+  getAdminFoodItems:    (token, params = {}) => foodItemsApi.getAll(token, params).then(unwrapListPayload),
+  getAdminFoodCombos:   (token, params = {}) => foodCombosApi.getAll(token, params).then(unwrapListPayload),
+  searchAdminFoodItems: (token, params = {}) => foodItemsApi.getAll(token, params).then(normalizePageResponse),
+  searchAdminFoodCombos: (token, params = {}) => foodCombosApi.getAll(token, params).then(normalizePageResponse),
   createAdminFoodItem:  (token, payload)     => foodItemsApi.create(token, payload),
   createAdminFoodCombo: (token, payload)     => foodCombosApi.create(token, payload),
   updateAdminFoodItem:  (token, id, payload) => foodItemsApi.update(token, id, payload),
   updateAdminFoodCombo: (token, id, payload) => foodCombosApi.update(token, id, payload),
   deleteAdminFoodItem:  (token, id)          => foodItemsApi.remove(token, id),
   deleteAdminFoodCombo: (token, id)          => foodCombosApi.remove(token, id),
+  restoreAdminFoodItem: (token, id)          => request(`/api/v1/admin/foods/items/${id}/restore`, { method: 'POST', token }),
+  restoreAdminFoodCombo: (token, id)         => request(`/api/v1/admin/foods/combos/${id}/restore`, { method: 'POST', token }),
+  duplicateAdminFoodItem: (token, id)        => request(`/api/v1/admin/foods/items/${id}/duplicate`, { method: 'POST', token }),
+  duplicateAdminFoodCombo: (token, id)       => request(`/api/v1/admin/foods/combos/${id}/duplicate`, { method: 'POST', token }),
+  bulkUpdateFoodStatus: (token, payload)     => request('/api/v1/admin/foods/bulk-status', { method: 'POST', token, body: payload }),
+  bulkDeleteFoods:      (token, payload)     => request('/api/v1/admin/foods/bulk-delete', { method: 'POST', token, body: payload }),
+  getAdminFoodPriceHistory: (token, id, kind) => request(`/api/v1/admin/foods/${kind === 'combo' ? 'combos' : 'items'}/${id}/price-history`, { token }).then(unwrapListPayload),
+
+  // ── Food Categories ────────────────────────────────────────────────────────
+  getAdminFoodCategories:    (token)              => foodCategoriesApi.getAll(token).then(unwrapListPayload),
+  createAdminFoodCategory:   (token, payload)     => foodCategoriesApi.create(token, payload),
+  updateAdminFoodCategory:   (token, id, payload) => foodCategoriesApi.update(token, id, payload),
+  deleteAdminFoodCategory:   (token, id)          => foodCategoriesApi.remove(token, id),
+  restoreAdminFoodCategory:  (token, id)          => request(`/api/v1/admin/foods/categories/${id}/restore`, { method: 'POST', token }),
+
+  // ── Food Inventory ─────────────────────────────────────────────────────────
+  getAdminFoodInventory: (token, params = {}) => request(`/api/v1/admin/foods/inventory${buildQueryString(params)}`, { token }).then(unwrapListPayload),
+  adjustAdminFoodInventory: (token, payload)  => request('/api/v1/admin/foods/inventory/adjust', { method: 'POST', token, body: payload }),
+  getAdminFoodInventoryTransactions: (token, params = {}) => request(`/api/v1/admin/foods/inventory/transactions${buildQueryString(params)}`, { token }).then(normalizePageResponse),
 
   // ── Reports ────────────────────────────────────────────────────────────────
   getRevenueReport:  (token, params = {}) => request(`/api/v1/admin/reports/revenue${buildQueryString(params)}`, { token }),
@@ -170,4 +201,21 @@ export const adminService = {
   getAdminBooking:      (token, id)          => bookingsApi.getOne(token, id),
   // Hủy vé; nếu vé đã thanh toán (PAID) backend tự hoàn tiền về CineWallet của khách.
   cancelBookingAdmin:   (token, id, reason)  => request(`/api/v1/admin/bookings/${enc(id)}${reason ? `?reason=${enc(reason)}` : ''}`, { method: 'DELETE', token }),
+
+  // ── Promotions & Vouchers ──────────────────────────────────────────────────
+  getAdminPromotions:         (token, params = {}) => request(`/api/v1/admin/promotions${buildQueryString(params)}`, { token }).then(unwrapListPayload),
+  getAdminPromotionStats:    (token) => request('/api/v1/admin/promotions/stats', { token }),
+  getAdminPromotionDetail:   (token, id) => request(`/api/v1/admin/promotions/${enc(id)}`, { token }),
+  createAdminPromotion:      (token, payload) => request('/api/v1/admin/promotions', { method: 'POST', token, body: payload }),
+  updateAdminPromotion:      (token, id, payload) => request(`/api/v1/admin/promotions/${enc(id)}`, { method: 'PUT', token, body: payload }),
+  toggleAdminPromotionStatus: (token, id) => request(`/api/v1/admin/promotions/${enc(id)}/toggle-status`, { method: 'PATCH', token }),
+  deleteAdminPromotion:      (token, id) => request(`/api/v1/admin/promotions/${enc(id)}`, { method: 'DELETE', token }),
+  restoreAdminPromotion:     (token, id) => request(`/api/v1/admin/promotions/${enc(id)}/restore`, { method: 'POST', token }),
+
+  // ── Ticket Pricing ──────────────────────────────────────────────────────────
+  getAdminPricingRules:       (token, params = {}) => request(`/api/v1/admin/ticket-pricing/rules${buildQueryString(params)}`, { token }).then(unwrapListPayload),
+  createAdminPricingRule:     (token, payload) => request('/api/v1/admin/ticket-pricing/rules', { method: 'POST', token, body: payload }),
+  updateAdminPricingRule:     (token, id, payload) => request(`/api/v1/admin/ticket-pricing/rules/${enc(id)}`, { method: 'PUT', token, body: payload }),
+  deleteAdminPricingRule:     (token, id) => request(`/api/v1/admin/ticket-pricing/rules/${enc(id)}`, { method: 'DELETE', token }),
 };
+

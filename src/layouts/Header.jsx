@@ -112,9 +112,10 @@ export default function Header({
     ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(cinemaAddress)}`
     : 'https://www.google.com/maps';
   const isAdminRole = currentRole === 'admin' || currentUser?.role === 'admin';
+  const isManagerRole = currentRole === 'manager' || currentUser?.role === 'manager';
   const isStaffRole = currentRole === 'staff' || currentUser?.role === 'staff';
-  const canUseWishlist = !isAdminRole && !isStaffRole;
-  const canShowLoyalty = isLoggedIn && !isAdminRole && !isStaffRole;
+  const canUseWishlist = !isAdminRole && !isManagerRole && !isStaffRole;
+  const canShowLoyalty = isLoggedIn && !isAdminRole && !isManagerRole && !isStaffRole;
 
   useEffect(() => {
     if (!canShowLoyalty) {
@@ -149,7 +150,7 @@ export default function Header({
       <div className="mx-auto flex h-16 w-full max-w-5xl min-w-0 items-center justify-between gap-2 px-4 sm:px-6 lg:px-8">
         {/* Logo CINEPREMIER */}
         <motion.div
-          onClick={() => onTabChange(isStaffRole ? 'staff' : 'home')}
+          onClick={() => onTabChange(isStaffRole ? 'staff' : isManagerRole ? 'manager' : 'home')}
           className="flex cursor-pointer items-center space-x-3.5 group select-none mr-4"
           id="header-logo"
           whileHover={{ scale: 1.015 }}
@@ -197,7 +198,7 @@ export default function Header({
         <div className="flex min-w-0 shrink-0 items-center space-x-2.5">
 
           {/* Quick action buttons & search (hidden for staff) */}
-          {!isStaffRole && (
+          {!isStaffRole && !isManagerRole && (
             <>
               <button
                 onClick={() => onTabChange('explore')}

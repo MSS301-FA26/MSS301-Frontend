@@ -31,8 +31,9 @@ export default function UserLayout({ children }) {
     moviesList, setMovieDateFilter, setSelectedGenreId
   } = useMovies();
   const isAdmin = currentRole === 'admin' || currentUser?.role === 'admin';
+  const isManager = currentRole === 'manager' || currentUser?.role === 'manager';
   const isStaff = currentRole === 'staff' || currentUser?.role === 'staff';
-  const isWishlistRestricted = isAdmin || isStaff;
+  const isWishlistRestricted = isAdmin || isManager || isStaff;
 
   const activeTab = (() => {
     const p = location.pathname;
@@ -52,7 +53,7 @@ export default function UserLayout({ children }) {
   const handleTabChange = (tab) => {
     if (tab === 'my-tickets' && !isLoggedIn) { setAuthMode('login'); setShowOTP(true); return; }
     if (tab === 'wishlist' && isWishlistRestricted) return;
-    const paths = { home: '/', explore: '/movies', concessions: '/concessions', showtimes: '/showtimes', 'my-tickets': '/tickets', wishlist: '/watchlist', profile: '/profile', policies: '/policies', staff: '/staff', admin: '/admin/overview' };
+    const paths = { home: '/', explore: '/movies', concessions: '/concessions', showtimes: '/showtimes', 'my-tickets': '/tickets', wishlist: '/watchlist', profile: '/profile', policies: '/policies', staff: '/staff', manager: '/manager', admin: '/admin/overview' };
     navigate(paths[tab] || '/');
   };
 
@@ -104,7 +105,7 @@ export default function UserLayout({ children }) {
           />
           <main className="relative z-0 min-w-0 max-w-full overflow-x-clip">{children}</main>
         </div>
-        {!isStaff && <Footer onTabChange={handleTabChange} cinema={publicCinema} />}
+        {!isStaff && !isManager && <Footer onTabChange={handleTabChange} cinema={publicCinema} />}
       </div>
 
       {/* Watchlist Drawer */}

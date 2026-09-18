@@ -14,17 +14,39 @@ import PoliciesPage from '@/pages/user/PoliciesPage';
 import PaymentCallbackPage from '@/pages/user/PaymentCallbackPage';
 import ConcessionsPage from '@/pages/user/ConcessionsPage';
 import StaffCheckInPage from '@/pages/staff/StaffCheckInPage';
+import ManagerLayout from '../layouts/ManagerLayout';
+import ManagerOverviewPage from '@/pages/manager/ManagerOverviewPage';
+import ManagerMoviesPage from '@/pages/manager/ManagerMoviesPage';
+import ManagerShowtimesPage from '@/pages/manager/ManagerShowtimesPage';
+import ManagerRoomsPage from '@/pages/manager/ManagerRoomsPage';
+import ManagerInventoryPage from '@/pages/manager/ManagerInventoryPage';
+import ManagerBookingsPage from '@/pages/manager/ManagerBookingsPage';
+import ManagerStaffPage from '@/pages/manager/ManagerStaffPage';
+import ManagerReportsPage from '@/pages/manager/ManagerReportsPage';
+import ManagerAuditLogsPage from '@/pages/manager/ManagerAuditLogsPage';
+import AdminManagersPage from '@/pages/admin/system/AdminManagersPage';
 import GooglePasswordSetupPage from '@/pages/auth/GooglePasswordSetupPage';
 import AdminRoute from './AdminRoute';
 import StaffRoute from './StaffRoute';
+import ManagerRoute from './ManagerRoute';
 import ProtectedRoute from './ProtectedRoute';
-import { getStoredAuth, hasBackendAdminAccess, hasBackendStaffAccess } from '../services/authService';
+import { getStoredAuth, hasBackendAdminAccess, hasBackendManagerAccess, hasBackendStaffAccess } from '../services/authService';
 import { useMovies } from '../stores/useMovieStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { useUiStore } from '../stores/useUiStore';
 
 function AppShell({ children }) {
   return <UserLayout>{children}</UserLayout>;
+}
+
+function ManagerRouteView({ component: Component }) {
+  return (
+    <ManagerRoute>
+      <ManagerLayout>
+        <Component />
+      </ManagerLayout>
+    </ManagerRoute>
+  );
 }
 
 function HomeRoute() {
@@ -44,6 +66,7 @@ function HomeRoute() {
       navigate(`/movies/${movie.id}`);
       return;
     }
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     navigate(`/movies/${movie.id}/book`);
   };
 
@@ -100,6 +123,7 @@ export default function AppRoutes() {
   const mustSetupPassword = currentUser?.passwordChangeRequired;
   const { accessToken, user } = getStoredAuth();
   const isAdmin = currentRole === 'admin' || currentUser?.role === 'admin' || hasBackendAdminAccess(accessToken, user);
+  const isManager = currentRole === 'manager' || currentUser?.role === 'manager' || hasBackendManagerAccess(accessToken, user);
   const isStaff = currentRole === 'staff' || currentUser?.role === 'staff' || hasBackendStaffAccess(accessToken, user);
 
   return (
@@ -108,11 +132,26 @@ export default function AppRoutes() {
       {mustSetupPassword && <Route path="*" element={<Navigate to="/setup-password" replace />} />}
       <Route path="/payment-callback" element={<PaymentCallbackPage />} />
       <Route path="/staff" element={<AppShell><StaffRoute><StaffCheckInPage /></StaffRoute></AppShell>} />
+      
+      {/* Manager Scoped Portal Routes */}
+      <Route path="/manager" element={<Navigate to="/manager/overview" replace />} />
+      <Route path="/manager/overview" element={<ManagerRouteView component={ManagerOverviewPage} />} />
+      <Route path="/manager/movies" element={<ManagerRouteView component={ManagerMoviesPage} />} />
+      <Route path="/manager/showtimes" element={<ManagerRouteView component={ManagerShowtimesPage} />} />
+      <Route path="/manager/rooms" element={<ManagerRouteView component={ManagerRoomsPage} />} />
+      <Route path="/manager/inventory" element={<ManagerRouteView component={ManagerInventoryPage} />} />
+      <Route path="/manager/bookings" element={<ManagerRouteView component={ManagerBookingsPage} />} />
+      <Route path="/manager/staff" element={<ManagerRouteView component={ManagerStaffPage} />} />
+      <Route path="/manager/reports" element={<ManagerRouteView component={ManagerReportsPage} />} />
+      <Route path="/manager/audit-logs" element={<ManagerRouteView component={ManagerAuditLogsPage} />} />
+
       <Route
         path="/"
         element={
           isAdmin ? (
             <Navigate to="/admin/overview" replace />
+          ) : isManager ? (
+            <Navigate to="/manager/overview" replace />
           ) : isStaff ? (
             <Navigate to="/staff" replace />
           ) : (
@@ -126,10 +165,11 @@ export default function AppRoutes() {
       <Route path="/movies/:id/book" element={<AppShell><ProtectedRoute><BookingView /></ProtectedRoute></AppShell>} />
       <Route path="/concessions" element={<AppShell><ProtectedRoute><ConcessionsPage /></ProtectedRoute></AppShell>} />
       <Route path="/tickets" element={<AppShell><ProtectedRoute><MyOrdersPage /></ProtectedRoute></AppShell>} />
-      <Route path="/watchlist" element={isAdmin ? <Navigate to="/admin/overview" replace /> : isStaff ? <Navigate to="/staff" replace /> : <AppShell><ProtectedRoute><WishlistView /></ProtectedRoute></AppShell>} />
+      <Route path="/watchlist" element={isAdmin ? <Navigate to="/admin/overview" replace /> : isManager ? <Navigate to="/manager/overview" replace /> : isStaff ? <Navigate to="/staff" replace /> : <AppShell><ProtectedRoute><WishlistView /></ProtectedRoute></AppShell>} />
       <Route path="/profile" element={<AppShell><ProtectedRoute><ProfileView /></ProtectedRoute></AppShell>} />
       <Route path="/policies" element={<AppShell><PoliciesPage /></AppShell>} />
       <Route path="/admin" element={<Navigate to="/admin/overview" replace />} />
+      <Route path="/admin/managers" element={<AppShell><AdminRoute><AdminManagersPage /></AdminRoute></AppShell>} />
       <Route path="/admin/:section" element={<AppShell><AdminRouteView /></AppShell>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

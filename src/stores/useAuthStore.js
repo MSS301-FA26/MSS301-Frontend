@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { authService, clearAuthSession, getStoredAuth, hasBackendAdminAccess, hasBackendStaffAccess, normalizeUser, saveAuthSession } from '../services/authService';
+import { authService, clearAuthSession, getStoredAuth, hasBackendAdminAccess, hasBackendManagerAccess, hasBackendStaffAccess, normalizeUser, saveAuthSession } from '../services/authService';
 import { userService } from '../services/userService';
 
 const resolveNextValue = (nextValue, previousValue) => (
@@ -43,9 +43,11 @@ export const useAuthStore = create((set, get) => ({
       if (user) {
         const restoredRole = hasBackendAdminAccess(accessToken, user)
           ? 'admin'
-          : hasBackendStaffAccess(accessToken, user)
-            ? 'staff'
-            : user.role || 'user';
+          : hasBackendManagerAccess(accessToken, user)
+            ? 'manager'
+            : hasBackendStaffAccess(accessToken, user)
+              ? 'staff'
+              : user.role || 'user';
         get().setAuthSession({ ...user, role: restoredRole }, restoredRole);
       }
       if (!accessToken && !refreshToken) return;
@@ -142,6 +144,8 @@ export const useAuthStore = create((set, get) => ({
     }
     if (userData.role === 'admin') {
       navigate?.('/admin/overview');
+    } else if (userData.role === 'manager') {
+      navigate?.('/manager');
     } else if (userData.role === 'staff') {
       navigate?.('/staff');
     } else {

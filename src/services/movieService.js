@@ -63,6 +63,7 @@ export const normalizeMovie = (movie = {}, fallback = {}) => {
     mainActorIds: movie.mainActorIds || fallback.mainActorIds || [],
     actors: movie.actors || fallback.actors || [],
     language: movie.language || fallback.language || 'Dang cap nhat',
+    subtitleLanguage: movie.subtitleLanguage || fallback.subtitleLanguage || '',
     status: effectiveStatus,
     isUpcoming: Boolean(isUpcoming),
     isInactive,
@@ -78,6 +79,19 @@ export const normalizeMovie = (movie = {}, fallback = {}) => {
       visual: Number(ratings.visual ?? fallback.ratings?.visual ?? overall),
       audio: Number(ratings.audio ?? fallback.ratings?.audio ?? Math.max(0, overall - 0.1))
     },
+    approvalStatus: movie.approvalStatus || fallback.approvalStatus || 'APPROVED',
+    publicationStatus: movie.publicationStatus || fallback.publicationStatus || 'PUBLISHED',
+    submittedAt: movie.submittedAt || fallback.submittedAt || null,
+    submittedById: movie.submittedById || fallback.submittedById || null,
+    submittedByName: movie.submittedByName || fallback.submittedByName || '',
+    approvedAt: movie.approvedAt || fallback.approvedAt || null,
+    approvedById: movie.approvedById || fallback.approvedById || null,
+    approvedByName: movie.approvedByName || fallback.approvedByName || '',
+    rejectedAt: movie.rejectedAt || fallback.rejectedAt || null,
+    rejectedById: movie.rejectedById || fallback.rejectedById || null,
+    rejectedByName: movie.rejectedByName || fallback.rejectedByName || '',
+    rejectionReason: movie.rejectionReason || fallback.rejectionReason || '',
+    publishedAt: movie.publishedAt || fallback.publishedAt || null,
     tags: movie.tags || fallback.tags || [],
     raw: movie
   };
@@ -122,6 +136,8 @@ export const movieService = {
   getGenres: () => request('/api/v1/genres'),
   getFoodItems: () => request('/api/v1/foods/items').then(unwrapListPayload),
   getFoodCombos: () => request('/api/v1/foods/combos').then(unwrapListPayload),
-  getPublicCinema: () => request('/api/v1/cinema')
+  getFoodCategories: () => request('/api/v1/foods/categories').then(unwrapListPayload),
+  getPublicCinema: () => request('/api/v1/cinema'),
+  getActivePromotions: () => request('/api/v1/promotions/active').then(unwrapListPayload),
+  validateVoucher: (payload, token) => request('/api/v1/promotions/validate', { method: 'POST', body: payload, token })
 };
-

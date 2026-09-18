@@ -44,7 +44,7 @@ export default function MovieCard({ movie, onSelect, onBook, isWatchlisted = fal
             {isBookable ? (
               <button
                 onClick={(e) => { e.stopPropagation(); onBook(movie); }}
-                className="flex items-center justify-center w-full border border-white bg-white text-black text-[11px] font-sans uppercase tracking-[0.12em] py-2.5 hover:bg-black hover:text-white transition-all duration-200"
+                className="flex items-center justify-center w-full border border-white bg-black/80 text-white text-[11px] font-sans uppercase tracking-[0.12em] py-2.5 hover:bg-white hover:text-black transition-all duration-200"
               >
                 Đặt Vé Ngay
               </button>

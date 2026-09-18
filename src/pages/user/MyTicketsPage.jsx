@@ -231,6 +231,7 @@ export default function MyTicketsView({ embedded = false }) {
         return {
           bookingId: b.id,
           id: b.bookingCode || String(b.id),
+          showtimeId: b.showtimeId || b.showtime?.id || null,
           paidAt: b.paidAt || null,
           createdAt: b.createdAt || null,
           status: b.status,
@@ -725,7 +726,7 @@ export default function MyTicketsView({ embedded = false }) {
                         {t.isHoldActive && t.movieId && (
                           <button
                             type="button"
-                            onClick={() => navigate(`/movies/${t.movieId}/book?resumeBookingId=${t.bookingId}`)}
+                            onClick={() => navigate(`/movies/${t.movieId}/book?resumeBookingId=${t.bookingId}${t.showtimeId ? `&showtimeId=${t.showtimeId}` : ''}`)}
                             className="inline-flex items-center gap-1.5 bg-amber-400 px-3 py-1.5 text-[8px] font-black uppercase tracking-widest text-black transition hover:bg-amber-300"
                             title="Quay lại màn thanh toán với ghế đang được giữ"
                           >

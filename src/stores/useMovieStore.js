@@ -22,8 +22,24 @@ const toCacheEntry = (data) => ({ data, updatedAt: Date.now() });
 
 const normalizeFoodCatalog = (items = [], combos = []) => (
   [
-    ...items.map(item => ({ ...item, id: `item-${item.id}`, backendId: item.id, foodItemId: item.id, category: 'item' })),
-    ...combos.map(item => ({ ...item, id: `combo-${item.id}`, backendId: item.id, foodComboId: item.id, category: 'combo' })),
+    ...items.map(item => ({
+      ...item,
+      id: `item-${item.id}`,
+      backendId: item.id,
+      foodItemId: item.id,
+      foodComboId: null,
+      category: 'item',
+      isCombo: false
+    })),
+    ...combos.map(item => ({
+      ...item,
+      id: `combo-${item.id}`,
+      backendId: item.id,
+      foodItemId: null,
+      foodComboId: item.id,
+      category: 'combo',
+      isCombo: true
+    })),
   ]
 );
 
