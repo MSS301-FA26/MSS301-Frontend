@@ -2797,7 +2797,7 @@ export default function AdminMoviesPanel({ ctx }) {
                             <div key={actor.id ?? idx} className="flex items-center gap-2.5 p-2 rounded-none bg-neutral-900/60 border border-white/8">
                               <div className="w-8 h-8 rounded-full overflow-hidden bg-neutral-800 border border-white/10 shrink-0">
                                 {actor.avatarUrl ? (
-                                  <img src={actor.avatarUrl} alt={actor.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                  <img src={actor.avatarUrl} alt={actor.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(actor.name || "A")}&background=1a1a1a&color=f59e0b&size=64&bold=true`; }} />
                                 ) : (
                                   <div className="w-full h-full flex items-center justify-center text-[10px] font-bold text-amber-400">
                                     {(actor.name || 'A').slice(0, 1)}

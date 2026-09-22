@@ -34,9 +34,9 @@ export const createCrudApi = (basePath) => ({
  * @param {string} folder   - folder đích trên Cloudinary
  * @param {string} endpoint - VD: '/api/v1/admin/uploads/images'
  */
-export const uploadFile = (token, file, folder, endpoint) => {
+export const uploadFile = (token, file, folder, endpoint, timeout = 300000) => {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('folder', folder);
-  return request(endpoint, { method: 'POST', token, body: formData });
+  return request(endpoint, { method: 'POST', token, body: formData, timeout });
 };
