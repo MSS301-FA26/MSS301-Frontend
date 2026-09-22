@@ -1,6 +1,5 @@
 ﻿import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
-import { Link } from 'react-router-dom';
 import { getStoredAuth, request } from '../../../services/authService';
 import { adminService } from '../../../services/adminService';
 import {
@@ -369,18 +368,6 @@ export default function AdminUsersPanel({ ctx }) {
 
         <button
           type="button"
-          onClick={() => {
-            setIsManagerFormOpen((prev) => !prev);
-            setManagerFormErrors({});
-            setManagerFormNotice('');
-          }}
-          className="flex items-center justify-center gap-2 border border-sky-500/60 bg-sky-500/10 px-4 py-2 text-[10px] font-mono font-black uppercase tracking-widest text-sky-200 transition hover:bg-sky-400 hover:text-black"
-        >
-          {isManagerFormOpen ? <X className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
-          {isManagerFormOpen ? 'Đóng biểu mẫu Manager' : 'Cấp tài khoản MANAGER'}
-        </button>
-        <button
-          type="button"
           onClick={() => setIsStaffFormOpen((prev) => !prev)}
           className="flex items-center justify-center gap-2 border border-amber-500/60 bg-amber-500/10 px-4 py-2 text-[10px] font-mono font-black uppercase tracking-widest text-amber-300 transition hover:bg-amber-500 hover:text-black"
         >
@@ -496,9 +483,6 @@ export default function AdminUsersPanel({ ctx }) {
                 Tài khoản được kích hoạt ngay. Chọn rạp để giới hạn phạm vi vận hành của Manager.
               </p>
             </div>
-            <Link to="/admin/managers" className="border border-sky-500/35 px-2 py-1 text-[8px] font-black uppercase tracking-widest text-sky-200 hover:bg-sky-500/10">
-              Quản lý phân công
-            </Link>
           </div>
 
           {managerFormErrors.general && (

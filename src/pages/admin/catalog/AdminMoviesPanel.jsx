@@ -851,17 +851,6 @@ export default function AdminMoviesPanel({ ctx }) {
     }
   };
 
-  const getApprovalBadge = (approvalStatus) => {
-    const approval = String(approvalStatus || 'APPROVED').toUpperCase();
-    const map = {
-      DRAFT: { label: 'BẢN NHÁP', color: 'bg-yellow-950/30 text-yellow-300 border-yellow-500/30', dot: 'bg-yellow-400' },
-      PENDING_APPROVAL: { label: 'CHỜ DUYỆT', color: 'bg-amber-950/30 text-amber-300 border-amber-500/30', dot: 'bg-amber-400 animate-pulse' },
-      APPROVED: { label: 'ĐÃ DUYỆT', color: 'bg-blue-950/30 text-blue-300 border-blue-500/30', dot: 'bg-blue-400' },
-      REJECTED: { label: 'TỪ CHỐI', color: 'bg-red-950/30 text-red-300 border-red-500/30', dot: 'bg-red-400' }
-    };
-    return map[approval] || { label: approval, color: 'bg-neutral-900 text-neutral-300 border-white/10', dot: 'bg-neutral-400' };
-  };
-
   const getPublicationBadge = (publicationStatus) => {
     const publication = String(publicationStatus || 'UNPUBLISHED').toUpperCase();
     const map = {
@@ -874,10 +863,9 @@ export default function AdminMoviesPanel({ ctx }) {
 
   const getScreeningBadge = (movie) => {
     if (!movie) return null;
-    const approval = String(movie.approvalStatus || '').toUpperCase();
     const publication = String(movie.publicationStatus || '').toUpperCase();
-    // Phim CHỈ có trạng thái chiếu rạp (Đang chiếu / Sắp chiếu / Đã kết thúc) khi đã ĐƯỢC DUYỆT và ĐÃ XUẤT BẢN
-    if (approval !== 'APPROVED' || publication !== 'PUBLISHED') {
+    // Chỉ hiển thị trạng thái chiếu rạp cho phim đã xuất bản.
+    if (publication !== 'PUBLISHED') {
       return null;
     }
 
@@ -991,20 +979,10 @@ export default function AdminMoviesPanel({ ctx }) {
               </button>
             </div>
 
-            {/* Hàng 2: Thanh Tab Trạng Thái Quy Trình (Bản nháp, Chờ duyệt, Đã duyệt, Từ chối, Xuất bản, Lưu trữ) */}
+            {/* Hàng 2: Bộ lọc trạng thái xuất bản */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-2.5 border-t border-white/[0.06] custom-scrollbar" id="film-filter-container">
               {[
                 { id: 'ALL', name: 'TẤT CẢ' },
-                {
-                  id: 'DRAFT',
-                  name: 'BẢN NHÁP',
-                  icon: FileText,
-                  color: 'yellow',
-                  count: displayedDrafts.length + (filteredMovies?.filter(m => (m.approvalStatus || '').toUpperCase() === 'DRAFT').length || 0)
-                },
-                { id: 'PENDING_APPROVAL', name: 'CHỜ DUYỆT', icon: Clock, color: 'amber' },
-                { id: 'APPROVED', name: 'ĐÃ DUYỆT', icon: CheckCircle2, color: 'blue' },
-                { id: 'REJECTED', name: 'TỪ CHỐI', icon: XCircle, color: 'red' },
                 { id: 'PUBLISHED', name: 'ĐÃ XUẤT BẢN', icon: Globe2, color: 'emerald' },
                 { id: 'ARCHIVED', name: 'LƯU TRỮ', icon: Archive, color: 'gray' }
               ].map((filter) => {
@@ -1999,37 +1977,7 @@ export default function AdminMoviesPanel({ ctx }) {
                             ? (editingMovie ? 'ĐANG CẬP NHẬT...' : 'ĐANG LƯU...')
                             : isDuplicateTitle
                               ? 'TRÙNG TÊN PHIM'
-                              : (editingMovie ? 'CẬP NHẬT PHIM' : 'LƯU BẢN NHÁP')}
-                      </button>
-                      <button
-                        type="button"
-                        disabled={isMovieSaving || isMovieMediaUploading || isDuplicateTitle}
-                        onClick={async (e) => {
-                          e.preventDefault();
-                          if (isDuplicateTitle) {
-                            playPulseSound?.(200, 'sine', 0.1);
-                            showToast?.('Tên phim đã tồn tại. Vui lòng chọn tên khác!');
-                            return;
-                          }
-                          const fakeEvent = { preventDefault: () => {} };
-                          await handleCreateMovieSubmit(fakeEvent, { submitForApproval: true });
-                          // Clean up local draft if any
-                          const currentId = activeDraftIdRef.current || activeDraftId;
-                          const currentTitle = String(formData.title || '').trim().toLowerCase();
-                          const remaining = getStoredDrafts().filter((d) => {
-                            if (currentId && d.id === currentId) return false;
-                            if (currentTitle && String(d.formData?.title || '').trim().toLowerCase() === currentTitle) return false;
-                            return true;
-                          });
-                          try { localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(remaining)); } catch {}
-                          setDraftList(remaining);
-                          activeDraftIdRef.current = null;
-                          setActiveDraftId(null);
-                        }}
-                        className="px-5 py-3 bg-blue-600 hover:bg-blue-500 text-white font-sans font-black text-xs uppercase tracking-widest transition shadow-lg disabled:cursor-not-allowed disabled:opacity-50 rounded-none flex items-center gap-2"
-                        title={editingMovie ? 'Cập nhật thông tin và gửi chờ duyệt' : 'Lưu phim và gửi lên hệ thống để chờ duyệt'}
-                      >
-                        <Send className="h-3.5 w-3.5" /> {editingMovie ? 'CẬP NHẬT & GỬI DUYỆT' : 'LƯU & GỬI DUYỆT'}
+                            : (editingMovie ? 'CẬP NHẬT & ĐĂNG' : 'ĐĂNG PHIM')}
                       </button>
                     </div>
                   </form>
@@ -2121,10 +2069,8 @@ export default function AdminMoviesPanel({ ctx }) {
           {(() => {
             const renderMovieRow = (mv) => {
               const movieId = mv.backendId ?? mv.id;
-              const approval = String(mv.approvalStatus || 'APPROVED').toUpperCase();
               const publication = String(mv.publicationStatus || 'UNPUBLISHED').toUpperCase();
 
-              const approvalBadge = getApprovalBadge(mv.approvalStatus);
               const pubBadge = getPublicationBadge(mv.publicationStatus);
 
               return (
@@ -2166,19 +2112,6 @@ export default function AdminMoviesPanel({ ctx }) {
                     <span className="text-[10.5px] text-neutral-200 font-medium">{Array.isArray(mv.genre) ? mv.genre.join(' • ') : mv.genre}</span>
                   </td>
                   <td className="py-3.5 px-4 whitespace-nowrap">
-                    <div className="flex flex-col gap-1.5">
-                      <span className={`inline-flex items-center px-2 py-1 ${approvalBadge.color} border text-[9px] uppercase font-bold tracking-wider rounded-none select-none shrink-0 h-6 w-fit`}>
-                        <span className={`w-1.5 h-1.5 rounded-full ${approvalBadge.dot} mr-1.5`}></span>
-                        {approvalBadge.label}
-                      </span>
-                      {approval === 'REJECTED' && mv.rejectionReason && (
-                        <span className="text-[9px] text-red-400/80 truncate max-w-[180px]" title={mv.rejectionReason}>
-                          💬 {mv.rejectionReason}
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="py-3.5 px-4 whitespace-nowrap">
                     <span className={`inline-flex items-center px-2 py-1 ${pubBadge.color} border text-[9px] uppercase font-bold tracking-wider rounded-none select-none shrink-0 h-6`}>
                       <span className={`w-1.5 h-1.5 rounded-full ${pubBadge.dot} mr-1.5`}></span>
                       {pubBadge.label}
@@ -2186,134 +2119,7 @@ export default function AdminMoviesPanel({ ctx }) {
                   </td>
                   <td className="py-3.5 px-4 text-right">
                     <div className="flex flex-wrap justify-end gap-1.5">
-                      {/* DRAFT actions */}
-                      {approval === 'DRAFT' && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenMovieDetailModal(mv)}
-                            className="p-1.5 text-neutral-300 border border-white/10 bg-white/5 hover:border-amber-400 hover:bg-amber-500/10 hover:text-amber-300 transition rounded-none"
-                            title="Xem chi tiết"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleEditMovie(mv)}
-                            className="p-1.5 text-amber-300 border border-amber-500/30 bg-amber-500/10 hover:bg-amber-400 hover:text-black transition rounded-none"
-                            title="Chỉnh sửa bản nháp"
-                          >
-                            <Edit3 className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleSubmitMovieForApproval(mv)}
-                            className="p-1.5 text-blue-300 border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500 hover:text-white transition rounded-none"
-                            title="Gửi phim chờ duyệt"
-                          >
-                            <Send className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleArchiveMovie(mv)}
-                            className="p-1.5 text-neutral-400 border border-white/10 bg-white/5 hover:border-amber-500/30 hover:bg-amber-500/10 hover:text-amber-400 transition rounded-none"
-                            title="Đưa vào lưu trữ"
-                          >
-                            <Archive className="h-3.5 w-3.5" />
-                          </button>
-                        </>
-                      )}
-
-                      {/* PENDING_APPROVAL actions */}
-                      {approval === 'PENDING_APPROVAL' && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenMovieDetailModal(mv)}
-                            className="p-1.5 text-neutral-300 border border-white/10 bg-white/5 hover:border-amber-400 hover:bg-amber-500/10 hover:text-amber-300 transition rounded-none"
-                            title="Xem chi tiết"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleEditMovie(mv)}
-                            className="p-1.5 text-amber-300 border border-amber-500/30 bg-amber-500/10 hover:bg-amber-400 hover:text-black transition rounded-none"
-                            title="Chỉnh sửa phim đang chờ duyệt"
-                          >
-                            <Edit3 className="h-3.5 w-3.5" />
-                          </button>
-                          {isAdmin && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => handleApproveMovie(mv)}
-                                className="p-1.5 text-emerald-300 border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500 hover:text-white transition rounded-none"
-                                title="Duyệt phim"
-                              >
-                                <ThumbsUp className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setRejectModal({ movie: mv, reason: '' })}
-                                className="p-1.5 text-red-300 border border-red-500/30 bg-red-500/10 hover:bg-red-500 hover:text-white transition rounded-none"
-                                title="Từ chối duyệt"
-                              >
-                                <ThumbsDown className="h-3.5 w-3.5" />
-                              </button>
-                            </>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => handleArchiveMovie(mv)}
-                            className="p-1.5 text-neutral-400 border border-white/10 bg-white/5 hover:border-amber-500/30 hover:bg-amber-500/10 hover:text-amber-400 transition rounded-none"
-                            title="Đưa vào lưu trữ"
-                          >
-                            <Archive className="h-3.5 w-3.5" />
-                          </button>
-                        </>
-                      )}
-
-                      {/* REJECTED actions */}
-                      {approval === 'REJECTED' && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => handleOpenMovieDetailModal(mv)}
-                            className="p-1.5 text-neutral-300 border border-white/10 bg-white/5 hover:border-amber-400 hover:bg-amber-500/10 hover:text-amber-300 transition rounded-none"
-                            title="Xem chi tiết"
-                          >
-                            <Eye className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleEditMovie(mv)}
-                            className="p-1.5 text-amber-300 border border-amber-500/30 bg-amber-500/10 hover:bg-amber-400 hover:text-black transition rounded-none"
-                            title="Chỉnh sửa phim bị từ chối"
-                          >
-                            <Edit3 className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleSubmitMovieForApproval(mv)}
-                            className="p-1.5 text-blue-300 border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500 hover:text-white transition rounded-none"
-                            title="Gửi phim chờ duyệt lại"
-                          >
-                            <Send className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleArchiveMovie(mv)}
-                            className="p-1.5 text-neutral-400 border border-white/10 bg-white/5 hover:border-amber-500/30 hover:bg-amber-500/10 hover:text-amber-400 transition rounded-none"
-                            title="Đưa vào lưu trữ"
-                          >
-                            <Archive className="h-3.5 w-3.5" />
-                          </button>
-                        </>
-                      )}
-
-                      {/* APPROVED actions */}
-                      {approval === 'APPROVED' && publication !== 'ARCHIVED' && (
+                      {publication !== 'ARCHIVED' && (
                         <>
                           <button
                             type="button"
@@ -2331,16 +2137,6 @@ export default function AdminMoviesPanel({ ctx }) {
                           >
                             <Edit3 className="h-3.5 w-3.5" />
                           </button>
-                          {publication !== 'PUBLISHED' && (
-                            <button
-                              type="button"
-                              onClick={() => handlePublishMovie(mv)}
-                              className="p-1.5 text-emerald-300 border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500 hover:text-white transition rounded-none"
-                              title="Xuất bản phim lên website công khai"
-                            >
-                              <Globe2 className="h-3.5 w-3.5" />
-                            </button>
-                          )}
                           {publication === 'PUBLISHED' && (
                             <button
                               type="button"
@@ -2408,22 +2204,6 @@ export default function AdminMoviesPanel({ ctx }) {
                         </>
                       )}
 
-                      {/* History button - available for all non-DRAFT */}
-                      {approval !== 'DRAFT' && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            setIsHistoryLoading(true);
-                            const history = await handleFetchApprovalHistory(movieId);
-                            setApprovalHistoryModal({ movie: mv, history: history || [] });
-                            setIsHistoryLoading(false);
-                          }}
-                          className="p-1.5 text-neutral-400 border border-white/10 bg-white/5 hover:border-amber-500/30 hover:bg-amber-500/10 hover:text-amber-300 transition rounded-none"
-                          title="Xem lịch sử duyệt phim"
-                        >
-                          <History className="h-3.5 w-3.5" />
-                        </button>
-                      )}
                     </div>
                   </td>
                 </tr>
@@ -2441,7 +2221,6 @@ export default function AdminMoviesPanel({ ctx }) {
                       <th className="py-3 px-4">Hình ảnh</th>
                       <th className="py-3 px-4">Tên phim & Thời lượng</th>
                       <th className="py-3 px-4">Thể loại</th>
-                      <th className="py-3 px-4">Trạng thái duyệt</th>
                       <th className="py-3 px-4">Xuất bản</th>
                       <th className="py-3 px-4 text-right">Thao tác</th>
                     </tr>
@@ -2511,7 +2290,7 @@ export default function AdminMoviesPanel({ ctx }) {
                                   </div>
                                 </td>
                                 <td className="py-3.5 px-4 whitespace-nowrap">
-                                  <span className="text-[10px] text-neutral-500 italic">Chưa gửi duyệt</span>
+                                  <span className="text-[10px] text-neutral-500 italic">Chưa đăng</span>
                                 </td>
                                 <td className="py-3.5 px-4 text-right whitespace-nowrap">
                                   <div className="flex items-center justify-end gap-1.5">
@@ -2542,7 +2321,7 @@ export default function AdminMoviesPanel({ ctx }) {
                         </>
                       ) : (
                         <tr>
-                          <td colSpan={6} className="py-16 text-center">
+                          <td colSpan={5} className="py-16 text-center">
                             <div className="flex flex-col items-center justify-center gap-3 text-neutral-400">
                               <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-neutral-500">
                                 <FileText className="w-6 h-6" />
@@ -2568,16 +2347,13 @@ export default function AdminMoviesPanel({ ctx }) {
                         filteredMovies.map(renderMovieRow)
                       ) : (
                         <tr>
-                          <td colSpan={6} className="py-16 text-center">
+                          <td colSpan={5} className="py-16 text-center">
                             <div className="flex flex-col items-center justify-center gap-3 text-neutral-400">
                               <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-neutral-500">
                                 <Film className="w-6 h-6" />
                               </div>
                               <p className="text-sm font-bold text-neutral-300">
-                                {filmFilter === 'PENDING_APPROVAL' ? 'Không có phim nào đang chờ duyệt' :
-                                 filmFilter === 'APPROVED' ? 'Không có phim nào đã duyệt' :
-                                 filmFilter === 'REJECTED' ? 'Không có phim nào bị từ chối' :
-                                 filmFilter === 'PUBLISHED' ? 'Không có phim nào đã xuất bản' :
+                                {filmFilter === 'PUBLISHED' ? 'Không có phim nào đã xuất bản' :
                                  filmFilter === 'ARCHIVED' ? 'Không có phim nào được lưu trữ' :
                                  'Không tìm thấy phim phù hợp'}
                               </p>
@@ -2880,24 +2656,17 @@ export default function AdminMoviesPanel({ ctx }) {
                         {/* Summary info & Statuses */}
                         <div className="space-y-2.5 flex-1 min-w-0">
                           {(() => {
-                            const detailApprovalBadge = getApprovalBadge(movieDetailModal.approvalStatus);
                             const detailPubBadge = getPublicationBadge(movieDetailModal.publicationStatus);
                             const detailScreeningBadge = getScreeningBadge(movieDetailModal);
                             return (
                               <div className="flex flex-wrap items-center gap-2">
-                                {/* Approval Badge */}
-                                <span className={`inline-flex items-center px-2 py-0.5 ${detailApprovalBadge.color} border text-[9.5px] uppercase font-bold tracking-wider rounded-none select-none h-6`}>
-                                  <span className={`w-1.5 h-1.5 rounded-full ${detailApprovalBadge.dot} mr-1.5`}></span>
-                                  {detailApprovalBadge.label}
-                                </span>
-
                                 {/* Publication Badge */}
                                 <span className={`inline-flex items-center px-2 py-0.5 ${detailPubBadge.color} border text-[9.5px] uppercase font-bold tracking-wider rounded-none select-none h-6`}>
                                   <span className={`w-1.5 h-1.5 rounded-full ${detailPubBadge.dot} mr-1.5`}></span>
                                   {detailPubBadge.label}
                                 </span>
 
-                                {/* Screening Status Badge - Chỉ hiển thị khi phim ĐÃ DUYỆT & ĐÃ XUẤT BẢN */}
+                                {/* Screening Status Badge */}
                                 {detailScreeningBadge && (
                                   <span className={`inline-flex items-center px-2 py-0.5 ${detailScreeningBadge.color} border text-[9.5px] uppercase font-bold tracking-wider rounded-none select-none h-6`}>
                                     <span className={`w-1.5 h-1.5 rounded-full ${detailScreeningBadge.dot} mr-1.5`}></span>
@@ -2935,13 +2704,6 @@ export default function AdminMoviesPanel({ ctx }) {
                             )}
                           </div>
 
-                          {/* Rejection Alert */}
-                          {movieDetailModal.approvalStatus === 'REJECTED' && movieDetailModal.rejectionReason && (
-                            <div className="p-2.5 rounded-none bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs">
-                              <strong className="text-rose-400 block mb-0.5">💬 Lý do từ chối duyệt:</strong>
-                              <span>{movieDetailModal.rejectionReason}</span>
-                            </div>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -3002,33 +2764,6 @@ export default function AdminMoviesPanel({ ctx }) {
                           </p>
                         </div>
 
-                        {movieDetailModal.submittedByName && (
-                          <div>
-                            <span className="text-[10px] uppercase tracking-wider text-neutral-400 block mb-0.5">Người gửi duyệt</span>
-                            <p className="font-semibold text-white">
-                              {movieDetailModal.submittedByName}
-                              {movieDetailModal.submittedAt && (
-                                <span className="text-[10px] text-neutral-400 block font-normal">
-                                  {new Date(movieDetailModal.submittedAt).toLocaleDateString('vi-VN')}
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                        )}
-
-                        {movieDetailModal.approvedByName && (
-                          <div>
-                            <span className="text-[10px] uppercase tracking-wider text-neutral-400 block mb-0.5">Người phê duyệt</span>
-                            <p className="font-semibold text-white">
-                              {movieDetailModal.approvedByName}
-                              {movieDetailModal.approvedAt && (
-                                <span className="text-[10px] text-neutral-400 block font-normal">
-                                  {new Date(movieDetailModal.approvedAt).toLocaleDateString('vi-VN')}
-                                </span>
-                              )}
-                            </p>
-                          </div>
-                        )}
 
                         {movieDetailModal.publishedAt && (
                           <div>
@@ -3116,80 +2851,9 @@ export default function AdminMoviesPanel({ ctx }) {
                         <Edit3 className="w-3.5 h-3.5" /> Chỉnh sửa phim
                       </button>
 
-                      {movieDetailModal.approvalStatus !== 'DRAFT' && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const target = movieDetailModal;
-                            const targetId = target.backendId ?? target.id;
-                            setMovieDetailModal(null);
-                            setIsHistoryLoading(true);
-                            const history = await handleFetchApprovalHistory(targetId);
-                            setApprovalHistoryModal({ movie: target, history: history || [] });
-                            setIsHistoryLoading(false);
-                          }}
-                          className="px-3 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 hover:text-white border border-white/10 font-bold text-xs uppercase tracking-wider rounded-none transition flex items-center gap-1.5"
-                        >
-                          <History className="w-3.5 h-3.5" /> Lịch sử duyệt
-                        </button>
-                      )}
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {movieDetailModal.approvalStatus === 'REJECTED' && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const target = movieDetailModal;
-                            setMovieDetailModal(null);
-                            await handleSubmitMovieForApproval(target);
-                          }}
-                          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs uppercase tracking-wider rounded-none transition flex items-center gap-1.5"
-                        >
-                          <Send className="w-3.5 h-3.5" /> Gửi duyệt lại
-                        </button>
-                      )}
-
-                      {isAdmin && movieDetailModal.approvalStatus === 'PENDING_APPROVAL' && (
-                        <>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              const target = movieDetailModal;
-                              setMovieDetailModal(null);
-                              await handleApproveMovie(target);
-                            }}
-                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider rounded-none transition flex items-center gap-1.5"
-                          >
-                            <ThumbsUp className="w-3.5 h-3.5" /> Duyệt phim
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const target = movieDetailModal;
-                              setMovieDetailModal(null);
-                              setRejectModal({ movie: target, reason: '' });
-                            }}
-                            className="px-4 py-2 bg-red-600 hover:bg-red-500 text-white font-bold text-xs uppercase tracking-wider rounded-none transition flex items-center gap-1.5"
-                          >
-                            <ThumbsDown className="w-3.5 h-3.5" /> Từ chối
-                          </button>
-                        </>
-                      )}
-
-                      {movieDetailModal.approvalStatus === 'APPROVED' && movieDetailModal.publicationStatus !== 'PUBLISHED' && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            const target = movieDetailModal;
-                            setMovieDetailModal(null);
-                            await handlePublishMovie(target);
-                          }}
-                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs uppercase tracking-wider rounded-none transition flex items-center gap-1.5"
-                        >
-                          <Globe2 className="w-3.5 h-3.5" /> Xuất bản
-                        </button>
-                      )}
 
                       <button
                         type="button"

@@ -32,7 +32,6 @@ import AdminStatsPanel from './overview/AdminStatsPanel';
 import AdminFnbReportPanel from './overview/AdminFnbReportPanel';
 import AdminShowtimeIncidentsPanel from './cinema/AdminShowtimeIncidentsPanel';
 import AdminPromotionsPanel from './promotions/AdminPromotionsPanel';
-import AdminApprovalsPanel from './cinema/AdminApprovalsPanel';
 
 function NavItem({ icon: Icon, label, active, onClick, indent = false, badge = null }) {
   return (
@@ -71,11 +70,11 @@ const SECTION_TITLE = {
   'showtime-incidents': 'Báo cáo sự cố & hoàn tiền', 'fnb-report': 'Báo cáo F&B',
   statistics: 'Thống kê mua bán', audit: 'Audit log', users: 'Quản lý người dùng',
   reviews: 'Đánh giá', loyalty: 'Quản lý điểm', cinewallet: 'CineWallet', cinema: 'Thông tin rạp',
-  promotions: 'Mã khuyến mãi & Ưu đãi', approvals: 'Duyệt đề xuất phim',
+  promotions: 'Mã khuyến mãi & Ưu đãi',
 };
 
 const getNavGroup = (section) => {
-  if (['genres', 'actors', 'movies', 'approvals'].includes(section)) return 'movies';
+  if (['genres', 'actors', 'movies'].includes(section)) return 'movies';
   if (['foods', 'fnb-report'].includes(section)) return 'fnb';
   if (['rooms', 'showtimes', 'tickets', 'transactions', 'showtime-incidents'].includes(section)) return 'cinema';
   if (['statistics', 'audit'].includes(section)) return 'insights';
@@ -89,7 +88,6 @@ const ADMIN_SECTIONS = new Set([
   'genres',
   'actors',
   'movies',
-  'approvals',
   'foods',
   'fnb-report',
   'rooms',
@@ -134,30 +132,6 @@ export default function AdminDashboard({
   const [openNavGroup, setOpenNavGroup] = useState(getNavGroup(normalizeAdminSection(initialSection)));
   const [activeChartPoint, setActiveChartPoint] = useState(6);
   const [collapsedTooltip, setCollapsedTooltip] = useState(null); // { key: 'logo'|tab, y: number }
-  const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
-
-  useEffect(() => {
-    let active = true;
-    const fetchPendingApprovals = async () => {
-      try {
-        const { accessToken } = getStoredAuth();
-        if (!accessToken) return;
-        const res = await request('/api/v1/admin/movie-edit-requests?status=PENDING', { token: accessToken });
-        if (active && Array.isArray(res)) {
-          setPendingApprovalsCount(res.length);
-        }
-      } catch (e) {
-        // silent
-      }
-    };
-    fetchPendingApprovals();
-    const interval = setInterval(fetchPendingApprovals, 20000);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, []);
-
   // Create state for movies so the dashboard can add/update them
   const [searchQuery, setSearchQuery] = useState('');
   const [filmFilter, setFilmFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'UPCOMING'
@@ -1148,7 +1122,7 @@ export default function AdminDashboard({
     }
   };
 
-  const handleCreateMovieSubmit = async (e, options = {}) => {
+  const handleCreateMovieSubmit = async (e) => {
     e.preventDefault();
     playPulseSound(587.33, 'sine', 0.2); // D5 success note
 
@@ -1183,10 +1157,9 @@ export default function AdminDashboard({
       return;
     }
 
-    const isSubmittingForApproval = options?.submitForApproval === true;
-    if (isSubmittingForApproval) {
+    {
       if (!formData.releaseDate || !formData.endDate) {
-        showToast('Vui lòng chọn ngày phát hành và ngày kết thúc phim trước khi gửi duyệt.');
+        showToast('Vui lòng chọn ngày phát hành và ngày kết thúc trước khi đăng phim.');
         return;
       }
       if (new Date(formData.endDate) < new Date(formData.releaseDate)) {
@@ -1194,20 +1167,15 @@ export default function AdminDashboard({
         return;
       }
       if (!String(formData.posterUrl || '').trim()) {
-        showToast('Vui lòng upload ảnh poster trước khi gửi duyệt.');
+        showToast('Vui lòng upload ảnh poster trước khi đăng phim.');
         return;
       }
       if (!String(formData.synopsis || '').trim()) {
-        showToast('Vui lòng nhập nội dung phim trước khi gửi duyệt.');
+        showToast('Vui lòng nhập nội dung phim trước khi đăng phim.');
         return;
       }
       if (!formData.genreIds || formData.genreIds.length === 0) {
-        showToast('Vui lòng chọn ít nhất một thể loại phim trước khi gửi duyệt.');
-        return;
-      }
-    } else {
-      if (formData.releaseDate && formData.endDate && new Date(formData.endDate) < new Date(formData.releaseDate)) {
-        showToast('Ngày kết thúc phải bằng hoặc sau ngày phát hành.');
+        showToast('Vui lòng chọn ít nhất một thể loại phim trước khi đăng phim.');
         return;
       }
     }
@@ -1239,14 +1207,9 @@ export default function AdminDashboard({
     setIsMovieSaving(true);
     try {
       const isUpdating = Boolean(targetMovieId);
-      let savedMovie = isUpdating
+      const savedMovie = isUpdating
         ? await adminService.updateAdminMovie(token, targetMovieId, payload)
         : await adminService.createAdminMovie(token, payload);
-
-      if (isSubmittingForApproval) {
-        const savedId = resolveMovieId(savedMovie) || targetMovieId;
-        savedMovie = await adminService.submitAdminMovie(token, savedId);
-      }
 
       setMoviesList((prev) => {
         if (isUpdating) {
@@ -1265,9 +1228,9 @@ export default function AdminDashboard({
 
       resetMovieForm();
       setShowMovieForm(false);
-      showToast(isSubmittingForApproval
-        ? `Đã lưu và gửi phim "${savedMovie.title}" chờ duyệt thành công!`
-        : (isUpdating ? `Đã cập nhật phim: ${savedMovie.title}` : `Đã lưu phim mới vào thư viện dưới dạng Bản nháp: ${savedMovie.title}`));
+      showToast(isUpdating
+        ? `Đã cập nhật và đăng phim: ${savedMovie.title}`
+        : `Đã đăng phim mới: ${savedMovie.title}`);
     } catch (error) {
       showToast(error.message || (targetMovieId ? 'Không thể cập nhật phim.' : 'Không thể tạo phim mới.'));
     } finally {
@@ -1669,7 +1632,6 @@ export default function AdminDashboard({
   const adminPanels = {
     overview: AdminOverviewPanel,
     movies: AdminMoviesPanel,
-    approvals: AdminApprovalsPanel,
     genres: AdminGenresPanel,
     actors: AdminActorsPanel,
     foods: AdminFoodsPanel,
@@ -1733,7 +1695,6 @@ export default function AdminDashboard({
                 { icon: Tags, tab: 'genres', sound: 470 },
                 { icon: Users, tab: 'actors', sound: 465 },
                 { icon: Film, tab: 'movies', sound: 460 },
-                { icon: CheckCircle2, tab: 'approvals', sound: 462 },
                 null,
                 { icon: ShoppingBag, tab: 'foods', sound: 478 },
                 { icon: BarChart2, tab: 'fnb-report', sound: 486 },
@@ -1797,7 +1758,6 @@ export default function AdminDashboard({
                 <NavItem indent icon={Tags} label="Thể loại phim" active={activeTab === 'genres'} onClick={() => { playPulseSound(470, 'sine', 0.05); changeAdminSection('genres'); }} />
                 <NavItem indent icon={Users} label="Diễn viên" active={activeTab === 'actors'} onClick={() => { playPulseSound(465, 'sine', 0.05); changeAdminSection('actors'); }} />
                 <NavItem indent icon={Film} label="Thư viện phim" active={activeTab === 'movies'} onClick={() => { playPulseSound(460, 'sine', 0.05); changeAdminSection('movies'); }} />
-                <NavItem indent icon={CheckCircle2} label="Duyệt đề xuất phim" badge={pendingApprovalsCount} active={activeTab === 'approvals'} onClick={() => { playPulseSound(462, 'sine', 0.05); changeAdminSection('approvals'); }} />
 
                 <NavSectionLabel>Bắp nước / F&amp;B</NavSectionLabel>
                 <NavItem indent icon={ShoppingBag} label="Quản lý bắp nước" active={activeTab === 'foods'} onClick={() => { playPulseSound(478, 'sine', 0.05); changeAdminSection('foods'); }} />
@@ -1820,7 +1780,6 @@ export default function AdminDashboard({
 
                 <NavSectionLabel>Khách hàng &amp; Nhân sự</NavSectionLabel>
                 <NavItem indent icon={Users} label="Người dùng" active={activeTab === 'users'} onClick={() => { playPulseSound(510, 'sine', 0.05); changeAdminSection('users'); }} />
-                <NavItem indent icon={User} label="Quản lý Manager" onClick={() => navigate('/admin/managers')} />
                 <NavItem indent icon={MessageSquare} label="Đánh giá" active={activeTab === 'reviews'} onClick={() => { playPulseSound(515, 'sine', 0.05); changeAdminSection('reviews'); }} />
                 <NavItem indent icon={DollarSign} label="Điểm tích lũy" active={activeTab === 'loyalty'} onClick={() => { playPulseSound(520, 'sine', 0.05); changeAdminSection('loyalty'); }} />
                 <NavItem indent icon={Wallet} label="CineWallet" active={activeTab === 'cinewallet'} onClick={() => { playPulseSound(525, 'sine', 0.05); changeAdminSection('cinewallet'); }} />
@@ -2405,4 +2364,3 @@ export default function AdminDashboard({
     </div>
   );
 }
-

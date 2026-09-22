@@ -24,7 +24,6 @@ import ManagerBookingsPage from '@/pages/manager/ManagerBookingsPage';
 import ManagerStaffPage from '@/pages/manager/ManagerStaffPage';
 import ManagerReportsPage from '@/pages/manager/ManagerReportsPage';
 import ManagerAuditLogsPage from '@/pages/manager/ManagerAuditLogsPage';
-import AdminManagersPage from '@/pages/admin/system/AdminManagersPage';
 import GooglePasswordSetupPage from '@/pages/auth/GooglePasswordSetupPage';
 import AdminRoute from './AdminRoute';
 import StaffRoute from './StaffRoute';
@@ -169,7 +168,6 @@ export default function AppRoutes() {
       <Route path="/profile" element={<AppShell><ProtectedRoute><ProfileView /></ProtectedRoute></AppShell>} />
       <Route path="/policies" element={<AppShell><PoliciesPage /></AppShell>} />
       <Route path="/admin" element={<Navigate to="/admin/overview" replace />} />
-      <Route path="/admin/managers" element={<AppShell><AdminRoute><AdminManagersPage /></AdminRoute></AppShell>} />
       <Route path="/admin/:section" element={<AppShell><AdminRouteView /></AppShell>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
