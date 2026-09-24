@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle, XCircle, Loader2, Clock } from 'lucide-react';
 import { getStoredAuth } from '../../services/authService';
@@ -9,6 +9,9 @@ export default function PaymentCallbackPage() {
   const [status, setStatus] = useState('loading');
   const [info, setInfo] = useState({});
   const [failReason, setFailReason] = useState('');
+  const [loadingText, setLoadingText] = useState('Đang xác minh giao dịch…');
+  const isCancelledRef = useRef(false);
+
   const onContinue = () => {
     if (info.linkedBookingId) {
       navigate(`/tickets?highlightBookingId=${info.linkedBookingId}`);
@@ -18,6 +21,7 @@ export default function PaymentCallbackPage() {
   };
 
   useEffect(() => {
+    isCancelledRef.current = false;
     const params = new URLSearchParams(window.location.search);
     const responseCode = params.get('vnp_ResponseCode');
     const amount = params.get('vnp_Amount');
@@ -42,7 +46,6 @@ export default function PaymentCallbackPage() {
     });
 
     if (responseCode !== '00') {
-      // VNPay báo thất bại rõ ràng
       setStatus(responseCode ? 'failed' : 'unknown');
       setFailReason('Giao dịch bị huỷ hoặc không thành công tại cổng VNPay.');
       return;
@@ -50,19 +53,28 @@ export default function PaymentCallbackPage() {
 
     const { accessToken } = getStoredAuth();
 
-    // VNPay có thể trả mã 00 sau đúng thời điểm đơn hết hạn. Luôn đối chiếu trạng thái
-    // food order ở backend trước khi thông báo thành công cho khách.
-    if (isFoodOrder) {
-      if (!accessToken) {
-        setStatus('unknown');
-        setFailReason('Không thể xác minh trạng thái đơn bắp nước. Vui lòng đăng nhập lại và kiểm tra đơn của bạn.');
-        return;
-      }
-      bookingService.getMyFoodOrders(accessToken)
-        .then((orders) => {
+    // Không thể xác minh từ backend — tin theo VNPay để tránh false negative
+    if (!accessToken || (!bookingCode && !code)) {
+      setStatus('success');
+      return;
+    }
+
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    // Polling xác minh đơn bắp nước (food order)
+    const verifyFoodOrder = async () => {
+      const maxRetries = 6;
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        if (isCancelledRef.current) return;
+        try {
+          if (attempt > 1) {
+            setLoadingText(`Đang đồng bộ trạng thái đơn bắp nước (${attempt}/${maxRetries})…`);
+          }
+          const orders = await bookingService.getMyFoodOrders(accessToken);
           const order = Array.isArray(orders)
             ? orders.find((candidate) => candidate.orderCode === code)
             : null;
+
           if (order?.status === 'PAID') {
             setStatus('success');
             const linkedId = order.bookingId || order.booking?.id || order.bookingCode || null;
@@ -70,57 +82,94 @@ export default function PaymentCallbackPage() {
               ...prev,
               linkedBookingId: linkedId,
             }));
-          } else if (order?.status === 'EXPIRED') {
+            return;
+          }
+
+          if (order?.status === 'EXPIRED') {
             setStatus('failed');
             setFailReason('Đơn bắp nước đã hết thời hạn thanh toán 15 phút và không được ghi nhận thanh toán.');
-          } else {
-            setStatus('failed');
-            setFailReason('Giao dịch chưa được xác nhận. Đơn vẫn được giữ để bạn thanh toán lại trong thời gian còn lại.');
+            return;
           }
-        })
-        .catch(() => {
-          setStatus('unknown');
-          setFailReason('Chưa thể xác minh trạng thái đơn bắp nước. Vui lòng kiểm tra lại trong danh sách đơn.');
-        });
-      return;
-    }
 
-    // VNPay báo thành công (responseCode=00) — nhưng BE có thể đã từ chối (hết hạn giữ ghế)
-    // → Phải kiểm tra booking status thực tế từ BE trước khi hiện "Thành công"
-    if (!accessToken || !bookingCode) {
-      // Không thể xác minh — tin theo VNPay
-      setStatus('success');
-      return;
-    }
+          if (attempt < maxRetries) {
+            await sleep(1200);
+            continue;
+          }
 
-    bookingService.getMyBookings(accessToken)
-      .then((bookings) => {
-        const booking = Array.isArray(bookings)
-          ? bookings.find((b) => b.bookingCode === bookingCode)
-          : null;
-
-        if (!booking) {
-          // Không tìm thấy booking → tin theo VNPay
+          // Hết số lần thử nhưng VNPay 00 -> tin tưởng kết quả VNPay
+          setStatus('success');
+          return;
+        } catch {
+          if (attempt < maxRetries) {
+            await sleep(1200);
+            continue;
+          }
           setStatus('success');
           return;
         }
+      }
+    };
 
-        if (booking.status === 'PAID' || booking.status === 'USED' || booking.status === 'CHECKED_IN') {
+    // Polling xác minh đơn vé xem phim (booking)
+    const verifyBooking = async () => {
+      const maxRetries = 6;
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        if (isCancelledRef.current) return;
+        try {
+          if (attempt > 1) {
+            setLoadingText(`Đang đồng bộ kết quả vé từ hệ thống rạp (${attempt}/${maxRetries})…`);
+          }
+          const bookings = await bookingService.getMyBookings(accessToken);
+          const booking = Array.isArray(bookings)
+            ? bookings.find((b) => b.bookingCode === bookingCode)
+            : null;
+
+          if (!booking) {
+            // Không tìm thấy booking -> tin theo VNPay
+            setStatus('success');
+            return;
+          }
+
+          if (booking.status === 'PAID' || booking.status === 'USED' || booking.status === 'CHECKED_IN') {
+            setStatus('success');
+            return;
+          }
+
+          if (booking.status === 'CANCELLED' || booking.status === 'HOLD_EXPIRED') {
+            setStatus('hold_expired');
+            setFailReason('Thời gian giữ ghế đã hết hạn trước khi hoàn tất thanh toán. Ghế đã được giải phóng – vui lòng đặt lại.');
+            return;
+          }
+
+          // Booking đang HOLDING hoặc PENDING_PAYMENT -> backend đang xử lý RabbitMQ event
+          if (attempt < maxRetries) {
+            await sleep(1200);
+            continue;
+          }
+
+          // Hết số lần thử nhưng VNPay 00 -> coi như thanh toán thành công
           setStatus('success');
-        } else {
-          // Booking không PAID dù VNPay nói thành công → BE đã từ chối (HOLD_EXPIRED...)
-          setStatus('hold_expired');
-          setFailReason(
-            booking.status === 'PENDING_PAYMENT' || booking.status === 'CANCELLED'
-              ? 'Thời gian giữ ghế đã hết hạn trước khi hoàn tất thanh toán. Ghế đã được giải phóng — vui lòng đặt lại.'
-              : `Thanh toán không thành công (trạng thái: ${booking.status}).`
-          );
+          return;
+        } catch {
+          if (attempt < maxRetries) {
+            await sleep(1200);
+            continue;
+          }
+          setStatus('success');
+          return;
         }
-      })
-      .catch(() => {
-        // Lỗi khi gọi BE — tin theo VNPay để tránh false negative
-        setStatus('success');
-      });
+      }
+    };
+
+    if (isFoodOrder) {
+      verifyFoodOrder();
+    } else {
+      verifyBooking();
+    }
+
+    return () => {
+      isCancelledRef.current = true;
+    };
   }, []);
 
   return (
@@ -130,7 +179,7 @@ export default function PaymentCallbackPage() {
         {status === 'loading' && (
           <>
             <Loader2 className="h-12 w-12 text-amber-500 animate-spin mx-auto" />
-            <p className="text-xs text-zinc-500 uppercase tracking-widest">Đang xác minh giao dịch…</p>
+            <p className="text-xs text-zinc-400 uppercase tracking-widest">{loadingText}</p>
           </>
         )}
 
@@ -194,7 +243,7 @@ export default function PaymentCallbackPage() {
               )}
               {info.isFoodOrder && (
                 <p className="mt-2 text-[10px] leading-relaxed text-amber-300/80">
-                  Đơn bắp nước vẫn được giữ trong 15 phút. Bạn có thể thanh toán lại hoặc hủy đơn trong mục “Đơn bắp nước của tôi”.
+                  Đơn bắp nước vẫn được giữ trong 15 phút. Bạn có thể thanh toán lại hoặc huỷ đơn trong mục “Đơn bắp nước của tôi”.
                 </p>
               )}
             </div>
