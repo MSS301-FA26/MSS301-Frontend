@@ -394,11 +394,6 @@ export default function BookingPage() {
   const concessionsDisplayStart = concessions.length === 0 ? 0 : concessionsStartIndex + 1;
   const concessionsDisplayEnd = Math.min(concessionsStartIndex + CONCESSIONS_PAGE_SIZE, concessions.length);
 
-  // Voucher
-  const [voucherInput, setVoucherInput] = useState('');
-  const [appliedVoucher, setAppliedVoucher] = useState(null);
-  const [voucherError, setVoucherError] = useState(null);
-
   // CinePoints (Loyalty)
   const [loyaltyPoints, setLoyaltyPoints] = useState(0);
   const [loyaltyPointsInput, setLoyaltyPointsInput] = useState('');
@@ -923,17 +918,11 @@ export default function BookingPage() {
       showtimeId: selectedShowtime.id,
       seatIds: selectedSeats.map(s => s.seatId),
       foods: buildFoodRequests(),
-      voucherCode: appliedVoucher ? appliedVoucher.code : (voucherInput.trim() || null),
       cinePointsToUse: pointsToUseNumber > 0 ? pointsToUseNumber : null
     })
       .then((quote) => {
         if (cancelled) return;
         setCheckoutQuote(quote);
-        if (appliedVoucher && quote.discount <= 0 && quote.voucherMessage) {
-          setVoucherError(quote.voucherMessage);
-        } else {
-          setVoucherError(null);
-        }
       })
       .catch((err) => {
         if (cancelled) return;
@@ -945,7 +934,7 @@ export default function BookingPage() {
       });
 
     return () => { cancelled = true; };
-  }, [selectedShowtime?.id, selectedSeats, selectedCombos, appliedVoucher, pointsToUseNumber]);
+  }, [selectedShowtime?.id, selectedSeats, selectedCombos, pointsToUseNumber]);
 
   // Hold Timer countdown (Rule 19 & 20)
   useEffect(() => {
@@ -989,23 +978,6 @@ export default function BookingPage() {
       if (next === 0) delete updated[id]; else updated[id] = next;
       return updated;
     });
-  };
-
-  // Voucher apply handler
-  const handleApplyVoucher = () => {
-    if (!voucherInput.trim()) {
-      showToast('Vui lòng nhập mã ưu đãi.');
-      return;
-    }
-    setAppliedVoucher({ code: voucherInput.trim().toUpperCase() });
-    showToast(`Đang kiểm tra mã ${voucherInput.trim().toUpperCase()}...`);
-  };
-
-  const handleRemoveVoucher = () => {
-    setAppliedVoucher(null);
-    setVoucherInput('');
-    setVoucherError(null);
-    showToast('Đã bỏ áp dụng mã ưu đãi.');
   };
 
   // Group selected seats for summary (Rule 16)
@@ -1183,7 +1155,7 @@ export default function BookingPage() {
   // SUB-VIEW: PAYMENT METHOD / PROCESSING / FAILED / SUCCESS
   if (paymentState !== 'booking') {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6 lg:px-8 space-y-8 pb-24 text-white">
+      <div className="square-ui mx-auto max-w-5xl px-4 py-12 sm:px-6 lg:px-8 space-y-8 pb-24 text-white">
         {/* Security Header */}
         <div className="flex items-center justify-between border-b border-white/10 pb-5">
           <div className="flex items-center space-x-3">
@@ -1287,12 +1259,6 @@ export default function BookingPage() {
                   <span>Tạm tính:</span>
                   <span className="font-mono text-white">{formatVnd(displaySubtotal)}</span>
                 </div>
-                {displayDiscount > 0 && (
-                  <div className="flex justify-between text-emerald-400">
-                    <span>Ưu đãi voucher:</span>
-                    <span className="font-mono">-{formatVnd(displayDiscount)}</span>
-                  </div>
-                )}
                 {displayPointsDiscount > 0 && (
                   <div className="flex justify-between text-amber-400">
                     <span>CinePoints:</span>
@@ -1408,7 +1374,7 @@ export default function BookingPage() {
 
   // MAIN BOOKING VIEW
   return (
-    <div className="mx-auto max-w-6xl px-3.5 sm:px-6 pt-3 sm:pt-4 pb-20 space-y-4 text-white">
+    <div className="square-ui mx-auto max-w-6xl px-3.5 sm:px-6 pt-3 sm:pt-4 pb-20 space-y-4 text-white">
       {/* Top Header & Navigation - Compact & Clean */}
       <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-white/10 pb-2.5">
         <div className="flex items-center space-x-2">
@@ -2364,42 +2330,6 @@ export default function BookingPage() {
                 </div>
               )}
 
-              {/* Voucher Input (Rule 30) */}
-              <div className="space-y-2 border-b border-white/10 pb-4">
-                <span className="text-xs font-bold uppercase tracking-wider text-amber-500 flex items-center gap-1.5">
-                  <Tag className="w-3.5 h-3.5" /> MÃ ƯU ĐÃI (VOUCHER)
-                </span>
-                {appliedVoucher ? (
-                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-emerald-950/30 border border-emerald-500/30 text-xs">
-                    <div>
-                      <span className="font-bold text-emerald-400">{appliedVoucher.code}</span>
-                      {displayDiscount > 0 && <span className="ml-2 text-white">(-{formatVnd(displayDiscount)})</span>}
-                    </div>
-                    <button onClick={handleRemoveVoucher} className="text-neutral-400 hover:text-white text-xs font-semibold">
-                      Hủy
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Nhập mã voucher"
-                      value={voucherInput}
-                      onChange={(e) => setVoucherInput(e.target.value.toUpperCase())}
-                      className="flex-1 px-3 py-1.5 bg-neutral-900 border border-white/10 rounded-lg text-xs text-white focus:border-amber-500 focus:outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleApplyVoucher}
-                      className="px-3 py-1.5 text-xs font-bold bg-amber-500 hover:bg-amber-400 text-black rounded-lg transition"
-                    >
-                      ÁP DỤNG
-                    </button>
-                  </div>
-                )}
-                {voucherError && <p className="text-[11px] text-rose-400">{voucherError}</p>}
-              </div>
-
               {/* CinePoints Panel (Rule 31) */}
               {loyaltyPoints > 0 && (
                 <div className="space-y-2 border-b border-white/10 pb-4 text-xs">
@@ -2443,12 +2373,6 @@ export default function BookingPage() {
                   <div className="flex justify-between text-neutral-400">
                     <span>Tạm tính bắp nước:</span>
                     <span className="font-mono text-white">{formatVnd(displayFoodSubtotal)}</span>
-                  </div>
-                )}
-                {displayDiscount > 0 && (
-                  <div className="flex justify-between text-emerald-400">
-                    <span>Voucher giảm giá:</span>
-                    <span className="font-mono">-{formatVnd(displayDiscount)}</span>
                   </div>
                 )}
                 {displayPointsDiscount > 0 && (

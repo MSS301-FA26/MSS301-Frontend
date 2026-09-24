@@ -115,25 +115,11 @@ export default function ConcessionsPage() {
   const [onlyInStock, setOnlyInStock] = useState(false);
   const [categories, setCategories] = useState([]);
 
-  // ── Voucher & Promotion State ────────────────────────────────────────────────
-  const [voucherCode, setVoucherCode] = useState('');
-  const [appliedVoucher, setAppliedVoucher] = useState(null);
-  const [voucherError, setVoucherError] = useState('');
-  const [isValidatingVoucher, setIsValidatingVoucher] = useState(false);
-  const [availablePromotions, setAvailablePromotions] = useState([]);
-
-  // Load public categories & active promotions
+  // Load public food categories
   useEffect(() => {
     movieService.getFoodCategories?.()
       .then((data) => setCategories(Array.isArray(data) ? data : []))
       .catch(() => setCategories([]));
-
-    movieService.getActivePromotions?.()
-      .then((data) => {
-        const active = Array.isArray(data) ? data.filter((p) => p.applicableTarget !== 'TICKET_ONLY') : [];
-        setAvailablePromotions(active);
-      })
-      .catch(() => setAvailablePromotions([]));
   }, []);
 
   const refreshFoodOrders = useCallback(async () => {
@@ -441,50 +427,7 @@ export default function ConcessionsPage() {
     }
   };
 
-  const handleApplyVoucher = async (codeToUse) => {
-    const code = (codeToUse || voucherCode).trim().toUpperCase();
-    if (!code) {
-      setVoucherError('Vui lòng nhập mã ưu đãi.');
-      return;
-    }
-    const { accessToken } = getStoredAuth();
-    setIsValidatingVoucher(true);
-    setVoucherError('');
-    try {
-      const res = await movieService.validateVoucher({
-        code,
-        orderAmount: totalAmount,
-        target: 'FOOD_ONLY'
-      }, accessToken);
-
-      if (res && res.valid) {
-        setAppliedVoucher(res);
-        setVoucherCode(code);
-        showToast(res.message || `Đã áp dụng mã ưu đãi ${code}!`);
-      } else {
-        setAppliedVoucher(null);
-        setVoucherError(res?.message || 'Mã ưu đãi không hợp lệ.');
-        showToast(res?.message || 'Mã ưu đãi không hợp lệ.');
-      }
-    } catch (err) {
-      setAppliedVoucher(null);
-      setVoucherError(err.message || 'Không thể kiểm tra mã ưu đãi.');
-      showToast(err.message || 'Mã ưu đãi không hợp lệ.');
-    } finally {
-      setIsValidatingVoucher(false);
-    }
-  };
-
-  const handleRemoveVoucher = () => {
-    setAppliedVoucher(null);
-    setVoucherCode('');
-    setVoucherError('');
-    showToast('Đã hủy áp dụng voucher.');
-  };
-
-  const finalPayableAmount = appliedVoucher
-    ? Math.max(0, totalAmount - Number(appliedVoucher.discountAmount || 0))
-    : totalAmount;
+  const finalPayableAmount = totalAmount;
 
   const handleCheckout = async () => {
     if (selectedRows.length === 0) {
@@ -501,7 +444,6 @@ export default function ConcessionsPage() {
         foodComboId: item.foodComboId ?? null,
         quantity: item.quantity,
       })),
-      promotionCode: appliedVoucher ? appliedVoucher.code : undefined
     };
 
     setCheckoutError('');
@@ -1251,81 +1193,6 @@ export default function ConcessionsPage() {
                 </span>
               </div>
 
-              {/* ── Voucher & Promotion Section ── */}
-              <div className="pt-2 border-t border-white/10 space-y-2">
-                <div className="flex items-center justify-between text-[11px] font-semibold text-neutral-300">
-                  <span className="flex items-center gap-1.5 text-amber-400">
-                    <Tag className="h-3.5 w-3.5" /> Mã ưu đãi / Voucher
-                  </span>
-                  {appliedVoucher && (
-                    <span className="text-[10px] text-emerald-400 font-mono">Đã áp dụng</span>
-                  )}
-                </div>
-
-                {appliedVoucher ? (
-                  <div className="flex items-center justify-between p-2 rounded bg-emerald-500/10 border border-emerald-500/30">
-                    <div className="min-w-0 pr-2">
-                      <span className="font-mono font-bold text-xs text-emerald-400 tracking-wider">
-                        {appliedVoucher.code}
-                      </span>
-                      <p className="text-[10px] text-neutral-300 truncate">
-                        {appliedVoucher.message || 'Giảm giá thành công'}
-                      </p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleRemoveVoucher}
-                      title="Gỡ mã"
-                      className="p-1 text-neutral-400 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    <div className="flex gap-1.5">
-                      <input
-                        type="text"
-                        value={voucherCode}
-                        onChange={(e) => setVoucherCode(e.target.value.toUpperCase())}
-                        onKeyDown={(e) => e.key === 'Enter' && handleApplyVoucher()}
-                        placeholder="Nhập mã ưu đãi (VD: POPFREE15K)..."
-                        disabled={totalItems === 0 || isValidatingVoucher}
-                        className="flex-1 bg-black/50 border border-white/10 focus:border-amber-500/50 rounded px-2.5 py-1.5 text-xs text-white placeholder-neutral-500 uppercase font-mono tracking-wider focus:outline-none disabled:opacity-50"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleApplyVoucher()}
-                        disabled={!voucherCode.trim() || totalItems === 0 || isValidatingVoucher}
-                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold uppercase transition disabled:opacity-40 rounded"
-                      >
-                        {isValidatingVoucher ? <RefreshCw className="h-3 w-3 animate-spin" /> : 'Áp dụng'}
-                      </button>
-                    </div>
-                    {voucherError && (
-                      <p className="text-[10px] text-rose-400 font-mono">{voucherError}</p>
-                    )}
-
-                    {/* Quick suggestion tags if available */}
-                    {availablePromotions.length > 0 && totalItems > 0 && (
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        <span className="text-[9px] text-neutral-500 self-center">Gợi ý:</span>
-                        {availablePromotions.slice(0, 2).map((promo) => (
-                          <button
-                            key={promo.id}
-                            type="button"
-                            onClick={() => handleApplyVoucher(promo.code)}
-                            className="px-2 py-0.5 rounded text-[10px] font-mono font-medium bg-amber-500/10 border border-dashed border-amber-500/40 text-amber-300 hover:bg-amber-500/20 transition-colors"
-                          >
-                            +{promo.code}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
               {/* Price Breakdown */}
               <div className="space-y-1.5 text-xs font-mono pt-2 border-t border-white/10">
                 <div className="flex justify-between text-neutral-400">
@@ -1336,12 +1203,6 @@ export default function ConcessionsPage() {
                   <div className="flex justify-between text-emerald-400">
                     <span>Ưu đãi Combo:</span>
                     <span>-{formatVnd(totalSavings)}</span>
-                  </div>
-                )}
-                {appliedVoucher && (
-                  <div className="flex justify-between text-emerald-400 font-bold">
-                    <span>Mã ưu đãi ({appliedVoucher.code}):</span>
-                    <span>-{formatVnd(appliedVoucher.discountAmount)}</span>
                   </div>
                 )}
                 <div className="flex items-baseline justify-between pt-2 border-t border-white/10">
@@ -1413,7 +1274,7 @@ export default function ConcessionsPage() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <span className="text-[9px] font-mono uppercase text-neutral-400 block">
-                {totalItems} món đã chọn {appliedVoucher ? `(Đã giảm ${formatVnd(appliedVoucher.discountAmount)})` : ''}
+                {totalItems} món đã chọn
               </span>
               <span className="font-mono text-base font-black text-amber-400">
                 {formatVnd(finalPayableAmount)}

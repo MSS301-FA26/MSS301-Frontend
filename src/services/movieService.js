@@ -138,6 +138,4 @@ export const movieService = {
   getFoodCombos: () => request('/api/v1/foods/combos').then(unwrapListPayload),
   getFoodCategories: () => request('/api/v1/foods/categories').then(unwrapListPayload),
   getPublicCinema: () => request('/api/v1/cinema'),
-  getActivePromotions: () => request('/api/v1/promotions/active').then(unwrapListPayload),
-  validateVoucher: (payload, token) => request('/api/v1/promotions/validate', { method: 'POST', body: payload, token })
 };

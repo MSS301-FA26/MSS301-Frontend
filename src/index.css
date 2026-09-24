@@ -593,3 +593,38 @@ h3 {
   background: #fff;
   color: #000;
 }
+
+/* ─── Sleek Custom Scrollbar ─── */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(245, 158, 11, 0.35);
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(245, 158, 11, 0.65);
+}
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(245, 158, 11, 0.35) transparent;
+}
+
+/* Cinema detail and booking surfaces use a sharp, squared visual language. */
+.square-ui button,
+.square-ui input,
+.square-ui select,
+.square-ui textarea,
+.square-ui .rounded,
+.square-ui .rounded-sm,
+.square-ui .rounded-md,
+.square-ui .rounded-lg,
+.square-ui .rounded-xl,
+.square-ui .rounded-2xl {
+  border-radius: 0 !important;
+}
