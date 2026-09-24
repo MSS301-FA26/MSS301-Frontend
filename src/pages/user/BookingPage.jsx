@@ -812,13 +812,15 @@ export default function BookingPage() {
     if (!seatMapData?.seats) return [];
     return seatMapData.seats.map(s => {
       const seatTypeNorm = normalizeSeatType(s.seatType);
-      const isMyHeldSeat = (heldSeatIdsRef.current && heldSeatIdsRef.current.includes(s.seatId))
-        || selectedSeats.some(sel => sel.seatId === s.seatId);
-      const isBooked = !isMyHeldSeat && (
-        s.runtimeStatus === 'HOLDING'
-        || s.runtimeStatus === 'BOOKED'
+      const isMyHeldSeat = s.runtimeStatus === 'HOLDING' && (
+        (heldSeatIdsRef.current && heldSeatIdsRef.current.includes(s.seatId))
+        || selectedSeats.some(sel => sel.seatId === s.seatId)
+      );
+      const isBooked = (
+        s.runtimeStatus === 'BOOKED'
         || s.runtimeStatus === 'CHECKED_IN'
         || s.seatStatus !== 'AVAILABLE'
+        || (s.runtimeStatus === 'HOLDING' && !isMyHeldSeat)
       );
       return {
         id: `${s.rowLabel}${s.seatNumber}`,
