@@ -628,3 +628,14 @@ h3 {
 .square-ui .rounded-2xl {
   border-radius: 0 !important;
 }
+
+/* Seat Shake Animation for invalid selection (140ms) */
+@keyframes seatShake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+
+.animate-seat-shake {
+  animation: seatShake 140ms ease-in-out;
+}

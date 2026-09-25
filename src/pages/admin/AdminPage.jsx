@@ -26,7 +26,7 @@ import AdminWalletPanel from './system/AdminWalletPanel';
 import AdminCinemaPanel from './cinema/AdminCinemaPanel';
 import AdminRoomsPanel from './cinema/AdminRoomsPanel';
 import AdminTicketsPanel from './cinema/AdminTicketsPanel';
-import AdminPricingPanel from './cinema/AdminPricingPanel';
+
 import AdminAuditPanel from './system/AdminAuditPanel';
 import AdminStatsPanel from './overview/AdminStatsPanel';
 import AdminFnbReportPanel from './overview/AdminFnbReportPanel';
@@ -65,6 +65,7 @@ function NavSectionLabel({ children }) {
 const SECTION_TITLE = {
   overview: 'Tổng quan hệ thống', movies: 'Thư viện phim', genres: 'Thể loại phim',
   actors: 'Diễn viên', foods: 'Bắp nước / F&B', rooms: 'Phòng chiếu & ghế',
+
   showtimes: 'Điều phối lịch chiếu', tickets: 'Quản lý vé', transactions: 'Giao dịch',
   'showtime-incidents': 'Báo cáo sự cố & hoàn tiền', 'fnb-report': 'Báo cáo F&B',
   statistics: 'Thống kê mua bán', audit: 'Audit log', users: 'Quản lý người dùng',
@@ -88,6 +89,7 @@ const ADMIN_SECTIONS = new Set([
   'foods',
   'fnb-report',
   'rooms',
+
   'showtimes',
   'showtime-incidents',
   'tickets',
@@ -1647,7 +1649,7 @@ export default function AdminDashboard({
     loyalty: AdminLoyaltyPanel,
     cinema: AdminCinemaPanel,
     rooms: AdminRoomsPanel,
-    pricing: AdminPricingPanel,
+
   };
 
   const ActiveAdminPanel = adminPanels[activeTab] || AdminOverviewPanel;
@@ -1699,7 +1701,6 @@ export default function AdminDashboard({
                 null,
                 null,
                 { icon: Layers, tab: 'rooms', sound: 470 },
-                { icon: DollarSign, tab: 'pricing', sound: 475 },
                 { icon: Calendar, tab: 'showtimes', sound: 480 },
                 { icon: AlertCircle, tab: 'showtime-incidents', sound: 486 },
                 { icon: FileText, tab: 'tickets', sound: 492 },
@@ -1762,7 +1763,6 @@ export default function AdminDashboard({
 
                 <NavSectionLabel>Quản lý rạp</NavSectionLabel>
                 <NavItem indent icon={Layers} label="Phòng chiếu & ghế" active={activeTab === 'rooms'} onClick={() => { playPulseSound(470, 'sine', 0.05); changeAdminSection('rooms'); }} />
-                <NavItem indent icon={DollarSign} label="Bảng giá vé" active={activeTab === 'pricing'} onClick={() => { playPulseSound(475, 'sine', 0.05); changeAdminSection('pricing'); }} />
                 <NavItem indent icon={Calendar} label="Điều phối lịch chiếu" active={activeTab === 'showtimes'} onClick={() => { playPulseSound(480, 'sine', 0.05); changeAdminSection('showtimes'); }} />
                 <NavItem indent icon={AlertCircle} label="Báo cáo sự cố & hoàn tiền" active={activeTab === 'showtime-incidents'} onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('showtime-incidents'); }} />
                 <NavItem indent icon={FileText} label="Quản lý vé" active={activeTab === 'tickets'} onClick={() => { playPulseSound(492, 'sine', 0.05); changeAdminSection('tickets'); }} />
@@ -2090,6 +2090,7 @@ export default function AdminDashboard({
                     </span>
                     {activeTab === 'rooms' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
                   </button>
+
 
                   <button
                     onClick={() => { playPulseSound(480, 'sine', 0.05); changeAdminSection('showtimes'); }}
