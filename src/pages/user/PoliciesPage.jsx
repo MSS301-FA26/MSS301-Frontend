@@ -79,7 +79,7 @@ const policySections = [
 
 const vipRules = [
   { label: 'Hạng Silver', value: 'Tích lũy 500 điểm, nhận ưu đãi bắp nước theo tháng.' },
-  { label: 'Hạng Gold', value: 'Tích lũy 2.000 điểm, ưu tiên đặt ghế đẹp và nhận voucher sinh nhật.' },
+  { label: 'Hạng Gold', value: 'Tích lũy 2.000 điểm, ưu tiên đặt ghế đẹp và nhận quyền lợi thành viên.' },
   { label: 'Hạng Platinum', value: 'Tích lũy 5.000 điểm, hỗ trợ đổi vé linh hoạt và phòng chờ VIP theo rạp áp dụng.' }
 ];
 

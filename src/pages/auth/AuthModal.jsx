@@ -88,7 +88,11 @@ export default function AuthModal({
   const googleScriptPromiseRef = useRef(null);
   const googleClientInitializedRef = useRef(false);
   const googleButtonRef = useRef(null);
-  const googleClientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
+  const googleClientId = (
+    import.meta.env.VITE_GOOGLE_CLIENT_ID ||
+    import.meta.env.GOOGLE_OAUTH_CLIENT_ID ||
+    ''
+  ).trim();
   const googleAllowedOrigins = String(import.meta.env.VITE_GOOGLE_ALLOWED_ORIGINS || '')
     .split(',')
     .map((origin) => origin.trim())

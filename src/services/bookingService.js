@@ -2,6 +2,8 @@ import { buildQueryString, request, unwrapListPayload } from './authService';
 
 export const bookingService = {
   getShowtimes: (params = {}) => request(`/api/v1/showtimes${buildQueryString(params)}`),
+  getCustomerSchedule: (params = {}) => request(`/api/v1/showtimes/customer-schedule${buildQueryString(params)}`),
+  resolveCustomerShowtime: (showtimeId) => request(`/api/v1/showtimes/${showtimeId}/resolve`),
   getSeatMap: (showtimeId) => request(`/api/v1/showtimes/${showtimeId}/seat-map`),
   getShowtimeDetail: (showtimeId) => request(`/api/v1/showtimes/${showtimeId}`),
   validateTicketPrice: (token, body) => request('/api/v1/ticket-pricing/validate', { method: 'POST', token, body }),

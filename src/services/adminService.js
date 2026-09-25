@@ -202,15 +202,6 @@ export const adminService = {
   // Hủy vé; nếu vé đã thanh toán (PAID) backend tự hoàn tiền về CineWallet của khách.
   cancelBookingAdmin:   (token, id, reason)  => request(`/api/v1/admin/bookings/${enc(id)}${reason ? `?reason=${enc(reason)}` : ''}`, { method: 'DELETE', token }),
 
-  // ── Promotions & Vouchers ──────────────────────────────────────────────────
-  getAdminPromotions:         (token, params = {}) => request(`/api/v1/admin/promotions${buildQueryString(params)}`, { token }).then(unwrapListPayload),
-  getAdminPromotionStats:    (token) => request('/api/v1/admin/promotions/stats', { token }),
-  getAdminPromotionDetail:   (token, id) => request(`/api/v1/admin/promotions/${enc(id)}`, { token }),
-  createAdminPromotion:      (token, payload) => request('/api/v1/admin/promotions', { method: 'POST', token, body: payload }),
-  updateAdminPromotion:      (token, id, payload) => request(`/api/v1/admin/promotions/${enc(id)}`, { method: 'PUT', token, body: payload }),
-  toggleAdminPromotionStatus: (token, id) => request(`/api/v1/admin/promotions/${enc(id)}/toggle-status`, { method: 'PATCH', token }),
-  deleteAdminPromotion:      (token, id) => request(`/api/v1/admin/promotions/${enc(id)}`, { method: 'DELETE', token }),
-  restoreAdminPromotion:     (token, id) => request(`/api/v1/admin/promotions/${enc(id)}/restore`, { method: 'POST', token }),
 
   // ── Ticket Pricing ──────────────────────────────────────────────────────────
   getAdminPricingRules:       (token, params = {}) => request(`/api/v1/admin/ticket-pricing/rules${buildQueryString(params)}`, { token }).then(unwrapListPayload),
@@ -218,4 +209,3 @@ export const adminService = {
   updateAdminPricingRule:     (token, id, payload) => request(`/api/v1/admin/ticket-pricing/rules/${enc(id)}`, { method: 'PUT', token, body: payload }),
   deleteAdminPricingRule:     (token, id) => request(`/api/v1/admin/ticket-pricing/rules/${enc(id)}`, { method: 'DELETE', token }),
 };
-

@@ -1,11 +1,13 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Plus, Trash2, Edit3, ShieldAlert, FileText, Database,
   Calendar, Users, DollarSign, Activity, AlertCircle, CheckCircle2,
   Search, Sliders, ChevronDown, Check, RefreshCw, Layers, ShoppingBag,
   BarChart2, Clock, MapPin, Film, Play, Eye, EyeOff, Sparkles, TrendingUp, Info, Globe, Tags, ImageUp, Video, X,
-  Send, XCircle, History, Archive, ThumbsUp, ThumbsDown, BookOpen, Undo2, Globe2, Shield
+  Send, XCircle, History, Archive, ThumbsUp, ThumbsDown, BookOpen, Undo2, Globe2, Shield,
+  ArrowLeft, ArrowRight
 } from 'lucide-react';
 import { adminService } from '../../../services/adminService';
 
@@ -59,6 +61,13 @@ const AGE_RATING_EXPLAIN = {
   C: { label: 'C', name: 'Cấm phổ biến (C)', desc: 'Phim không được phép phổ biến đến khán giả.', color: 'bg-red-950/40 text-red-500 border-red-500/50' }
 };
 
+const AGE_RATING_OPTIONS = [
+  { value: 'P', label: 'P (Mọi lứa tuổi)' },
+  { value: 'T13', label: 'T13 (Dưới 13 hạn chế)' },
+  { value: 'T16', label: 'T16 (Dưới 16 hạn chế)' },
+  { value: 'T18', label: 'T18 (Chỉ người lớn)' }
+];
+
 const formatDurationVi = (minutes) => {
   const mins = Number(minutes);
   if (!mins || isNaN(mins)) return 'Đang cập nhật';
@@ -68,6 +77,150 @@ const formatDurationVi = (minutes) => {
   if (remMins === 0) return `${hours} giờ (${mins} phút)`;
   return `${hours}h ${remMins}m (${mins} phút)`;
 };
+
+// Module-level helper: hooks near the top of the component use this function,
+// so it must be initialized before React begins rendering the component.
+const normalizeSearchText = (value) => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toLowerCase()
+  .replace(/đ/g, 'd')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+const toLocalIsoDate = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const parseLocalIsoDate = (value) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+  if (!match) return null;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return date.getFullYear() === Number(match[1])
+    && date.getMonth() === Number(match[2]) - 1
+    && date.getDate() === Number(match[3]) ? date : null;
+};
+
+const formatLocalDateVi = (value) => {
+  const date = parseLocalIsoDate(value);
+  if (!date) return '';
+  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+};
+
+function MovieDatePicker({ value, onChange, minDate, label, hasError = false }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const initialDate = parseLocalIsoDate(value) || parseLocalIsoDate(minDate) || new Date();
+  const [visibleMonth, setVisibleMonth] = useState(() => new Date(initialDate.getFullYear(), initialDate.getMonth(), 1));
+  const [position, setPosition] = useState(null);
+  const triggerRef = useRef(null);
+  const popoverRef = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setPosition(null);
+      return undefined;
+    }
+    const selected = parseLocalIsoDate(value) || parseLocalIsoDate(minDate) || new Date();
+    setVisibleMonth(new Date(selected.getFullYear(), selected.getMonth(), 1));
+
+    const updatePosition = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const gap = 6;
+      const edge = 12;
+      const width = Math.min(320, window.innerWidth - edge * 2);
+      const height = 354;
+      const spaceBelow = window.innerHeight - rect.bottom - edge;
+      const openUp = spaceBelow < height && rect.top > spaceBelow;
+      setPosition({
+        width,
+        left: Math.min(Math.max(edge, rect.left), window.innerWidth - width - edge),
+        ...(openUp ? { bottom: window.innerHeight - rect.top + gap } : { top: rect.bottom + gap })
+      });
+    };
+    const handlePointerDown = (event) => {
+      if (triggerRef.current?.contains(event.target) || popoverRef.current?.contains(event.target)) return;
+      setIsOpen(false);
+    };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.stopImmediatePropagation();
+        setIsOpen(false);
+      }
+    };
+    updatePosition();
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isOpen, value, minDate]);
+
+  const year = visibleMonth.getFullYear();
+  const month = visibleMonth.getMonth();
+  const mondayOffset = (new Date(year, month, 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const cells = [
+    ...Array(mondayOffset).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, index) => index + 1)
+  ];
+  while (cells.length % 7) cells.push(null);
+  const todayIso = toLocalIsoDate(new Date());
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label={label}
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((open) => !open)}
+        className={`flex min-h-[36px] w-full items-center justify-between border bg-black/80 px-3 py-2 text-left font-mono text-xs transition focus:outline-none ${hasError ? 'border-rose-500 bg-rose-950/20 text-rose-200' : 'border-white/10 text-white hover:border-amber-500/60 focus:border-amber-400'}`}
+      >
+        <span className={value ? 'text-white' : 'text-neutral-500'}>{formatLocalDateVi(value) || 'dd/mm/yyyy'}</span>
+        <Calendar className="h-4 w-4 shrink-0 text-amber-400" />
+      </button>
+      {isOpen && position && createPortal(
+        <div ref={popoverRef} role="dialog" aria-label={`Lịch ${label}`} style={position} className="fixed z-[180] border border-amber-500/40 bg-[#0c0d12] p-3 text-white shadow-2xl shadow-black/90">
+          <div className="mb-3 flex items-center justify-between">
+            <button type="button" aria-label="Tháng trước" onClick={() => setVisibleMonth(new Date(year, month - 1, 1))} className="h-8 w-8 border border-white/10 text-lg text-neutral-300 hover:border-amber-400 hover:text-amber-300">‹</button>
+            <strong className="text-xs uppercase tracking-wider text-amber-300">Tháng {month + 1}, {year}</strong>
+            <button type="button" aria-label="Tháng sau" onClick={() => setVisibleMonth(new Date(year, month + 1, 1))} className="h-8 w-8 border border-white/10 text-lg text-neutral-300 hover:border-amber-400 hover:text-amber-300">›</button>
+          </div>
+          <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-neutral-400">
+            {['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'].map((day) => <span key={day} className="py-1">{day}</span>)}
+            {cells.map((day, index) => {
+              if (!day) return <span key={`empty-${index}`} className="h-8" />;
+              const iso = toLocalIsoDate(new Date(year, month, day));
+              const disabled = Boolean(minDate && iso < minDate);
+              const selected = iso === value;
+              const today = iso === todayIso;
+              return (
+                <button key={iso} type="button" disabled={disabled} aria-label={`${String(day).padStart(2, '0')}/${String(month + 1).padStart(2, '0')}/${year}`} onClick={() => { onChange(iso); setIsOpen(false); }} className={`h-8 border text-xs transition ${selected ? 'border-amber-400 bg-amber-400 font-black text-black' : today ? 'border-amber-500/50 text-amber-300' : 'border-transparent text-neutral-200 hover:border-white/20 hover:bg-white/10'} disabled:cursor-not-allowed disabled:text-neutral-700 disabled:hover:border-transparent disabled:hover:bg-transparent`}>
+                  {day}
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-2">
+            <button type="button" onClick={() => { onChange(''); setIsOpen(false); }} className="px-2 py-1 text-[10px] font-bold uppercase text-neutral-400 hover:text-rose-300">Xóa</button>
+            <button type="button" disabled={Boolean(minDate && todayIso < minDate)} onClick={() => { onChange(todayIso); setIsOpen(false); }} className="px-2 py-1 text-[10px] font-bold uppercase text-amber-300 hover:text-amber-200 disabled:cursor-not-allowed disabled:text-neutral-700">Hôm nay</button>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
 
 export default function AdminMoviesPanel({ ctx }) {
   const {
@@ -194,11 +347,26 @@ export default function AdminMoviesPanel({ ctx }) {
   const [isBannerUploading, setIsBannerUploading] = useState(false);
   const [isTrailerUploading, setIsTrailerUploading] = useState(false);
   const [createdActors, setCreatedActors] = useState([]);
-  const [focusedDateField, setFocusedDateField] = useState(null);
   const [isDirectorDropdownOpen, setIsDirectorDropdownOpen] = useState(false);
   const [directorPickerSearch, setDirectorPickerSearch] = useState('');
+  const directorTriggerRef = useRef(null);
+  const directorDropdownRef = useRef(null);
+  const [directorDropdownPosition, setDirectorDropdownPosition] = useState(null);
+  const [isGenreDropdownOpen, setIsGenreDropdownOpen] = useState(false);
+  const [genrePickerSearch, setGenrePickerSearch] = useState('');
+  const genreTriggerRef = useRef(null);
+  const genreDropdownRef = useRef(null);
+  const [genreDropdownPosition, setGenreDropdownPosition] = useState(null);
   const [isActorDropdownOpen, setIsActorDropdownOpen] = useState(false);
   const [actorPickerSearch, setActorPickerSearch] = useState('');
+  const actorTriggerRef = useRef(null);
+  const actorDropdownRef = useRef(null);
+  const [actorDropdownPosition, setActorDropdownPosition] = useState(null);
+  const [isAgeRatingDropdownOpen, setIsAgeRatingDropdownOpen] = useState(false);
+  const ageRatingTriggerRef = useRef(null);
+  const ageRatingDropdownRef = useRef(null);
+  const [ageRatingDropdownPosition, setAgeRatingDropdownPosition] = useState(null);
+  const [hasAttemptedNextStep, setHasAttemptedNextStep] = useState(false);
   const isMovieMediaUploading = isPosterUploading || isBannerUploading || isTrailerUploading;
   const [mediaReviewModal, setMediaReviewModal] = useState(null);
   const [rejectModal, setRejectModal] = useState(null); // { movie, reason }
@@ -206,6 +374,13 @@ export default function AdminMoviesPanel({ ctx }) {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [movieDetailModal, setMovieDetailModal] = useState(null);
   const [isDetailModalLoading, setIsDetailModalLoading] = useState(false);
+  const [movieFormStep, setMovieFormStep] = useState(1);
+
+  const movieFormSteps = [
+    { id: 1, label: 'Thông tin phim', description: 'Nội dung và lịch chiếu' },
+    { id: 2, label: 'Diễn viên & media', description: 'Dàn cast và hình ảnh' },
+    { id: 3, label: 'Kiểm tra & đăng', description: 'Rà soát lần cuối' }
+  ];
 
   const handleOpenMovieDetailModal = async (mv) => {
     if (!mv) return;
@@ -439,6 +614,7 @@ export default function AdminMoviesPanel({ ctx }) {
 
     activeDraftIdRef.current = null;
     setActiveDraftId(null);
+    setMovieFormStep(1);
     resetMovieForm();
     setShowMovieForm(false);
   };
@@ -455,6 +631,7 @@ export default function AdminMoviesPanel({ ctx }) {
       activeDraftIdRef.current = draft.id;
       setActiveDraftId(draft.id);
     }
+    setMovieFormStep(1);
     setShowMovieForm(true);
   };
 
@@ -480,7 +657,63 @@ export default function AdminMoviesPanel({ ctx }) {
     }
     activeDraftIdRef.current = null;
     setActiveDraftId(null);
+    setMovieFormStep(1);
     setShowMovieForm(true);
+  };
+
+  const toggleDirectorDropdown = () => {
+    setIsGenreDropdownOpen(false);
+    setIsActorDropdownOpen(false);
+    setIsAgeRatingDropdownOpen(false);
+    setIsDirectorDropdownOpen((prev) => !prev);
+  };
+
+  const toggleGenreDropdown = () => {
+    setIsDirectorDropdownOpen(false);
+    setIsActorDropdownOpen(false);
+    setIsAgeRatingDropdownOpen(false);
+    setIsGenreDropdownOpen((prev) => !prev);
+  };
+
+  const toggleActorDropdown = () => {
+    setIsDirectorDropdownOpen(false);
+    setIsGenreDropdownOpen(false);
+    setIsAgeRatingDropdownOpen(false);
+    setIsActorDropdownOpen((prev) => !prev);
+  };
+
+  const toggleAgeRatingDropdown = () => {
+    setIsDirectorDropdownOpen(false);
+    setIsGenreDropdownOpen(false);
+    setIsActorDropdownOpen(false);
+    setIsAgeRatingDropdownOpen((prev) => !prev);
+  };
+
+  const goToMovieFormStep = (step) => {
+    setIsDirectorDropdownOpen(false);
+    setIsActorDropdownOpen(false);
+    setIsGenreDropdownOpen(false);
+    setIsAgeRatingDropdownOpen(false);
+    setMovieFormStep(Math.min(3, Math.max(1, step)));
+  };
+
+  const filteredGenreOptions = useMemo(() => {
+    const q = normalizeSearchText(genrePickerSearch);
+    if (!q) return genres;
+    return genres.filter((g) => normalizeSearchText(g.name || '').includes(q));
+  }, [genres, genrePickerSearch]);
+
+  const selectedGenreObjects = useMemo(() => {
+    const ids = (formData.genreIds || []).map(Number);
+    return genres.filter((g) => ids.includes(Number(g.id)));
+  }, [genres, formData.genreIds]);
+
+  const clearAllGenres = () => {
+    setFormData((prev) => ({
+      ...prev,
+      genreIds: [],
+      genre: ''
+    }));
   };
 
   // Helper resolving movie id
@@ -510,11 +743,130 @@ export default function AdminMoviesPanel({ ctx }) {
 
   const isDuplicateTitle = duplicateMovieInSystem || duplicateMovieInDrafts;
 
+  const validateStep1 = (showError = true) => {
+    const title = String(formData.title || '').trim();
+    if (!title) {
+      if (showError) showToast?.('Vui lòng nhập tên tác phẩm (tiếng Việt).');
+      return false;
+    }
+    if (isDuplicateTitle) {
+      if (showError) showToast?.('Tên phim đã tồn tại trong hệ thống hoặc danh mục bản nháp. Vui lòng đổi tên khác!');
+      return false;
+    }
+    const englishTitle = String(formData.englishTitle || '').trim();
+    if (!englishTitle) {
+      if (showError) showToast?.('Vui lòng nhập tên tiếng Anh hoặc tiêu đề gốc.');
+      return false;
+    }
+    const director = String(formData.director || '').trim();
+    if (!director) {
+      if (showError) showToast?.('Vui lòng chọn hoặc nhập ít nhất một đạo diễn.');
+      return false;
+    }
+    const duration = Number(formData.duration);
+    if (!duration || duration < 60 || duration > 180) {
+      if (showError) showToast?.('Thời lượng phim phải từ 60 đến 180 phút.');
+      return false;
+    }
+    const genreIds = formData.genreIds || [];
+    if (genreIds.length === 0) {
+      if (showError) showToast?.('Vui lòng chọn ít nhất một thể loại phim.');
+      return false;
+    }
+    if (!formData.releaseDate) {
+      if (showError) showToast?.('Vui lòng chọn ngày bắt đầu chiếu.');
+      return false;
+    }
+    if (!editingMovie && formData.releaseDate < toLocalIsoDate(new Date())) {
+      if (showError) showToast?.('Ngày bắt đầu chiếu không được là ngày trong quá khứ.');
+      return false;
+    }
+    if (!formData.endDate) {
+      if (showError) showToast?.('Vui lòng chọn ngày kết thúc chiếu.');
+      return false;
+    }
+    if (formData.endDate < formData.releaseDate) {
+      if (showError) showToast?.('Ngày kết thúc chiếu phải bằng hoặc sau ngày bắt đầu chiếu.');
+      return false;
+    }
+    const language = String(formData.language || '').trim();
+    if (!language) {
+      if (showError) showToast?.('Vui lòng nhập ngôn ngữ phim.');
+      return false;
+    }
+    const subtitleLanguage = String(formData.subtitleLanguage || '').trim();
+    if (!subtitleLanguage) {
+      if (showError) showToast?.('Vui lòng nhập phụ đề phim.');
+      return false;
+    }
+    return true;
+  };
+
+  const validateStep2 = (showError = true) => {
+    const actorIds = formData.actorIds || [];
+    if (actorIds.length === 0) {
+      if (showError) showToast?.('Vui lòng chọn ít nhất một diễn viên cho phim.');
+      return false;
+    }
+    if (!String(formData.trailerUrl || '').trim()) {
+      if (showError) showToast?.('Vui lòng tải lên Trailer (Video) của phim.');
+      return false;
+    }
+    if (!String(formData.posterUrl || '').trim()) {
+      if (showError) showToast?.('Vui lòng tải lên Poster đứng (tỷ lệ 2:3) của phim.');
+      return false;
+    }
+    if (!String(formData.bannerUrl || '').trim()) {
+      if (showError) showToast?.('Vui lòng tải lên Banner ngang (tỷ lệ 16:9) của phim.');
+      return false;
+    }
+    return true;
+  };
+
+  const validateStep3 = (showError = true) => {
+    if (!String(formData.synopsis || '').trim()) {
+      if (showError) showToast?.('Vui lòng nhập nội dung tóm tắt phim trước khi xuất bản.');
+      return false;
+    }
+    return true;
+  };
+
+  const handleNextStep = () => {
+    setHasAttemptedNextStep(true);
+    if (movieFormStep === 1) {
+      if (!validateStep1(true)) {
+        playPulseSound?.(200, 'sine', 0.1);
+        return;
+      }
+      setHasAttemptedNextStep(false);
+      goToMovieFormStep(2);
+    } else if (movieFormStep === 2) {
+      if (!validateStep2(true)) {
+        playPulseSound?.(200, 'sine', 0.1);
+        return;
+      }
+      setHasAttemptedNextStep(false);
+      goToMovieFormStep(3);
+    }
+  };
+
   const onMovieSubmit = async (e) => {
     e.preventDefault();
-    if (isDuplicateTitle) {
+    if (!validateStep1(true)) {
+      goToMovieFormStep(1);
+      setHasAttemptedNextStep(true);
       playPulseSound?.(200, 'sine', 0.1);
-      showToast?.('Tên phim đã tồn tại trong hệ thống. Vui lòng chọn tên khác trước khi tiếp tục!');
+      return;
+    }
+    if (!validateStep2(true)) {
+      goToMovieFormStep(2);
+      setHasAttemptedNextStep(true);
+      playPulseSound?.(200, 'sine', 0.1);
+      return;
+    }
+    if (!validateStep3(true)) {
+      setHasAttemptedNextStep(true);
+      playPulseSound?.(200, 'sine', 0.1);
       return;
     }
     const currentId = activeDraftIdRef.current || activeDraftId;
@@ -554,11 +906,194 @@ export default function AdminMoviesPanel({ ctx }) {
     return () => window.clearTimeout(timeoutId);
   }, [isDirectorDropdownOpen, directorPickerSearch, fetchActors]);
 
+  useEffect(() => {
+    if (!isDirectorDropdownOpen) {
+      setDirectorDropdownPosition(null);
+      return undefined;
+    }
+
+    const updatePosition = () => {
+      const trigger = directorTriggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const viewportGap = 12;
+      const dropdownGap = 6;
+      const estimatedDropdownHeight = 258;
+      const spaceBelow = window.innerHeight - rect.bottom - viewportGap;
+      const shouldOpenUp = spaceBelow < estimatedDropdownHeight && rect.top > spaceBelow;
+
+      setDirectorDropdownPosition({
+        left: Math.max(viewportGap, rect.left),
+        width: Math.min(rect.width, window.innerWidth - (viewportGap * 2)),
+        ...(shouldOpenUp
+          ? { bottom: window.innerHeight - rect.top + dropdownGap }
+          : { top: rect.bottom + dropdownGap })
+      });
+    };
+
+    const handlePointerDown = (event) => {
+      if (directorTriggerRef.current?.contains(event.target)) return;
+      if (directorDropdownRef.current?.contains(event.target)) return;
+      setIsDirectorDropdownOpen(false);
+    };
+
+    updatePosition();
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isDirectorDropdownOpen]);
+
+  useEffect(() => {
+    if (!isGenreDropdownOpen) {
+      setGenreDropdownPosition(null);
+      return undefined;
+    }
+
+    const updatePosition = () => {
+      const trigger = genreTriggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const viewportGap = 12;
+      const dropdownGap = 6;
+      const estimatedDropdownHeight = 218;
+      const spaceBelow = window.innerHeight - rect.bottom - viewportGap;
+      const shouldOpenUp = spaceBelow < estimatedDropdownHeight && rect.top > spaceBelow;
+
+      setGenreDropdownPosition({
+        left: Math.max(viewportGap, rect.left),
+        width: Math.min(rect.width, window.innerWidth - (viewportGap * 2)),
+        ...(shouldOpenUp
+          ? { bottom: window.innerHeight - rect.top + dropdownGap }
+          : { top: rect.bottom + dropdownGap })
+      });
+    };
+
+    const handlePointerDown = (event) => {
+      if (genreTriggerRef.current?.contains(event.target)) return;
+      if (genreDropdownRef.current?.contains(event.target)) return;
+      setIsGenreDropdownOpen(false);
+    };
+
+    updatePosition();
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isGenreDropdownOpen]);
+
+  useEffect(() => {
+    if (!isActorDropdownOpen) {
+      setActorDropdownPosition(null);
+      return undefined;
+    }
+
+    const updatePosition = () => {
+      const trigger = actorTriggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const viewportGap = 12;
+      const dropdownGap = 6;
+      const estimatedDropdownHeight = 240;
+      const spaceBelow = window.innerHeight - rect.bottom - viewportGap;
+      const shouldOpenUp = spaceBelow < estimatedDropdownHeight && rect.top > spaceBelow;
+
+      setActorDropdownPosition({
+        left: Math.max(viewportGap, rect.left),
+        width: Math.min(rect.width, window.innerWidth - (viewportGap * 2)),
+        ...(shouldOpenUp
+          ? { bottom: window.innerHeight - rect.top + dropdownGap }
+          : { top: rect.bottom + dropdownGap })
+      });
+    };
+
+    const handlePointerDown = (event) => {
+      if (actorTriggerRef.current?.contains(event.target)) return;
+      if (actorDropdownRef.current?.contains(event.target)) return;
+      setIsActorDropdownOpen(false);
+    };
+
+    updatePosition();
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isActorDropdownOpen]);
+
+  useEffect(() => {
+    if (!isAgeRatingDropdownOpen) {
+      setAgeRatingDropdownPosition(null);
+      return undefined;
+    }
+
+    const updatePosition = () => {
+      const trigger = ageRatingTriggerRef.current;
+      if (!trigger) return;
+      const rect = trigger.getBoundingClientRect();
+      const viewportGap = 12;
+      const dropdownGap = 6;
+      const estimatedDropdownHeight = 152;
+      const spaceBelow = window.innerHeight - rect.bottom - viewportGap;
+      const shouldOpenUp = spaceBelow < estimatedDropdownHeight && rect.top > spaceBelow;
+      setAgeRatingDropdownPosition({
+        left: Math.max(viewportGap, rect.left),
+        width: Math.min(rect.width, window.innerWidth - (viewportGap * 2)),
+        ...(shouldOpenUp
+          ? { bottom: window.innerHeight - rect.top + dropdownGap }
+          : { top: rect.bottom + dropdownGap })
+      });
+    };
+
+    const handlePointerDown = (event) => {
+      if (ageRatingTriggerRef.current?.contains(event.target)) return;
+      if (ageRatingDropdownRef.current?.contains(event.target)) return;
+      setIsAgeRatingDropdownOpen(false);
+    };
+
+    updatePosition();
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [isAgeRatingDropdownOpen]);
+
   // Đóng modal khi nhấn phím Escape
   useEffect(() => {
     if (!showMovieForm && !mediaReviewModal) return undefined;
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
+        if (isAgeRatingDropdownOpen) {
+          setIsAgeRatingDropdownOpen(false);
+          return;
+        }
+        if (isActorDropdownOpen) {
+          setIsActorDropdownOpen(false);
+          return;
+        }
+        if (isDirectorDropdownOpen) {
+          setIsDirectorDropdownOpen(false);
+          return;
+        }
+        if (isGenreDropdownOpen) {
+          setIsGenreDropdownOpen(false);
+          return;
+        }
         if (mediaReviewModal) {
           setMediaReviewModal(null);
           return;
@@ -568,7 +1103,7 @@ export default function AdminMoviesPanel({ ctx }) {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showMovieForm, mediaReviewModal, handleCloseMovieForm]);
+  }, [showMovieForm, mediaReviewModal, isAgeRatingDropdownOpen, isActorDropdownOpen, isDirectorDropdownOpen, isGenreDropdownOpen, handleCloseMovieForm]);
 
   const hasReleaseDatePassed = (value) => {
     if (!value) return false;
@@ -580,29 +1115,14 @@ export default function AdminMoviesPanel({ ctx }) {
   };
 
   const todayInputValue = (() => {
-    const today = new Date();
-    today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
-    return today.toISOString().slice(0, 10);
+    return toLocalIsoDate(new Date());
   })();
 
-  const formatDateForDisplay = (value) => {
-    if (!value) return '';
-    const parts = String(value).split('-');
-    if (parts.length !== 3) return value;
-    const [year, month, day] = parts;
-    return `${day}/${month}/${year}`;
-  };
-
   const resolveMovieStatusFromDates = (releaseDateValue, endDateValue) => {
-    const releaseDate = new Date(releaseDateValue);
-    const endDate = new Date(endDateValue);
-    const today = new Date();
-    releaseDate.setHours(0, 0, 0, 0);
-    endDate.setHours(0, 0, 0, 0);
-    today.setHours(0, 0, 0, 0);
-    if (Number.isNaN(releaseDate.getTime()) || Number.isNaN(endDate.getTime())) return 'UPCOMING';
-    if (today < releaseDate) return 'UPCOMING';
-    if (today > endDate) return 'ENDED';
+    if (!parseLocalIsoDate(releaseDateValue) || !parseLocalIsoDate(endDateValue)) return 'UPCOMING';
+    const today = toLocalIsoDate(new Date());
+    if (today < releaseDateValue) return 'UPCOMING';
+    if (today > endDateValue) return 'ENDED';
     return 'NOW_SHOWING';
   };
 
@@ -663,14 +1183,6 @@ export default function AdminMoviesPanel({ ctx }) {
         : [...mainActorIds, id]
     });
   };
-
-  const normalizeSearchText = (value) => String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/đ/g, 'd')
-    .replace(/\s+/g, ' ')
-    .trim();
 
   const fuzzyIncludes = (source, query) => {
     const normalizedSource = normalizeSearchText(source);
@@ -1020,21 +1532,22 @@ export default function AdminMoviesPanel({ ctx }) {
           <AnimatePresence>
             {showMovieForm && (
               <div
-                className="fixed inset-0 z-[150] flex items-center justify-center p-3 sm:p-5 bg-black/85 backdrop-blur-sm overflow-y-auto"
+                className="fixed inset-0 z-[150] flex items-center justify-center p-2.5 sm:p-4 bg-black/85 backdrop-blur-sm overflow-hidden"
                 onClick={handleCloseMovieForm}
               >
                 <motion.div
-                  initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                  initial={{ opacity: 0, scale: 0.96, y: 15 }}
                   animate={{ opacity: 1, scale: 1, y: 0 }}
-                  exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                  exit={{ opacity: 0, scale: 0.96, y: 15 }}
                   transition={{ duration: 0.2, ease: 'easeOut' }}
-                  className="relative w-full max-w-4xl max-h-[92vh] overflow-y-auto custom-scrollbar border border-amber-500/30 bg-[#0d0f14] shadow-2xl shadow-black/95 p-5 sm:p-6 space-y-4 my-auto rounded-none"
+                  className="relative w-full max-w-4xl lg:max-w-5xl max-h-[90vh] flex flex-col overflow-hidden border border-white/10 bg-[#0d0f14] shadow-2xl shadow-black/95 my-auto rounded-none"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <div className="flex justify-between items-center border-b border-white/10 pb-3">
+                  {/* MODAL HEADER */}
+                  <div className="flex justify-between items-center border-b border-white/10 px-5 py-3 sm:px-6 shrink-0 bg-[#0d0f14]">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center border border-amber-500/30 bg-amber-500/10 text-amber-400 rounded-none shrink-0">
-                        <Film className="h-5 w-5" />
+                      <div className="flex h-9 w-9 items-center justify-center border border-amber-500/30 bg-amber-500/10 text-amber-400 rounded-none shrink-0">
+                        <Film className="h-4.5 w-4.5" />
                       </div>
                       <div>
                         <span className="text-[9px] uppercase font-mono font-bold tracking-[0.2em] text-amber-400 block">
@@ -1055,15 +1568,16 @@ export default function AdminMoviesPanel({ ctx }) {
                       className="p-1.5 text-neutral-400 hover:text-white border border-white/10 hover:border-white/30 rounded-none transition"
                       title="Đóng cửa sổ (Tự động lưu vào Bản nháp)"
                     >
-                      <X className="h-4.5 w-4.5" />
+                      <X className="h-4 w-4" />
                     </button>
                   </div>
 
+                  {/* DRAFT ALERT */}
                   {(activeDraftIdRef.current || activeDraftId) && (
-                    <div className="flex flex-wrap items-center justify-between gap-2 bg-amber-500/10 border border-amber-500/30 px-3.5 py-2 rounded-none text-amber-200">
+                    <div className="mx-5 sm:mx-6 mt-2.5 shrink-0 flex flex-wrap items-center justify-between gap-2 rounded-none border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-amber-200">
                       <div className="flex items-center gap-2 text-xs">
-                        <FileText className="h-4 w-4 text-amber-400 shrink-0" />
-                        <span>
+                        <FileText className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                        <span className="text-[11px]">
                           Đang chỉnh sửa bản nháp (Tự động lưu vào danh mục Bản nháp)
                         </span>
                       </div>
@@ -1084,901 +1598,1204 @@ export default function AdminMoviesPanel({ ctx }) {
                     </div>
                   )}
 
-                <form onSubmit={onMovieSubmit} className="space-y-4 text-xs font-sans">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-200 font-black block">Tên tác phẩm (Tiếng Việt viết Hoa)</label>
-                        {isDuplicateTitle && (
-                          <span className="text-[10px] text-rose-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                            <AlertCircle className="h-3 w-3 shrink-0" /> Trùng tên phim
-                          </span>
-                        )}
+                  {/* FORM WITH FIXED STEPPER, SCROLLABLE BODY, FIXED FOOTER */}
+                  <form onSubmit={onMovieSubmit} className="flex flex-1 min-h-0 flex-col text-xs font-sans overflow-hidden">
+                    {/* Stepper bar */}
+                    <div className="border-b border-white/[0.08] bg-black/25 px-5 py-2 sm:px-6 shrink-0">
+                      <div className="grid grid-cols-3 gap-2">
+                        {movieFormSteps.map((step, index) => {
+                          const isActive = movieFormStep === step.id;
+                          const isStep1Done = validateStep1(false);
+                          const isStep2Done = isStep1Done && validateStep2(false);
+                          const isDone = (step.id === 1 && isStep1Done && movieFormStep > 1) || (step.id === 2 && isStep2Done && movieFormStep > 2);
+                          return (
+                            <button
+                              key={step.id}
+                              type="button"
+                              onClick={() => {
+                                if (step.id === movieFormStep) return;
+                                if (step.id === 1) {
+                                  goToMovieFormStep(1);
+                                } else if (step.id === 2) {
+                                  if (validateStep1(true)) {
+                                    setHasAttemptedNextStep(false);
+                                    goToMovieFormStep(2);
+                                  } else {
+                                    setHasAttemptedNextStep(true);
+                                    playPulseSound?.(200, 'sine', 0.1);
+                                  }
+                                } else if (step.id === 3) {
+                                  if (!validateStep1(true)) {
+                                    goToMovieFormStep(1);
+                                    setHasAttemptedNextStep(true);
+                                    playPulseSound?.(200, 'sine', 0.1);
+                                    return;
+                                  }
+                                  if (!validateStep2(true)) {
+                                    goToMovieFormStep(2);
+                                    setHasAttemptedNextStep(true);
+                                    playPulseSound?.(200, 'sine', 0.1);
+                                    return;
+                                  }
+                                  setHasAttemptedNextStep(false);
+                                  goToMovieFormStep(3);
+                                }
+                              }}
+                              className={`group relative flex min-w-0 items-center gap-2 rounded-none border px-2.5 py-1.5 text-left transition sm:px-3 ${
+                                isActive
+                                  ? 'border-amber-400/60 bg-amber-400/10'
+                                  : isDone
+                                    ? 'cursor-pointer border-emerald-500/25 bg-emerald-500/[0.06] hover:border-emerald-400/50'
+                                    : 'cursor-pointer border-white/[0.06] bg-black/20 hover:border-white/20'
+                              }`}
+                            >
+                              <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-none border text-[10px] font-black ${
+                                isActive
+                                  ? 'border-amber-400 bg-amber-400 text-black'
+                                  : isDone
+                                    ? 'border-emerald-400 bg-emerald-400 text-black'
+                                    : 'border-white/15 text-neutral-500'
+                              }`}>
+                                {isDone ? <Check className="h-3 w-3 stroke-[3]" /> : step.id}
+                              </span>
+                              <span className="min-w-0">
+                                <span className={`block truncate text-[10px] font-black uppercase tracking-wider ${isActive ? 'text-amber-300' : isDone ? 'text-emerald-300' : 'text-neutral-500'}`}>
+                                  {step.label}
+                                </span>
+                                <span className="truncate text-[9px] text-neutral-400 hidden sm:block">{step.description}</span>
+                              </span>
+                              {index < movieFormSteps.length - 1 && (
+                                <span className={`absolute -right-2 top-1/2 z-10 h-px w-2 ${isDone ? 'bg-emerald-400/60' : 'bg-white/10'}`} />
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
-                      <input
-                        type="text"
-                        placeholder="VD: CHIẾN BINH ÁNH SÁNG (tối đa 50 ký tự)"
-                        maxLength={50}
-                        value={formData.title}
-                        onChange={(e) => setFormData({ ...formData, title: uppercaseMovieTitle(e.target.value) })}
-                        className={`w-full bg-black border p-2.5 text-xs font-bold focus:outline-none transition ${
-                          isDuplicateTitle
-                            ? 'border-rose-500 text-rose-200 bg-rose-950/20 focus:border-rose-400'
-                            : 'border-white/[0.06] text-white focus:border-amber-400'
-                        }`}
-                      />
-                      {isDuplicateTitle && (
-                        <div className="flex items-start gap-2 p-2 rounded-none bg-rose-950/50 border border-rose-500/40 text-rose-300 text-[11px] leading-snug animate-pulse">
-                          <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0 mt-0.5" />
-                          <div>
-                            <span className="font-bold">Cảnh báo: </span>
-                            {duplicateMovieInSystem
-                              ? 'Tên phim này đã tồn tại trong hệ thống. Vui lòng đặt tên khác, không thể lưu trùng tên!'
-                              : 'Tên phim này đã tồn tại trong danh mục Bản nháp khác. Vui lòng đổi tên khác!'}
-                          </div>
-                        </div>
-                      )}
                     </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-200 font-black block">Tên tiếng Anh hoặc tiêu đề gốc</label>
-                      <input
-                        type="text"
-                        placeholder="VD: Dawn of Light (tối đa 30 ký tự)"
-                        maxLength={30}
-                        value={formData.englishTitle}
-                        onChange={(e) => setFormData({ ...formData, englishTitle: e.target.value })}
-                        className="w-full bg-black border border-white/[0.06] p-2.5 text-xs text-white focus:outline-none focus:border-amber-400"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div className="space-y-1.5 md:col-span-2">
-                      <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-200 block">Đạo diễn</label>
-                      <div className="relative">
-                        <button
-                          type="button"
-                          onClick={() => setIsDirectorDropdownOpen((open) => !open)}
-                          className="flex min-h-11 w-full items-center justify-between gap-3 border border-white/[0.06] bg-black px-3 py-2 text-left text-xs text-white transition hover:border-amber-500/60 focus:outline-none focus:border-amber-400"
-                        >
-                          <span className="min-w-0 flex-1">
-                            {selectedDirectorNames.length ? (
-                              <span className="flex flex-wrap gap-1.5">
-                                {selectedDirectorNames.slice(0, 4).map((directorName) => (
-                                  <span key={directorName} className="inline-flex max-w-full items-center gap-1 border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[10px] font-bold text-amber-200">
-                                    <span className="truncate">{directorName}</span>
-                                  </span>
-                                ))}
-                                {selectedDirectorNames.length > 4 && (
-                                  <span className="border border-white/[0.08] bg-black px-2 py-1 text-[10px] font-bold text-neutral-200">
-                                    +{selectedDirectorNames.length - 4}
+                    {/* Scrollable Content Body */}
+                    <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar px-5 py-3.5 sm:px-6">
+                      {/* STEP 1: THÔNG TIN PHIM */}
+                      {movieFormStep === 1 && (
+                        <motion.div initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.15 }} className="space-y-3">
+                          {/* Row 1: Tên tiếng Việt & Tiếng Anh */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between">
+                                <label className="text-[10px] uppercase tracking-wider text-neutral-300 font-bold block">
+                                  Tên tác phẩm (Tiếng Việt viết Hoa) <span className="text-amber-400">*</span>
+                                </label>
+                                {isDuplicateTitle && (
+                                  <span className="text-[10px] text-rose-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                                    <AlertCircle className="h-3 w-3 shrink-0" /> Trùng tên phim
                                   </span>
                                 )}
-                              </span>
-                            ) : (
-                              <span className="text-neutral-300">Chọn hoặc nhập đạo diễn</span>
-                            )}
-                          </span>
-                          <ChevronDown className={`h-4 w-4 shrink-0 text-amber-400 transition ${isDirectorDropdownOpen ? 'rotate-180' : ''}`} />
-                        </button>
-
-                        {isDirectorDropdownOpen && (
-                          <div className="absolute left-0 right-0 z-40 mt-2 border border-amber-500/40 bg-[#050505] shadow-2xl shadow-black/60">
-                            <div className="border-b border-white/[0.05] p-2">
-                              <div className="flex items-center gap-2 border border-white/[0.06] bg-black px-2">
-                                <Search className="h-3.5 w-3.5 text-neutral-300" />
-                                <input
-                                  type="text"
-                                  value={directorPickerSearch}
-                                  onChange={(event) => setDirectorPickerSearch(event.target.value)}
-                                  onKeyDown={(event) => {
-                                    if (event.key !== 'Enter') return;
-                                    event.preventDefault();
-                                    addDirectorName(directorPickerSearch);
-                                  }}
-                                  placeholder="Tìm gần đúng hoặc nhập tên đạo diễn rồi Enter..."
-                                  className="h-9 min-w-0 flex-1 bg-transparent text-xs text-white placeholder:text-neutral-200 focus:outline-none"
-                                  autoFocus
-                                />
                               </div>
-                              {directorPickerSearch.trim() && !typedDirectorExists && (
-                                <button
-                                  type="button"
-                                  onClick={() => addDirectorName(directorPickerSearch)}
-                                  className="mt-2 w-full border border-amber-500/30 bg-amber-500/10 px-2 py-2 text-left text-[10px] font-black uppercase tracking-wider text-amber-300 hover:bg-amber-500 hover:text-black"
-                                >
-                                  Thêm đạo diễn: {directorPickerSearch.trim()}
-                                </button>
+                              <input
+                                type="text"
+                                placeholder="VD: CHIẾN BINH ÁNH SÁNG (tối đa 50 ký tự)"
+                                maxLength={50}
+                                value={formData.title}
+                                onChange={(e) => setFormData({ ...formData, title: uppercaseMovieTitle(e.target.value) })}
+                                className={`w-full bg-black/80 border p-2 text-xs font-bold rounded-none focus:outline-none transition ${
+                                  isDuplicateTitle || (hasAttemptedNextStep && !formData.title?.trim())
+                                    ? 'border-rose-500 text-rose-200 bg-rose-950/20 focus:border-rose-400'
+                                    : 'border-white/10 text-white focus:border-amber-400'
+                                }`}
+                              />
+                              {hasAttemptedNextStep && !formData.title?.trim() && !isDuplicateTitle && (
+                                <p className="text-[10px] text-rose-400 font-medium">Bắt buộc nhập tên tác phẩm</p>
+                              )}
+                              {isDuplicateTitle && (
+                                <div className="flex items-start gap-1.5 p-1.5 rounded-none bg-rose-950/50 border border-rose-500/40 text-rose-300 text-[10px] leading-snug animate-pulse">
+                                  <AlertCircle className="w-3 h-3 text-rose-400 shrink-0 mt-0.5" />
+                                  <div>
+                                    <span className="font-bold">Cảnh báo: </span>
+                                    {duplicateMovieInSystem
+                                      ? 'Tên phim đã tồn tại trong hệ thống. Vui lòng đặt tên khác!'
+                                      : 'Tên phim đã tồn tại trong danh mục Bản nháp khác!'}
+                                  </div>
+                                </div>
                               )}
                             </div>
 
-                            <div className="max-h-56 overflow-y-auto custom-scrollbar p-2">
-                              {directorOptions.length ? directorOptions.map((directorName) => {
-                                const isSelected = selectedDirectorNames.some((name) => normalizeSearchText(name) === normalizeSearchText(directorName));
-                                return (
-                                  <div
-                                    key={directorName}
-                                    className={`mb-1 grid grid-cols-[1fr_auto] items-center gap-2 border px-2 py-2 last:mb-0 ${isSelected ? 'border-amber-500/50 bg-amber-500/10' : 'border-white/[0.05] bg-neutral-950'}`}
-                                  >
-                                    <button type="button" onClick={() => isSelected ? removeDirectorName(directorName) : addDirectorName(directorName)} className="min-w-0 text-left">
-                                      <span className="flex items-center gap-2">
-                                        <span className={`grid h-4 w-4 shrink-0 place-items-center border ${isSelected ? 'border-amber-400 bg-amber-400 text-black' : 'border-white/[0.08] text-transparent'}`}>
-                                          <Check className="h-3 w-3" />
-                                        </span>
-                                        <span className="block truncate text-xs font-bold text-white">{directorName}</span>
-                                      </span>
-                                    </button>
-                                    {isSelected && (
-                                      <button
-                                        type="button"
-                                        onClick={() => removeDirectorName(directorName)}
-                                        className="h-7 border border-rose-500/30 px-2 text-[9px] font-black uppercase text-rose-300 transition hover:bg-rose-500 hover:text-white"
-                                      >
-                                        Xóa
-                                      </button>
-                                    )}
-                                  </div>
-                                );
-                              }) : (
-                                <p className="px-2 py-6 text-center text-[10px] text-neutral-300">Không tìm thấy đạo diễn phù hợp.</p>
+                            <div className="space-y-1">
+                              <label className="text-[10px] uppercase tracking-wider text-neutral-300 font-bold block">
+                                Tên tiếng Anh hoặc tiêu đề gốc <span className="text-amber-400">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="VD: Dawn of Light (tối đa 30 ký tự)"
+                                maxLength={30}
+                                value={formData.englishTitle}
+                                onChange={(e) => setFormData({ ...formData, englishTitle: e.target.value })}
+                                className={`w-full bg-black/80 border p-2 text-xs text-white rounded-none focus:outline-none transition ${
+                                  hasAttemptedNextStep && !formData.englishTitle?.trim()
+                                    ? 'border-rose-500 bg-rose-950/20 text-rose-200 focus:border-rose-400'
+                                    : 'border-white/10 focus:border-amber-400'
+                                }`}
+                              />
+                              {hasAttemptedNextStep && !formData.englishTitle?.trim() && (
+                                <p className="text-[10px] text-rose-400 font-medium">Bắt buộc nhập tên tiếng Anh hoặc tiêu đề gốc</p>
                               )}
                             </div>
                           </div>
-                        )}
-                      </div>
-                      {selectedDirectorNames.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {selectedDirectorNames.map((directorName) => (
-                            <span key={directorName} className="inline-flex items-center gap-1.5 border border-white/[0.08] bg-neutral-950 px-2 py-1 text-[10px] font-bold text-neutral-200">
-                              {directorName}
-                              <button type="button" onClick={() => removeDirectorName(directorName)} className="text-neutral-300 hover:text-rose-300">×</button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
 
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-200 block">Thời lượng (Số phút)</label>
-                      <input
-                        type="number"
-                        placeholder="60 - 180 phút"
-                        min={60}
-                        max={180}
-                        value={formData.duration}
-                        onChange={(e) => setFormData({ ...formData, duration: Number(e.target.value) })}
-                        className="w-full bg-black border border-white/[0.06] p-2.5 text-xs text-white focus:outline-none focus:border-amber-400 font-mono"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-200 block">Độ tuổi phân loại</label>
-                      <select
-                        value={formData.ageRating}
-                        onChange={(e) => setFormData({ ...formData, ageRating: e.target.value })}
-                        className="w-full bg-black border border-white/[0.06] p-2.5 text-xs text-white focus:outline-none focus:border-amber-400 font-bold"
-                      >
-                        <option value="P">P (Mọi lứa tuổi)</option>
-                        <option value="T13">T13 (Dưới 13 hạn chế)</option>
-                        <option value="T16">T16 (Dưới 16 hạn chế)</option>
-                        <option value="T18">T18 (Chỉ dành cho người trưởng thành)</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* THỂ LOẠI PHIM - VÙNG SCROLL VỚI TICK CHỌN */}
-                  <div className="space-y-2 border border-white/[0.06] bg-black/60 p-3.5 rounded-none">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-200 font-bold block">
-                          Thể loại phim
-                        </label>
-                        <span className="text-[9px] text-amber-400 font-mono bg-amber-500/10 px-2 py-0.5 rounded-none border border-amber-500/20">
-                          {(formData.genreIds || []).length} thể loại đã chọn
-                        </span>
-                      </div>
-                      {(formData.genreIds || []).length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setFormData({ ...formData, genreIds: [], genre: '' })}
-                          className="text-[10px] text-neutral-400 hover:text-rose-400 transition underline underline-offset-2"
-                        >
-                          Bỏ chọn tất cả
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Hiển thị tóm tắt các thể loại đã tick chọn */}
-                    {(formData.genreIds || []).length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5 p-2 bg-neutral-950/80 border border-white/[0.06] rounded-none max-h-20 overflow-y-auto custom-scrollbar">
-                        {genres
-                          .filter((g) => (formData.genreIds || []).includes(Number(g.id)))
-                          .map((g) => (
-                            <span
-                              key={g.id}
-                              className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-none bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[10px] font-bold"
-                            >
-                              <span>{g.name}</span>
-                              <button
-                                type="button"
-                                onClick={() => toggleMovieGenre(g.id)}
-                                className="text-amber-300 hover:text-rose-300 transition"
-                                title={`Bỏ chọn ${g.name}`}
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                            </span>
-                          ))}
-                      </div>
-                    ) : (
-                      <div className="text-[11px] text-neutral-400 bg-neutral-950/40 border border-dashed border-white/10 px-3 py-1.5 rounded-none">
-                        Chưa chọn thể loại nào. Vui lòng tick chọn ít nhất 1 thể loại ở danh sách cuộn bên dưới.
-                      </div>
-                    )}
-
-                    {/* Danh sách thể loại cuộn (scroll) có tick box */}
-                    <div className="max-h-40 overflow-y-auto custom-scrollbar bg-neutral-950 border border-white/[0.08] p-2 rounded-none">
-                      {isGenreLoading ? (
-                        <div className="flex items-center justify-center py-6 text-neutral-400 text-xs gap-2">
-                          <RefreshCw className="h-3.5 w-3.5 animate-spin text-amber-400" />
-                          <span>Đang tải danh sách thể loại...</span>
-                        </div>
-                      ) : genres.length > 0 ? (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                          {genres.map((genre) => {
-                            const isChecked = (formData.genreIds || []).includes(Number(genre.id));
-                            return (
-                              <label
-                                key={genre.id}
-                                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-none cursor-pointer select-none transition border group ${
-                                  isChecked
-                                    ? 'bg-amber-500/15 border-amber-500/60 text-amber-200'
-                                    : 'bg-black/70 border-white/[0.06] text-neutral-300 hover:bg-neutral-900 hover:border-white/20 hover:text-white'
-                                }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() => toggleMovieGenre(genre.id)}
-                                  className="sr-only"
-                                />
-                                <span
-                                  className={`h-4 w-4 rounded-none flex items-center justify-center shrink-0 border transition-all ${
-                                    isChecked
-                                      ? 'bg-amber-400 border-amber-400 text-black shadow-sm'
-                                      : 'border-white/20 bg-neutral-900 group-hover:border-amber-400/50'
+                          {/* Row 2: Đạo diễn, Thể loại, Thời lượng, Độ tuổi */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 items-start">
+                            <div className="space-y-1">
+                              <label className="text-[10px] uppercase tracking-wider text-neutral-300 font-bold block">
+                                Đạo diễn <span className="text-amber-400">*</span>
+                              </label>
+                              <div className="relative">
+                                <button
+                                  ref={directorTriggerRef}
+                                  type="button"
+                                  onClick={toggleDirectorDropdown}
+                                  className={`flex min-h-[36px] w-full items-center justify-between gap-2 rounded-none border bg-black/80 px-3 py-1.5 text-left text-xs transition focus:outline-none ${
+                                    hasAttemptedNextStep && !formData.director?.trim()
+                                      ? 'border-rose-500 bg-rose-950/20 text-rose-200 focus:border-rose-400'
+                                      : 'border-white/10 text-white hover:border-amber-500/60 focus:border-amber-400'
                                   }`}
                                 >
-                                  {isChecked && <Check className="h-3 w-3 stroke-[3]" />}
-                                </span>
-                                <span className="truncate text-xs font-semibold tracking-wide">
-                                  {genre.name}
-                                </span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <p className="text-center py-4 text-xs text-neutral-400 font-mono">
-                          Chưa có thể loại nào từ hệ thống
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-sans font-bold uppercase tracking-[0.18em] text-neutral-200 block">Ngày bắt đầu chiếu</label>
-                      <input
-                        type={focusedDateField === 'release' ? 'date' : 'text'}
-                        lang="en-GB"
-                        title="Bắt buộc chọn ngày phát hành"
-                        min={todayInputValue}
-                        value={focusedDateField === 'release' ? formData.releaseDate : formatDateForDisplay(formData.releaseDate)}
-                        readOnly={focusedDateField !== 'release'}
-                        onFocus={() => setFocusedDateField('release')}
-                        onBlur={() => setFocusedDateField(null)}
-                        onChange={(e) => {
-                          const nextReleaseDate = e.target.value && e.target.value < todayInputValue ? todayInputValue : e.target.value;
-                          const shouldMoveEndDate = formData.endDate && new Date(formData.endDate) < new Date(nextReleaseDate);
-                          setFormData({
-                            ...formData,
-                            releaseDate: nextReleaseDate,
-                            endDate: shouldMoveEndDate ? nextReleaseDate : formData.endDate
-                          });
-                        }}
-                        placeholder="dd/mm/yyyy"
-                        className="w-full bg-black border border-white/[0.06] p-2.5 text-xs text-white focus:outline-none focus:border-amber-400 font-mono [color-scheme:dark]"
-                      />
-                      <p className="text-[10px] font-sans font-bold text-neutral-300">Ngày phim bắt đầu được xếp suất chiếu. Định dạng dd/mm/yyyy, không chọn ngày quá khứ.</p>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-sans font-bold uppercase tracking-[0.18em] text-neutral-200 block">Ngày kết thúc chiếu</label>
-                      <input
-                        type={focusedDateField === 'end' ? 'date' : 'text'}
-                        lang="en-GB"
-                        title="Bắt buộc chọn ngày kết thúc"
-                        min={formData.releaseDate || todayInputValue}
-                        value={focusedDateField === 'end' ? (formData.endDate || '') : formatDateForDisplay(formData.endDate)}
-                        readOnly={focusedDateField !== 'end'}
-                        onFocus={() => setFocusedDateField('end')}
-                        onBlur={() => setFocusedDateField(null)}
-                        onChange={(e) => {
-                          const minEndDate = formData.releaseDate || todayInputValue;
-                          const nextEndDate = e.target.value && e.target.value < minEndDate ? minEndDate : e.target.value;
-                          setFormData({ ...formData, endDate: nextEndDate });
-                        }}
-                        placeholder="dd/mm/yyyy"
-                        className="w-full bg-black border border-white/[0.06] p-2.5 text-xs text-white focus:outline-none focus:border-amber-400 font-mono [color-scheme:dark]"
-                      />
-                      {formData.releaseDate && formData.endDate && new Date(formData.endDate) < new Date(formData.releaseDate) ? (
-                        <p className="text-[9px] font-sans font-bold text-rose-300">Ngày kết thúc chiếu phải bằng hoặc sau ngày bắt đầu chiếu.</p>
-                      ) : (
-                        <p className="text-[9px] font-sans font-bold text-amber-300">
-                          Suất chiếu chỉ xếp được trong khoảng này · Trạng thái tự tính: {resolveMovieStatusFromDates(formData.releaseDate, formData.endDate)}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-200 block">Ngôn ngữ</label>
-                      <input
-                        type="text"
-                        placeholder="VD: Tiếng Việt (tối đa 30 ký tự)"
-                        maxLength={30}
-                        value={formData.language}
-                        onChange={(e) => setFormData({ ...formData, language: e.target.value })}
-                        className="w-full bg-black border border-white/[0.06] p-2.5 text-xs text-white focus:outline-none focus:border-amber-400"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-200 block">Phụ đề</label>
-                      <input
-                        type="text"
-                        placeholder="VD: EN Sub (tối đa 30 ký tự)"
-                        maxLength={30}
-                        value={formData.subtitleLanguage}
-                        onChange={(e) => setFormData({ ...formData, subtitleLanguage: e.target.value })}
-                        className="w-full bg-black border border-white/[0.06] p-2.5 text-xs text-white focus:outline-none focus:border-amber-400"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="md:col-span-2 space-y-2 border border-white/[0.06] bg-black p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-200 block">Chọn diễn viên và vai chính</label>
-                        <span className="text-[9px] text-neutral-300">
-                          {selectedActorIds.length} diễn viên, {selectedMainActorIds.length} vai chính
-                        </span>
-                      </div>
-
-                      <div className="relative">
-                        <button
-                          type="button"
-                          onClick={() => setIsActorDropdownOpen((open) => !open)}
-                          className="flex min-h-11 w-full items-center justify-between gap-3 border border-white/[0.06] bg-neutral-950 px-3 py-2 text-left text-xs text-white transition hover:border-amber-500/60 focus:outline-none focus:border-amber-400"
-                        >
-                          <span className="min-w-0 flex-1">
-                            {selectedActors.length ? (
-                              <span className="flex flex-wrap gap-1.5">
-                                {selectedActors.slice(0, 5).map((actor) => {
-                                  const actorId = Number(actor.id);
-                                  const isMain = selectedMainActorIds.includes(actorId);
-                                  return (
-                                    <span key={actor.id} className={`inline-flex max-w-full items-center gap-1 border px-2 py-1 text-[10px] font-bold ${isMain ? 'border-amber-400 bg-amber-400 text-black' : 'border-white/[0.08] bg-black text-neutral-300'}`}>
-                                      <span className="truncate">{actor.name}</span>
-                                      {isMain && <span className="text-[8px] uppercase">Main</span>}
-                                    </span>
-                                  );
-                                })}
-                                {selectedActors.length > 5 && (
-                                  <span className="border border-white/[0.08] bg-black px-2 py-1 text-[10px] font-bold text-neutral-200">
-                                    +{selectedActors.length - 5}
+                                  <span className="min-w-0 flex-1 truncate">
+                                    {selectedDirectorNames.length ? (
+                                      <span className="flex flex-wrap gap-1">
+                                        {selectedDirectorNames.slice(0, 3).map((directorName) => (
+                                          <span key={directorName} className="inline-flex max-w-full items-center gap-1 rounded-none bg-amber-500/15 border border-amber-500/40 px-1.5 py-0.5 text-[10px] font-bold text-amber-200">
+                                            <span className="truncate">{directorName}</span>
+                                          </span>
+                                        ))}
+                                        {selectedDirectorNames.length > 3 && (
+                                          <span className="rounded-none bg-black border border-white/10 px-1.5 py-0.5 text-[10px] font-bold text-neutral-200">
+                                            +{selectedDirectorNames.length - 3}
+                                          </span>
+                                        )}
+                                      </span>
+                                    ) : (
+                                      <span className="text-neutral-400">Chọn hoặc nhập đạo diễn</span>
+                                    )}
                                   </span>
-                                )}
-                              </span>
-                            ) : (
-                              <span className="text-neutral-300">Chọn diễn viên cho phim</span>
-                            )}
-                          </span>
-                          <ChevronDown className={`h-4 w-4 shrink-0 text-amber-400 transition ${isActorDropdownOpen ? 'rotate-180' : ''}`} />
-                        </button>
+                                  <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-amber-400 transition ${isDirectorDropdownOpen ? 'rotate-180' : ''}`} />
+                                </button>
 
-                        {isActorDropdownOpen && (
-                          <div className="absolute left-0 right-0 z-30 mt-2 border border-amber-500/40 bg-[#050505] shadow-2xl shadow-black/60">
-                            <div className="border-b border-white/[0.05] p-2">
-                              <div className="flex items-center gap-2 border border-white/[0.06] bg-black px-2">
-                                <Search className="h-3.5 w-3.5 text-neutral-300" />
-                                <input
-                                  type="text"
-                                  value={actorPickerSearch}
-                                  onChange={(event) => setActorPickerSearch(event.target.value)}
-                                  placeholder="Tìm gần đúng tên diễn viên, tiểu sử hoặc ID..."
-                                  className="h-9 min-w-0 flex-1 bg-transparent text-xs text-white placeholder:text-neutral-200 focus:outline-none"
-                                  autoFocus
-                                />
+                                {isDirectorDropdownOpen && directorDropdownPosition && createPortal(
+                                  <div
+                                    ref={directorDropdownRef}
+                                    style={directorDropdownPosition}
+                                    className="fixed z-[170] rounded-none border border-amber-500/40 bg-[#0c0d12] shadow-2xl shadow-black/90 overflow-hidden"
+                                  >
+                                    <div className="border-b border-white/[0.08] p-2 bg-black/40">
+                                      <div className="flex items-center gap-2 rounded-none border border-white/10 bg-black px-2">
+                                        <Search className="h-3.5 w-3.5 text-neutral-400" />
+                                        <input
+                                          type="text"
+                                          value={directorPickerSearch}
+                                          onChange={(event) => setDirectorPickerSearch(event.target.value)}
+                                          onKeyDown={(event) => {
+                                            if (event.key !== 'Enter') return;
+                                            event.preventDefault();
+                                            addDirectorName(directorPickerSearch);
+                                          }}
+                                          placeholder="Tìm gần đúng hoặc nhập tên rồi Enter..."
+                                          className="h-8 min-w-0 flex-1 bg-transparent text-xs text-white placeholder:text-neutral-500 focus:outline-none"
+                                          autoFocus
+                                        />
+                                      </div>
+                                      {directorPickerSearch.trim() && !typedDirectorExists && (
+                                        <button
+                                          type="button"
+                                          onClick={() => addDirectorName(directorPickerSearch)}
+                                          className="mt-1.5 w-full rounded-none border border-amber-500/30 bg-amber-500/10 px-2 py-1.5 text-left text-[10px] font-bold uppercase tracking-wider text-amber-300 hover:bg-amber-500 hover:text-black transition"
+                                        >
+                                          + Thêm đạo diễn: {directorPickerSearch.trim()}
+                                        </button>
+                                      )}
+                                    </div>
+
+                                    <div className="max-h-[152px] overflow-y-auto overscroll-contain custom-scrollbar p-1.5 space-y-1 touch-pan-y">
+                                      {directorOptions.length ? directorOptions.map((directorName) => {
+                                        const isSelected = selectedDirectorNames.some((name) => normalizeSearchText(name) === normalizeSearchText(directorName));
+                                        return (
+                                          <div
+                                            key={directorName}
+                                            className={`grid h-8 grid-cols-[1fr_auto] items-center gap-2 rounded-none px-2 transition ${isSelected ? 'border border-amber-500/40 bg-amber-500/10' : 'border border-transparent bg-neutral-900/60 hover:bg-neutral-800'}`}
+                                          >
+                                            <button type="button" onClick={() => isSelected ? removeDirectorName(directorName) : addDirectorName(directorName)} className="min-w-0 text-left">
+                                              <span className="flex items-center gap-2">
+                                                <span className={`grid h-3.5 w-3.5 shrink-0 place-items-center rounded-none border text-[9px] ${isSelected ? 'border-amber-400 bg-amber-400 text-black' : 'border-white/20 text-transparent'}`}>
+                                                  <Check className="h-2.5 w-2.5 stroke-[3]" />
+                                                </span>
+                                                <span className="block truncate text-xs font-semibold text-white">{directorName}</span>
+                                              </span>
+                                            </button>
+                                            {isSelected && (
+                                              <button
+                                                type="button"
+                                                onClick={() => removeDirectorName(directorName)}
+                                                className="h-6 rounded-none border border-rose-500/30 px-1.5 text-[9px] font-bold text-rose-300 transition hover:bg-rose-500 hover:text-white"
+                                              >
+                                                Xóa
+                                              </button>
+                                            )}
+                                          </div>
+                                        );
+                                      }) : (
+                                        <p className="px-2 py-4 text-center text-[10px] text-neutral-400">Không tìm thấy đạo diễn phù hợp.</p>
+                                      )}
+                                    </div>
+                                  </div>,
+                                  document.body
+                                )}
                               </div>
+                              {hasAttemptedNextStep && !formData.director?.trim() && (
+                                <p className="text-[10px] text-rose-400 font-medium">Bắt buộc chọn hoặc nhập ít nhất 1 đạo diễn</p>
+                              )}
                             </div>
 
-                            <div className="max-h-64 overflow-y-auto custom-scrollbar p-2">
-                              {actorPickerOptions.length ? actorPickerOptions.map((actor) => {
-                                const actorId = Number(actor.id);
-                                const isSelected = selectedActorIds.includes(actorId);
-                                const isMain = selectedMainActorIds.includes(actorId);
-                                return (
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <label className="text-[10px] uppercase tracking-wider text-neutral-300 font-bold block">
+                                  Thể loại phim <span className="text-amber-400">*</span>
+                                </label>
+                                <span className="shrink-0 text-[9px] font-mono text-neutral-400">
+                                  {(formData.genreIds || []).length} đã chọn
+                                </span>
+                              </div>
+                              <div className="relative">
+                                <button
+                                  ref={genreTriggerRef}
+                                  type="button"
+                                  onClick={toggleGenreDropdown}
+                                  className={`flex min-h-[36px] w-full items-center justify-between gap-2 rounded-none border bg-black/80 px-3 py-1.5 text-left text-xs transition focus:outline-none ${
+                                    hasAttemptedNextStep && (!formData.genreIds || formData.genreIds.length === 0)
+                                      ? 'border-rose-500 bg-rose-950/20 text-rose-200'
+                                      : 'border-white/10 text-white hover:border-amber-500/60 focus:border-amber-400'
+                                  }`}
+                                >
+                                  <span className="min-w-0 flex-1 truncate text-neutral-400">
+                                    {selectedGenreObjects.length
+                                      ? selectedGenreObjects.map((genre) => genre.name).join(', ')
+                                      : 'Chọn thể loại phim'}
+                                  </span>
+                                  <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-amber-400 transition ${isGenreDropdownOpen ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {isGenreDropdownOpen && genreDropdownPosition && createPortal(
                                   <div
-                                    key={actor.id}
-                                    className={`mb-1 grid grid-cols-[1fr_auto_auto] items-center gap-2 border px-2 py-2 last:mb-0 ${isSelected ? 'border-amber-500/50 bg-amber-500/10' : 'border-white/[0.05] bg-neutral-950'}`}
+                                    ref={genreDropdownRef}
+                                    style={genreDropdownPosition}
+                                    className="fixed z-[170] rounded-none border border-amber-500/40 bg-[#0c0d12] shadow-2xl shadow-black/90 overflow-hidden"
                                   >
-                                    <button type="button" onClick={() => toggleMovieActor(actorId)} className="min-w-0 text-left">
-                                      <span className="flex items-center gap-2">
-                                        <span className={`grid h-4 w-4 shrink-0 place-items-center border ${isSelected ? 'border-amber-400 bg-amber-400 text-black' : 'border-white/[0.08] text-transparent'}`}>
-                                          <Check className="h-3 w-3" />
+                                    <div className="border-b border-white/[0.08] p-2 bg-black/60">
+                                      <div className="flex items-center gap-2 border border-white/10 bg-black px-2">
+                                        <Search className="h-3.5 w-3.5 shrink-0 text-neutral-400" />
+                                        <input
+                                          type="text"
+                                          value={genrePickerSearch}
+                                          onChange={(event) => setGenrePickerSearch(event.target.value)}
+                                          placeholder="Tìm thể loại..."
+                                          className="h-8 min-w-0 flex-1 bg-transparent text-xs text-white placeholder:text-neutral-500 focus:outline-none"
+                                          autoFocus
+                                        />
+                                      </div>
+                                    </div>
+                                    <div className="max-h-[152px] overflow-y-auto overscroll-contain custom-scrollbar p-1.5 space-y-1 touch-pan-y">
+                                      {isGenreLoading ? (
+                                        <p className="px-2 py-4 text-center text-[10px] text-neutral-400">Đang tải thể loại...</p>
+                                      ) : filteredGenreOptions.length ? filteredGenreOptions.map((genre) => {
+                                        const isSelected = (formData.genreIds || []).includes(Number(genre.id));
+                                        return (
+                                          <button
+                                            key={genre.id}
+                                            type="button"
+                                            onClick={() => toggleMovieGenre(genre.id)}
+                                            className={`flex h-8 w-full items-center gap-2 border px-2 text-left text-xs transition ${isSelected ? 'border-amber-500/50 bg-amber-500/15 text-amber-200' : 'border-white/[0.06] bg-neutral-900/60 text-neutral-300 hover:bg-neutral-800'}`}
+                                          >
+                                            <span className={`grid h-3.5 w-3.5 shrink-0 place-items-center border ${isSelected ? 'border-amber-400 bg-amber-400 text-black' : 'border-white/20 text-transparent'}`}>
+                                              <Check className="h-2.5 w-2.5 stroke-[3]" />
+                                            </span>
+                                            <span className="truncate font-semibold">{genre.name}</span>
+                                          </button>
+                                        );
+                                      }) : (
+                                        <p className="px-2 py-4 text-center text-[10px] text-neutral-400">Không tìm thấy thể loại.</p>
+                                      )}
+                                    </div>
+                                  </div>,
+                                  document.body
+                                )}
+                              </div>
+                              {hasAttemptedNextStep && (!formData.genreIds || formData.genreIds.length === 0) && (
+                                <p className="text-[10px] text-rose-400 font-medium">Bắt buộc chọn ít nhất 1 thể loại phim</p>
+                              )}
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[10px] uppercase tracking-wider text-neutral-300 font-bold block">
+                                Thời lượng (Số phút) <span className="text-amber-400">*</span>
+                              </label>
+                              <input
+                                type="number"
+                                placeholder="60 - 180 phút"
+                                min={60}
+                                max={180}
+                                value={formData.duration}
+                                onChange={(e) => setFormData({ ...formData, duration: Number(e.target.value) })}
+                                className={`w-full bg-black/80 border p-2 text-xs text-white rounded-none focus:outline-none font-mono transition ${
+                                  hasAttemptedNextStep && (!formData.duration || formData.duration < 60 || formData.duration > 180)
+                                    ? 'border-rose-500 bg-rose-950/20 text-rose-200 focus:border-rose-400'
+                                    : 'border-white/10 focus:border-amber-400'
+                                }`}
+                              />
+                              {hasAttemptedNextStep && (!formData.duration || formData.duration < 60 || formData.duration > 180) && (
+                                <p className="text-[10px] text-rose-400 font-medium">Thời lượng 60 - 180 phút</p>
+                              )}
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[10px] uppercase tracking-wider text-neutral-300 font-bold block">
+                                Độ tuổi phân loại <span className="text-amber-400">*</span>
+                              </label>
+                              <button
+                                ref={ageRatingTriggerRef}
+                                type="button"
+                                onClick={toggleAgeRatingDropdown}
+                                className="flex min-h-[36px] w-full items-center justify-between gap-2 border border-white/10 bg-black/80 px-3 py-1.5 text-left text-xs font-bold text-white transition hover:border-amber-500/60 focus:border-amber-400 focus:outline-none"
+                              >
+                                <span className="truncate">
+                                  {AGE_RATING_OPTIONS.find((option) => option.value === formData.ageRating)?.label || 'Chọn độ tuổi'}
+                                </span>
+                                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-amber-400 transition ${isAgeRatingDropdownOpen ? 'rotate-180' : ''}`} />
+                              </button>
+                              {isAgeRatingDropdownOpen && ageRatingDropdownPosition && createPortal(
+                                <div
+                                  ref={ageRatingDropdownRef}
+                                  style={ageRatingDropdownPosition}
+                                  className="fixed z-[170] overflow-hidden border border-amber-500/40 bg-[#0c0d12] p-1.5 shadow-2xl shadow-black/90"
+                                >
+                                  {AGE_RATING_OPTIONS.map((option) => {
+                                    const isSelected = option.value === formData.ageRating;
+                                    return (
+                                      <button
+                                        key={option.value}
+                                        type="button"
+                                        onClick={() => {
+                                          setFormData({ ...formData, ageRating: option.value });
+                                          setIsAgeRatingDropdownOpen(false);
+                                        }}
+                                        className={`mb-1 flex h-8 w-full last:mb-0 items-center justify-between border px-2 text-left text-xs font-bold transition ${isSelected ? 'border-amber-500/50 bg-amber-500/15 text-amber-200' : 'border-white/[0.06] bg-neutral-900/60 text-neutral-300 hover:bg-neutral-800 hover:text-white'}`}
+                                      >
+                                        <span className="truncate">{option.label}</span>
+                                        {isSelected && <Check className="h-3.5 w-3.5 shrink-0 text-amber-400" />}
+                                      </button>
+                                    );
+                                  })}
+                                </div>,
+                                document.body
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Row 3: THỂ LOẠI PHIM (DROPDOWN SCROLL XUỐNG GỌN GÀNG, KHÔNG DÀI XUỐNG) */}
+                          <div className="hidden">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <label className="text-[10px] uppercase tracking-wider text-neutral-300 font-bold block">
+                                  Thể loại phim <span className="text-amber-400">*</span>
+                                </label>
+                                <span className={`text-[9px] font-mono px-2 py-0.5 rounded-none border ${
+                                  (formData.genreIds || []).length > 0
+                                    ? 'text-amber-300 bg-amber-500/10 border-amber-500/30'
+                                    : 'text-neutral-400 bg-white/[0.03] border-white/10'
+                                }`}>
+                                  {(formData.genreIds || []).length} thể loại đã chọn
+                                </span>
+                              </div>
+                              {(formData.genreIds || []).length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={clearAllGenres}
+                                  className="text-[10px] text-neutral-400 hover:text-rose-400 transition"
+                                >
+                                  Bỏ chọn tất cả
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="relative">
+                              <button
+                                type="button"
+                                onClick={toggleGenreDropdown}
+                                className={`flex min-h-[36px] w-full items-center justify-between gap-2 rounded-none border bg-black/80 px-3 py-1.5 text-left text-xs transition focus:outline-none ${
+                                  hasAttemptedNextStep && (!formData.genreIds || formData.genreIds.length === 0)
+                                    ? 'border-rose-500 bg-rose-950/20 text-rose-200 focus:border-rose-400'
+                                    : 'border-white/10 text-white hover:border-amber-500/60 focus:border-amber-400'
+                                }`}
+                              >
+                                <span className="min-w-0 flex-1 truncate">
+                                  {selectedGenreObjects.length > 0 ? (
+                                    <span className="flex flex-wrap gap-1">
+                                      {selectedGenreObjects.slice(0, 4).map((genre) => (
+                                        <span
+                                          key={genre.id}
+                                          className="inline-flex max-w-full items-center gap-1 rounded-none bg-amber-500/15 border border-amber-500/40 px-1.5 py-0.5 text-[10px] font-bold text-amber-200"
+                                        >
+                                          <span className="truncate">{genre.name}</span>
                                         </span>
-                                        <span className="min-w-0">
-                                          <span className="block truncate text-xs font-bold text-white">{actor.name}</span>
-                                          <span className="block truncate text-[9px] text-neutral-300">#{actor.id} · {actor.movieCount || 0} phim</span>
+                                      ))}
+                                      {selectedGenreObjects.length > 4 && (
+                                        <span className="rounded-none bg-black border border-white/10 px-1.5 py-0.5 text-[10px] font-bold text-neutral-200">
+                                          +{selectedGenreObjects.length - 4}
                                         </span>
-                                      </span>
-                                    </button>
+                                      )}
+                                    </span>
+                                  ) : (
+                                    <span className="text-neutral-400">Chọn thể loại phim (bấm để cuộn xuống danh sách)...</span>
+                                  )}
+                                </span>
+                                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-amber-400 transition ${isGenreDropdownOpen ? 'rotate-180' : ''}`} />
+                              </button>
+
+                              {isGenreDropdownOpen && (
+                                <div className="absolute left-0 right-0 z-40 mt-1.5 rounded-none border border-amber-500/40 bg-[#0c0d12] shadow-2xl shadow-black/90 overflow-hidden">
+                                  <div className="border-b border-white/[0.08] p-2 bg-black/60 flex items-center justify-between gap-2">
+                                    <div className="flex flex-1 items-center gap-2 rounded-none border border-white/10 bg-black px-2">
+                                      <Search className="h-3.5 w-3.5 text-neutral-400 shrink-0" />
+                                      <input
+                                        type="text"
+                                        value={genrePickerSearch}
+                                        onChange={(e) => setGenrePickerSearch(e.target.value)}
+                                        placeholder="Tìm kiếm thể loại phim..."
+                                        className="h-7 min-w-0 flex-1 bg-transparent text-xs text-white placeholder:text-neutral-500 focus:outline-none"
+                                        autoFocus
+                                      />
+                                      {genrePickerSearch && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setGenrePickerSearch('')}
+                                          className="text-[11px] text-neutral-400 hover:text-white"
+                                        >
+                                          ×
+                                        </button>
+                                      )}
+                                    </div>
                                     <button
                                       type="button"
-                                      onClick={() => toggleMovieMainActor(actorId)}
-                                      className={`h-7 px-2 text-[9px] font-black uppercase border ${isMain ? 'border-amber-400 bg-amber-400 text-black' : 'border-white/[0.08] text-neutral-200 hover:border-amber-400 hover:text-amber-300'}`}
+                                      onClick={() => setIsGenreDropdownOpen(false)}
+                                      className="h-7 px-2.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-[10px] font-bold uppercase rounded-none transition shrink-0"
                                     >
-                                      Vai chính
+                                      Đóng
                                     </button>
-                                    {isSelected && (
-                                      <button
-                                        type="button"
-                                        onClick={() => toggleMovieActor(actorId)}
-                                        className="h-7 border border-rose-500/30 px-2 text-[9px] font-black uppercase text-rose-300 transition hover:bg-rose-500 hover:text-white"
-                                        title="Bỏ chọn diễn viên khỏi phim"
-                                      >
-                                        Xóa
-                                      </button>
+                                  </div>
+
+                                  <div className="max-h-48 overflow-y-auto custom-scrollbar p-1.5 space-y-1">
+                                    {isGenreLoading ? (
+                                      <div className="flex items-center justify-center py-4 text-neutral-400 text-xs gap-2">
+                                        <RefreshCw className="h-3.5 w-3.5 animate-spin text-amber-400" />
+                                        <span>Đang tải danh sách thể loại...</span>
+                                      </div>
+                                    ) : filteredGenreOptions.length > 0 ? (
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1">
+                                        {filteredGenreOptions.map((genre) => {
+                                          const isSelected = (formData.genreIds || []).includes(Number(genre.id));
+                                          return (
+                                            <button
+                                              key={genre.id}
+                                              type="button"
+                                              onClick={() => toggleMovieGenre(genre.id)}
+                                              className={`flex items-center gap-2 px-2 py-1.5 rounded-none border text-left transition select-none ${
+                                                isSelected
+                                                  ? 'border-amber-500/50 bg-amber-500/15 text-amber-200'
+                                                  : 'border-white/[0.06] bg-neutral-900/60 text-neutral-300 hover:bg-neutral-800 hover:text-white'
+                                              }`}
+                                            >
+                                              <span
+                                                className={`grid h-3.5 w-3.5 shrink-0 place-items-center rounded-none border text-[9px] ${
+                                                  isSelected
+                                                    ? 'border-amber-400 bg-amber-400 text-black'
+                                                    : 'border-white/20 text-transparent'
+                                                }`}
+                                              >
+                                                <Check className="h-2.5 w-2.5 stroke-[3]" />
+                                              </span>
+                                              <span className="truncate text-xs font-semibold">{genre.name}</span>
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    ) : (
+                                      <p className="px-2 py-4 text-center text-[10px] text-neutral-400">
+                                        Không tìm thấy thể loại nào phù hợp.
+                                      </p>
                                     )}
                                   </div>
-                                );
-                              }) : (
-                                <p className="px-2 py-6 text-center text-[10px] text-neutral-300">Không tìm thấy diễn viên phù hợp.</p>
+                                </div>
+                              )}
+                            </div>
+
+                            {selectedGenreObjects.length > 0 && (
+                              <div className="flex flex-wrap gap-1 max-h-14 overflow-y-auto custom-scrollbar pt-1">
+                                {selectedGenreObjects.map((genre) => (
+                                  <span
+                                    key={genre.id}
+                                    className="inline-flex items-center gap-1 rounded-none bg-neutral-900 border border-white/10 px-2 py-0.5 text-[10px] font-medium text-neutral-200"
+                                  >
+                                    {genre.name}
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleMovieGenre(genre.id)}
+                                      className="text-neutral-400 hover:text-rose-300 transition font-bold"
+                                    >
+                                      ×
+                                    </button>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {hasAttemptedNextStep && (!formData.genreIds || formData.genreIds.length === 0) && (
+                              <p className="text-[10px] text-rose-400 font-medium">Bắt buộc chọn ít nhất 1 thể loại phim</p>
+                            )}
+                          </div>
+
+                          {/* Row 4: Ngày bắt đầu, Kết thúc, Ngôn ngữ, Phụ đề */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                            <div className="space-y-1">
+                              <label className="text-[10px] uppercase tracking-wider text-neutral-300 font-bold block">
+                                Ngày bắt đầu chiếu <span className="text-amber-400">*</span>
+                              </label>
+                              <MovieDatePicker
+                                label="Chọn ngày bắt đầu chiếu"
+                                value={formData.releaseDate}
+                                minDate={editingMovie ? undefined : todayInputValue}
+                                hasError={hasAttemptedNextStep && !formData.releaseDate}
+                                onChange={(nextReleaseDate) => setFormData({
+                                  ...formData,
+                                  releaseDate: nextReleaseDate,
+                                  endDate: formData.endDate && nextReleaseDate && formData.endDate < nextReleaseDate ? '' : formData.endDate
+                                })}
+                              />
+                              {hasAttemptedNextStep && !formData.releaseDate ? (
+                                <p className="text-[10px] text-rose-400 font-medium">Bắt buộc chọn ngày bắt đầu</p>
+                              ) : (
+                                <p className="text-[9px] text-neutral-400 truncate">dd/mm/yyyy, không chọn ngày quá khứ</p>
+                              )}
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[10px] uppercase tracking-wider text-neutral-300 font-bold block">
+                                Ngày kết thúc chiếu <span className="text-amber-400">*</span>
+                              </label>
+                              <MovieDatePicker
+                                label="Chọn ngày kết thúc chiếu"
+                                value={formData.endDate}
+                                minDate={formData.releaseDate || (editingMovie ? undefined : todayInputValue)}
+                                hasError={hasAttemptedNextStep && (!formData.endDate || Boolean(formData.releaseDate && formData.endDate < formData.releaseDate))}
+                                onChange={(nextEndDate) => setFormData({ ...formData, endDate: nextEndDate })}
+                              />
+                              {formData.releaseDate && formData.endDate && formData.endDate < formData.releaseDate ? (
+                                <p className="text-[9px] text-rose-400 truncate">Ngày kết thúc phải sau ngày bắt đầu</p>
+                              ) : hasAttemptedNextStep && !formData.endDate ? (
+                                <p className="text-[10px] text-rose-400 font-medium">Bắt buộc chọn ngày kết thúc</p>
+                              ) : (
+                                <p className="text-[9px] text-amber-300/90 truncate">
+                                  Trạng thái: <span className="font-semibold">{{ NOW_SHOWING: 'ĐANG CHIẾU', UPCOMING: 'SẮP CHIẾU', ENDED: 'ĐÃ KẾT THÚC' }[resolveMovieStatusFromDates(formData.releaseDate, formData.endDate)]}</span>
+                                </p>
+                              )}
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[10px] uppercase tracking-wider text-neutral-300 font-bold block">
+                                Ngôn ngữ <span className="text-amber-400">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="VD: Tiếng Việt"
+                                maxLength={30}
+                                value={formData.language}
+                                onChange={(e) => setFormData({ ...formData, language: e.target.value })}
+                                className={`w-full bg-black/80 border p-2 text-xs text-white rounded-none focus:outline-none transition ${
+                                  hasAttemptedNextStep && !formData.language?.trim()
+                                    ? 'border-rose-500 bg-rose-950/20 text-rose-200 focus:border-rose-400'
+                                    : 'border-white/10 focus:border-amber-400'
+                                }`}
+                              />
+                              {hasAttemptedNextStep && !formData.language?.trim() && (
+                                <p className="text-[10px] text-rose-400 font-medium">Bắt buộc nhập ngôn ngữ</p>
+                              )}
+                            </div>
+
+                            <div className="space-y-1">
+                              <label className="text-[10px] uppercase tracking-wider text-neutral-300 font-bold block">
+                                Phụ đề <span className="text-amber-400">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="VD: EN Sub"
+                                maxLength={30}
+                                value={formData.subtitleLanguage}
+                                onChange={(e) => setFormData({ ...formData, subtitleLanguage: e.target.value })}
+                                className={`w-full bg-black/80 border p-2 text-xs text-white rounded-none focus:outline-none transition ${
+                                  hasAttemptedNextStep && !formData.subtitleLanguage?.trim()
+                                    ? 'border-rose-500 bg-rose-950/20 text-rose-200 focus:border-rose-400'
+                                    : 'border-white/10 focus:border-amber-400'
+                                }`}
+                              />
+                              {hasAttemptedNextStep && !formData.subtitleLanguage?.trim() && (
+                                <p className="text-[10px] text-rose-400 font-medium">Bắt buộc nhập phụ đề</p>
                               )}
                             </div>
                           </div>
-                        )}
-                      </div>
+                        </motion.div>
+                      )}
 
-                      {selectedActors.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5">
-                          {selectedActors.map((actor) => {
-                            const actorId = Number(actor.id);
-                            const isMain = selectedMainActorIds.includes(actorId);
-                            return (
-                              <span key={actor.id} className={`inline-flex items-center gap-1.5 border px-2 py-1 text-[10px] font-bold ${isMain ? 'border-amber-400 bg-amber-400 text-black' : 'border-white/[0.08] bg-neutral-950 text-neutral-200'}`}>
-                                {actor.name}
-                                <button type="button" onClick={() => toggleMovieActor(actorId)} className={isMain ? 'text-black/70 hover:text-black' : 'text-neutral-300 hover:text-rose-300'}>×</button>
+                      {/* STEP 2: DIỄN VIÊN & MEDIA */}
+                      {movieFormStep === 2 && (
+                        <motion.div initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.15 }} className="space-y-3">
+                          {/* Diễn viên */}
+                          <div className="space-y-1.5 rounded-none border border-white/10 bg-black/40 p-2.5 sm:p-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <label className="text-[10px] uppercase tracking-wider text-neutral-300 font-bold block">
+                                Chọn diễn viên và vai chính <span className="text-amber-400">*</span>
+                              </label>
+                              <span className="text-[9px] text-amber-300/80 font-mono">
+                                {selectedActorIds.length} diễn viên · {selectedMainActorIds.length} vai chính
                               </span>
-                            );
-                          })}
-                        </div>
+                            </div>
+
+                            <div className="relative">
+                              <button
+                                ref={actorTriggerRef}
+                                type="button"
+                                onClick={toggleActorDropdown}
+                                className={`flex min-h-[36px] w-full items-center justify-between gap-2 rounded-none border bg-black/80 px-3 py-1.5 text-left text-xs transition focus:outline-none ${
+                                  hasAttemptedNextStep && (!formData.actorIds || formData.actorIds.length === 0)
+                                    ? 'border-rose-500 bg-rose-950/20 text-rose-200 focus:border-rose-400'
+                                    : 'border-white/10 text-white hover:border-amber-500/60 focus:border-amber-400'
+                                }`}
+                              >
+                                <span className="min-w-0 flex-1 truncate">
+                                  {selectedActors.length ? (
+                                    <span className="flex flex-wrap gap-1">
+                                      {selectedActors.slice(0, 4).map((actor) => {
+                                        const actorId = Number(actor.id);
+                                        const isMain = selectedMainActorIds.includes(actorId);
+                                        return (
+                                          <span key={actor.id} className={`inline-flex max-w-full items-center gap-1 rounded-none px-1.5 py-0.5 text-[10px] font-bold ${isMain ? 'border border-amber-400 bg-amber-400 text-black' : 'border border-white/10 bg-neutral-900 text-neutral-300'}`}>
+                                            <span className="truncate">{actor.name}</span>
+                                            {isMain && <span className="text-[8px] uppercase">Main</span>}
+                                          </span>
+                                        );
+                                      })}
+                                      {selectedActors.length > 4 && (
+                                        <span className="rounded-none bg-black border border-white/10 px-1.5 py-0.5 text-[10px] font-bold text-neutral-200">
+                                          +{selectedActors.length - 4}
+                                        </span>
+                                      )}
+                                    </span>
+                                  ) : (
+                                    <span className="text-neutral-400">Chọn diễn viên cho phim</span>
+                                  )}
+                                </span>
+                                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-amber-400 transition ${isActorDropdownOpen ? 'rotate-180' : ''}`} />
+                              </button>
+
+                              {isActorDropdownOpen && actorDropdownPosition && createPortal(
+                                <div
+                                  ref={actorDropdownRef}
+                                  style={actorDropdownPosition}
+                                  className="fixed z-[170] rounded-none border border-amber-500/40 bg-[#0c0d12] shadow-2xl shadow-black/90 overflow-hidden"
+                                >
+                                  <div className="border-b border-white/[0.08] p-2 bg-black/40">
+                                    <div className="flex items-center gap-2 rounded-none border border-white/10 bg-black px-2">
+                                      <Search className="h-3.5 w-3.5 text-neutral-400" />
+                                      <input
+                                        type="text"
+                                        value={actorPickerSearch}
+                                        onChange={(event) => setActorPickerSearch(event.target.value)}
+                                        placeholder="Tìm tên diễn viên, tiểu sử hoặc ID..."
+                                        className="h-8 min-w-0 flex-1 bg-transparent text-xs text-white placeholder:text-neutral-500 focus:outline-none"
+                                        autoFocus
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div className="max-h-[184px] overflow-y-auto overscroll-contain custom-scrollbar p-1.5 space-y-1 touch-pan-y">
+                                    {actorPickerOptions.length ? actorPickerOptions.map((actor) => {
+                                      const actorId = Number(actor.id);
+                                      const isSelected = selectedActorIds.includes(actorId);
+                                      const isMain = selectedMainActorIds.includes(actorId);
+                                      return (
+                                        <div
+                                          key={actor.id}
+                                          className={`grid h-10 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 rounded-none px-2 transition ${isSelected ? 'border border-amber-500/40 bg-amber-500/10' : 'border border-transparent bg-neutral-900/60 hover:bg-neutral-800'}`}
+                                        >
+                                          <button type="button" onClick={() => toggleMovieActor(actorId)} className="min-w-0 text-left">
+                                            <span className="flex items-center gap-2">
+                                              <span className={`grid h-3.5 w-3.5 shrink-0 place-items-center rounded-none border text-[9px] ${isSelected ? 'border-amber-400 bg-amber-400 text-black' : 'border-white/20 text-transparent'}`}>
+                                                <Check className="h-2.5 w-2.5 stroke-[3]" />
+                                              </span>
+                                              <span className="min-w-0">
+                                                <span className="block truncate text-xs font-semibold text-white">{actor.name}</span>
+                                                <span className="block truncate text-[9px] text-neutral-400">#{actor.id} · {actor.movieCount || 0} phim</span>
+                                              </span>
+                                            </span>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleMovieMainActor(actorId)}
+                                            className={`h-6 px-1.5 text-[9px] font-bold uppercase rounded-none border transition ${isMain ? 'border-amber-400 bg-amber-400 text-black' : 'border-white/10 text-neutral-300 hover:border-amber-400 hover:text-amber-300'}`}
+                                          >
+                                            Vai chính
+                                          </button>
+                                          {isSelected && (
+                                            <button
+                                              type="button"
+                                              onClick={() => toggleMovieActor(actorId)}
+                                              className="h-6 rounded-none border border-rose-500/30 px-1.5 text-[9px] font-bold text-rose-300 transition hover:bg-rose-500 hover:text-white"
+                                              title="Bỏ chọn"
+                                            >
+                                              Xóa
+                                            </button>
+                                          )}
+                                        </div>
+                                      );
+                                    }) : (
+                                      <p className="px-2 py-4 text-center text-[10px] text-neutral-400">Không tìm thấy diễn viên phù hợp.</p>
+                                    )}
+                                  </div>
+                                </div>,
+                                document.body
+                              )}
+                            </div>
+
+                            {hasAttemptedNextStep && (!formData.actorIds || formData.actorIds.length === 0) && (
+                              <p className="text-[10px] text-rose-400 font-medium pt-0.5">Bắt buộc chọn ít nhất 1 diễn viên cho phim</p>
+                            )}
+                          </div>
+
+                          {/* Media: Trailer, Poster, Banner */}
+                          <div className="space-y-2 rounded-none border border-white/10 bg-black/40 p-2.5 sm:p-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <label className="text-[10px] uppercase tracking-wider text-neutral-300 font-bold block">
+                                  Hình ảnh & Video giới thiệu <span className="text-amber-400">*</span>
+                                </label>
+                                <span className="text-[9px] text-amber-400 font-mono bg-amber-500/10 px-1.5 py-0.5 rounded-none border border-amber-500/20">
+                                  Bắt buộc 3 mục
+                                </span>
+                              </div>
+                              <span className="text-[9px] text-neutral-400 hidden sm:inline">
+                                Xem trước trực tiếp hoặc click Review để phóng to
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-0.5">
+                              {/* 1. TRAILER */}
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[9px] uppercase tracking-wider text-neutral-300 font-bold block">
+                                    Trailer (Video) <span className="text-amber-400">*</span>
+                                  </span>
+                                  {formData.trailerUrl && (
+                                    <span className="text-[8px] font-mono text-emerald-400 bg-emerald-500/10 px-1 py-0.2 rounded-none border border-emerald-500/20">
+                                      Đã có
+                                    </span>
+                                  )}
+                                </div>
+
+                                {!formData.trailerUrl ? (
+                                  <div>
+                                    <label className={`relative h-44 sm:h-48 flex flex-col items-center justify-center border border-dashed hover:border-amber-400/70 bg-black/50 hover:bg-neutral-900/60 rounded-none transition cursor-pointer p-3 text-center group ${
+                                      hasAttemptedNextStep && !formData.trailerUrl
+                                        ? 'border-rose-500/80 bg-rose-950/20'
+                                        : 'border-white/15'
+                                    } ${isTrailerUploading ? 'pointer-events-none' : ''}`}>
+                                      {isTrailerUploading ? (
+                                        <div className="flex flex-col items-center gap-1.5 text-amber-400">
+                                          <RefreshCw className="h-6 w-6 animate-spin" />
+                                          <span className="text-[10px] font-bold tracking-wider">ĐANG TẢI LÊN...</span>
+                                        </div>
+                                      ) : (
+                                        <div className="flex flex-col items-center gap-1.5">
+                                          <div className="w-9 h-9 rounded-none bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 group-hover:scale-105 group-hover:bg-amber-500 group-hover:text-black transition duration-200">
+                                            <Video className="w-4 h-4" />
+                                          </div>
+                                          <span className="text-[11px] font-bold text-white group-hover:text-amber-300 transition">
+                                            Tải lên Trailer video
+                                          </span>
+                                          <span className="text-[9px] text-neutral-500 font-mono">
+                                            MP4, WEBM
+                                          </span>
+                                        </div>
+                                      )}
+                                      <input
+                                        type="file"
+                                        accept="video/mp4,video/webm,video/quicktime"
+                                        onChange={handleTrailerVideoUpload}
+                                        className="hidden"
+                                      />
+                                    </label>
+                                    {hasAttemptedNextStep && !formData.trailerUrl && (
+                                      <p className="text-[10px] text-rose-400 font-medium pt-1">Bắt buộc tải lên Trailer video</p>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="relative h-44 sm:h-48 rounded-none border border-amber-500/30 bg-black overflow-hidden group shadow-md">
+                                    {isTrailerUploading && (
+                                      <div className="absolute inset-0 z-30 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center gap-1.5">
+                                        <RefreshCw className="h-6 w-6 animate-spin text-amber-400" />
+                                        <span className="text-[10px] font-bold text-amber-300">Đang tải video mới...</span>
+                                      </div>
+                                    )}
+                                    <video
+                                      src={formData.trailerUrl}
+                                      controls
+                                      playsInline
+                                      preload="metadata"
+                                      className="w-full h-full object-contain bg-black"
+                                    />
+                                    <div className="absolute top-1.5 right-1.5 z-20 flex items-center gap-1 opacity-90 group-hover:opacity-100 transition bg-black/80 backdrop-blur-md p-1 rounded-none border border-white/10">
+                                      <button
+                                        type="button"
+                                        onClick={() => setMediaReviewModal({ type: 'video', url: formData.trailerUrl, title: `Trailer: ${formData.title || 'Phim'}` })}
+                                        className="flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-black rounded-none text-[9px] font-bold transition"
+                                        title="Xem toàn màn hình"
+                                      >
+                                        <Eye className="w-3 h-3" /> Review
+                                      </button>
+                                      <label className="flex items-center gap-0.5 px-1.5 py-0.5 bg-white/10 hover:bg-white/20 text-white rounded-none text-[9px] font-bold cursor-pointer transition" title="Đổi video">
+                                        <RefreshCw className="w-2.5 h-2.5" />
+                                        <input
+                                          type="file"
+                                          accept="video/mp4,video/webm,video/quicktime"
+                                          onChange={handleTrailerVideoUpload}
+                                          className="hidden"
+                                        />
+                                      </label>
+                                      <button
+                                        type="button"
+                                        onClick={() => setFormData((prev) => ({ ...prev, trailerUrl: '' }))}
+                                        className="p-1 hover:bg-rose-500/30 text-neutral-400 hover:text-rose-300 rounded-none transition"
+                                        title="Xóa video"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* 2. POSTER ĐỨNG */}
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[9px] uppercase tracking-wider text-neutral-300 font-bold block">
+                                    Poster đứng <span className="text-amber-400">*</span>
+                                  </span>
+                                  {formData.posterUrl && (
+                                    <span className="text-[8px] font-mono text-emerald-400 bg-emerald-500/10 px-1 py-0.2 rounded-none border border-emerald-500/20">
+                                      Đã có
+                                    </span>
+                                  )}
+                                </div>
+
+                                {!formData.posterUrl ? (
+                                  <div>
+                                    <label className={`relative h-44 sm:h-48 flex flex-col items-center justify-center border border-dashed hover:border-amber-400/70 bg-black/50 hover:bg-neutral-900/60 rounded-none transition cursor-pointer p-3 text-center group ${
+                                      hasAttemptedNextStep && !formData.posterUrl
+                                        ? 'border-rose-500/80 bg-rose-950/20'
+                                        : 'border-white/15'
+                                    } ${isPosterUploading ? 'pointer-events-none' : ''}`}>
+                                      {isPosterUploading ? (
+                                        <div className="flex flex-col items-center gap-1.5 text-amber-400">
+                                          <RefreshCw className="h-6 w-6 animate-spin" />
+                                          <span className="text-[10px] font-bold tracking-wider">ĐANG TẢI LÊN...</span>
+                                        </div>
+                                      ) : (
+                                        <div className="flex flex-col items-center gap-1.5">
+                                          <div className="w-9 h-9 rounded-none bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 group-hover:scale-105 group-hover:bg-amber-500 group-hover:text-black transition duration-200">
+                                            <ImageUp className="w-4 h-4" />
+                                          </div>
+                                          <span className="text-[11px] font-bold text-white group-hover:text-amber-300 transition">
+                                            Tải lên Poster đứng
+                                          </span>
+                                          <span className="text-[9px] text-neutral-500 font-mono">
+                                            Tỷ lệ 2:3
+                                          </span>
+                                        </div>
+                                      )}
+                                      <input
+                                        type="file"
+                                        accept="image/jpeg,image/png,image/webp"
+                                        onChange={(event) => handleMovieImageUpload('posterUrl', 'movies/posters', event)}
+                                        className="hidden"
+                                      />
+                                    </label>
+                                    {hasAttemptedNextStep && !formData.posterUrl && (
+                                      <p className="text-[10px] text-rose-400 font-medium pt-1">Bắt buộc tải lên Poster đứng</p>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="relative h-44 sm:h-48 rounded-none border border-amber-500/30 bg-black overflow-hidden group shadow-md flex items-center justify-center">
+                                    {isPosterUploading && (
+                                      <div className="absolute inset-0 z-30 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center gap-1.5">
+                                        <RefreshCw className="h-6 w-6 animate-spin text-amber-400" />
+                                        <span className="text-[10px] font-bold text-amber-300">Đang tải poster mới...</span>
+                                      </div>
+                                    )}
+                                    <img
+                                      src={formData.posterUrl}
+                                      alt="Poster ambient"
+                                      aria-hidden="true"
+                                      className="absolute inset-0 w-full h-full object-cover blur-lg opacity-35 scale-125 pointer-events-none"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                    <img
+                                      src={formData.posterUrl}
+                                      alt="Poster phim"
+                                      className="relative z-10 h-full w-auto max-w-full object-contain cursor-pointer transition duration-200 group-hover:scale-[1.02]"
+                                      referrerPolicy="no-referrer"
+                                      onClick={() => setMediaReviewModal({ type: 'image', url: formData.posterUrl, title: `Poster: ${formData.title || 'Phim'}` })}
+                                      title="Click xem phóng to"
+                                    />
+                                    <div className="absolute top-1.5 right-1.5 z-20 flex items-center gap-1 opacity-90 group-hover:opacity-100 transition bg-black/80 backdrop-blur-md p-1 rounded-none border border-white/10">
+                                      <button
+                                        type="button"
+                                        onClick={() => setMediaReviewModal({ type: 'image', url: formData.posterUrl, title: `Poster: ${formData.title || 'Phim'}` })}
+                                        className="flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-black rounded-none text-[9px] font-bold transition"
+                                        title="Xem phóng to"
+                                      >
+                                        <Eye className="w-3 h-3" /> Review
+                                      </button>
+                                      <label className="flex items-center gap-0.5 px-1.5 py-0.5 bg-white/10 hover:bg-white/20 text-white rounded-none text-[9px] font-bold cursor-pointer transition" title="Đổi poster">
+                                        <RefreshCw className="w-2.5 h-2.5" />
+                                        <input
+                                          type="file"
+                                          accept="image/jpeg,image/png,image/webp"
+                                          onChange={(event) => handleMovieImageUpload('posterUrl', 'movies/posters', event)}
+                                          className="hidden"
+                                        />
+                                      </label>
+                                      <button
+                                        type="button"
+                                        onClick={() => setFormData((prev) => ({ ...prev, posterUrl: '' }))}
+                                        className="p-1 hover:bg-rose-500/30 text-neutral-400 hover:text-rose-300 rounded-none transition"
+                                        title="Xóa poster"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* 3. BANNER NGANG */}
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[9px] uppercase tracking-wider text-neutral-300 font-bold block">
+                                    Banner ngang <span className="text-amber-400">*</span>
+                                  </span>
+                                  {formData.bannerUrl && (
+                                    <span className="text-[8px] font-mono text-emerald-400 bg-emerald-500/10 px-1 py-0.2 rounded-none border border-emerald-500/20">
+                                      Đã có
+                                    </span>
+                                  )}
+                                </div>
+
+                                {!formData.bannerUrl ? (
+                                  <div>
+                                    <label className={`relative h-44 sm:h-48 flex flex-col items-center justify-center border border-dashed hover:border-amber-400/70 bg-black/50 hover:bg-neutral-900/60 rounded-none transition cursor-pointer p-3 text-center group ${
+                                      hasAttemptedNextStep && !formData.bannerUrl
+                                        ? 'border-rose-500/80 bg-rose-950/20'
+                                        : 'border-white/15'
+                                    } ${isBannerUploading ? 'pointer-events-none' : ''}`}>
+                                      {isBannerUploading ? (
+                                        <div className="flex flex-col items-center gap-1.5 text-amber-400">
+                                          <RefreshCw className="h-6 w-6 animate-spin" />
+                                          <span className="text-[10px] font-bold tracking-wider">ĐANG TẢI LÊN...</span>
+                                        </div>
+                                      ) : (
+                                        <div className="flex flex-col items-center gap-1.5">
+                                          <div className="w-9 h-9 rounded-none bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 group-hover:scale-105 group-hover:bg-amber-500 group-hover:text-black transition duration-200">
+                                            <ImageUp className="w-4 h-4" />
+                                          </div>
+                                          <span className="text-[11px] font-bold text-white group-hover:text-amber-300 transition">
+                                            Tải lên Banner ngang
+                                          </span>
+                                          <span className="text-[9px] text-neutral-500 font-mono">
+                                            Tỷ lệ 16:9
+                                          </span>
+                                        </div>
+                                      )}
+                                      <input
+                                        type="file"
+                                        accept="image/jpeg,image/png,image/webp"
+                                        onChange={(event) => handleMovieImageUpload('bannerUrl', 'movies/banners', event)}
+                                        className="hidden"
+                                      />
+                                    </label>
+                                    {hasAttemptedNextStep && !formData.bannerUrl && (
+                                      <p className="text-[10px] text-rose-400 font-medium pt-1">Bắt buộc tải lên Banner ngang</p>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="relative h-44 sm:h-48 rounded-none border border-amber-500/30 bg-black overflow-hidden group shadow-md flex items-center justify-center">
+                                    {isBannerUploading && (
+                                      <div className="absolute inset-0 z-30 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center gap-1.5">
+                                        <RefreshCw className="h-6 w-6 animate-spin text-amber-400" />
+                                        <span className="text-[10px] font-bold text-amber-300">Đang tải banner mới...</span>
+                                      </div>
+                                    )}
+                                    <img
+                                      src={formData.bannerUrl}
+                                      alt="Banner ambient"
+                                      aria-hidden="true"
+                                      className="absolute inset-0 w-full h-full object-cover blur-lg opacity-35 scale-125 pointer-events-none"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                    <img
+                                      src={formData.bannerUrl}
+                                      alt="Banner phim"
+                                      className="relative z-10 w-full h-full object-cover cursor-pointer transition duration-200 group-hover:scale-[1.02]"
+                                      referrerPolicy="no-referrer"
+                                      onClick={() => setMediaReviewModal({ type: 'image', url: formData.bannerUrl, title: `Banner: ${formData.title || 'Phim'}` })}
+                                      title="Click xem phóng to"
+                                    />
+                                    <div className="absolute top-1.5 right-1.5 z-20 flex items-center gap-1 opacity-90 group-hover:opacity-100 transition bg-black/80 backdrop-blur-md p-1 rounded-none border border-white/10">
+                                      <button
+                                        type="button"
+                                        onClick={() => setMediaReviewModal({ type: 'image', url: formData.bannerUrl, title: `Banner: ${formData.title || 'Phim'}` })}
+                                        className="flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-black rounded-none text-[9px] font-bold transition"
+                                        title="Xem phóng to"
+                                      >
+                                        <Eye className="w-3 h-3" /> Review
+                                      </button>
+                                      <label className="flex items-center gap-0.5 px-1.5 py-0.5 bg-white/10 hover:bg-white/20 text-white rounded-none text-[9px] font-bold cursor-pointer transition" title="Đổi banner">
+                                        <RefreshCw className="w-2.5 h-2.5" />
+                                        <input
+                                          type="file"
+                                          accept="image/jpeg,image/png,image/webp"
+                                          onChange={(event) => handleMovieImageUpload('bannerUrl', 'movies/banners', event)}
+                                          className="hidden"
+                                        />
+                                      </label>
+                                      <button
+                                        type="button"
+                                        onClick={() => setFormData((prev) => ({ ...prev, bannerUrl: '' }))}
+                                        className="p-1 hover:bg-rose-500/30 text-neutral-400 hover:text-rose-300 rounded-none transition"
+                                        title="Xóa banner"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+
+                      {/* STEP 3: KIỂM TRA & ĐĂNG */}
+                      {movieFormStep === 3 && (
+                        <motion.div initial={{ opacity: 0, x: 12 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.15 }} className="space-y-3">
+                          <div className="grid gap-3 rounded-none border border-white/10 bg-black/40 p-3 sm:grid-cols-[72px_1fr]">
+                            <div className="aspect-[2/3] overflow-hidden rounded-none border border-white/10 bg-neutral-950">
+                              {formData.posterUrl ? (
+                                <img src={formData.posterUrl} alt="Poster xem trước" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
+                              ) : (
+                                <div className="grid h-full place-items-center text-neutral-600"><Film className="h-6 w-6" /></div>
+                              )}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-amber-400">Xem lại hồ sơ phim</p>
+                              <h4 className="mt-0.5 truncate text-base font-black text-white">{formData.title || 'Chưa nhập tên phim'}</h4>
+                              <p className="text-[11px] text-neutral-400">{formData.englishTitle || 'Chưa có tên gốc'}</p>
+                              <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-medium text-neutral-300">
+                                <span className="rounded-none border border-white/10 bg-white/[0.04] px-2 py-0.5">{formData.duration || 0} phút</span>
+                                <span className="rounded-none border border-white/10 bg-white/[0.04] px-2 py-0.5">{formData.ageRating || 'P'}</span>
+                                <span className="rounded-none border border-white/10 bg-white/[0.04] px-2 py-0.5">{(formData.genreIds || []).length} thể loại</span>
+                                <span className="rounded-none border border-white/10 bg-white/[0.04] px-2 py-0.5">{selectedActorIds.length} diễn viên</span>
+                              </div>
+                              <p className="mt-2 text-[10px] leading-relaxed text-neutral-400">
+                                Kiểm tra thông tin trước khi xuất bản. Bạn có thể quay lại bước trước để chỉnh sửa.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10px] uppercase tracking-wider text-neutral-300 font-bold block">
+                                Nội dung phim <span className="text-amber-400">*</span>
+                              </label>
+                              <span className="text-[9px] text-neutral-500 font-mono">
+                                {(formData.synopsis || '').length}/1000 ký tự
+                              </span>
+                            </div>
+                            <textarea
+                              rows={3}
+                              maxLength={1000}
+                              value={formData.synopsis}
+                              onChange={(e) => setFormData({ ...formData, synopsis: e.target.value })}
+                              placeholder="Nội dung tóm tắt phim, tối đa 1000 ký tự (bắt buộc)"
+                              className={`w-full bg-black/80 border p-2.5 text-xs text-white rounded-none focus:outline-none focus:border-amber-400 leading-relaxed max-h-28 overflow-y-auto custom-scrollbar transition ${
+                                hasAttemptedNextStep && !formData.synopsis?.trim()
+                                  ? 'border-rose-500 bg-rose-950/20'
+                                  : 'border-white/10'
+                              }`}
+                            />
+                            {hasAttemptedNextStep && !formData.synopsis?.trim() && (
+                              <p className="text-[10px] text-rose-400 font-medium">Bắt buộc nhập nội dung tóm tắt phim trước khi đăng</p>
+                            )}
+                          </div>
+                        </motion.div>
                       )}
                     </div>
 
-                    {/* <div className="space-y-2 border border-white/[0.06] bg-black p-3">
-                      <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_1fr_auto] gap-2">
-                        <input
-                          type="text"
-                          placeholder="Tên actor"
-                          value={actorForm.name}
-                          onChange={(e) => setActorForm({ ...actorForm, name: e.target.value })}
-                          className="bg-neutral-950 border border-white/[0.06] p-2 text-xs text-white focus:outline-none focus:border-amber-400"
-                        />
-                        <input
-                          type="text"
-                          placeholder="Tiểu sử"
-                          value={actorForm.biography}
-                          onChange={(e) => setActorForm({ ...actorForm, biography: e.target.value })}
-                          className="bg-neutral-950 border border-white/[0.06] p-2 text-xs text-white focus:outline-none focus:border-amber-400"
-                        />
-                        <label className={`flex cursor-pointer items-center justify-center gap-2 border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-amber-300 transition hover:bg-amber-500 hover:text-black ${isActorImageUploading ? 'pointer-events-none opacity-60' : ''}`}>
-                          {isActorImageUploading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <ImageUp className="h-3.5 w-3.5" />}
-                          {isActorImageUploading ? 'Đang tải ảnh...' : actorForm.avatarUrl ? 'Đã chọn ảnh local' : 'Chọn ảnh local'}
-                          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={handleQuickActorImageUpload} className="hidden" />
-                        </label>
-                        {renderImagePreview(actorForm.avatarUrl, 'Ảnh actor', 'h-10 w-10')}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleQuickCreateActor}
-                        disabled={isActorSaving || isActorImageUploading}
-                        className="w-full border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-amber-300 hover:bg-amber-500 hover:text-black disabled:opacity-50"
-                      >
-                        {isActorImageUploading ? 'Đang tải ảnh actor...' : isActorSaving ? 'Đang tạo actor...' : 'Tạo actor và gán ID vào phim'}
-                      </button>
-                      {createdActors.length > 0 && (
-                        <div className="text-[9px] text-neutral-200 font-mono">
-                          Actor vừa tạo: {createdActors.slice(0, 3).map((actor) => `${actor.name}#${actor.id}`).join(', ')}
-                        </div>
-                      )}
-                    </div> */}
-
-                    <div className="md:col-span-2 space-y-2 border border-white/[0.08] bg-black/60 p-4 rounded-none">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <label className="text-[11px] uppercase tracking-[0.18em] text-neutral-200 font-bold block">
-                            Hình ảnh & Video giới thiệu phim
-                          </label>
-                          <span className="text-[9px] text-amber-400 font-mono bg-amber-500/10 px-2 py-0.5 rounded-none border border-amber-500/20">
-                            Bắt buộc 3 mục
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-neutral-400">
-                          Xem trước trực tiếp hoặc click nút Review để phóng to
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 pt-1">
-                        {/* 1. TRAILER VIDEO */}
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-200 font-bold block">
-                              Trailer (Video) <span className="text-amber-400">*</span>
-                            </label>
-                            {formData.trailerUrl ? (
-                              <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-none border border-emerald-500/20">
-                                Đã có video
-                              </span>
-                            ) : (
-                              <span className="text-[9px] font-mono text-amber-400/80">MP4, WEBM</span>
-                            )}
-                          </div>
-
-                          {!formData.trailerUrl ? (
-                            <label className={`relative h-64 flex flex-col items-center justify-center border-2 border-dashed border-white/15 hover:border-amber-400/70 bg-black/50 hover:bg-neutral-900/60 rounded-none transition cursor-pointer p-4 text-center group ${isTrailerUploading ? 'pointer-events-none' : ''}`}>
-                              {isTrailerUploading ? (
-                                <div className="flex flex-col items-center gap-2 text-amber-400">
-                                  <RefreshCw className="h-8 w-8 animate-spin" />
-                                  <span className="text-xs font-bold tracking-wider">ĐANG TẢI TRAILER LÊN...</span>
-                                  <span className="text-[10px] text-neutral-400 font-mono">Vui lòng đợi xử lý</span>
-                                </div>
-                              ) : (
-                                <div className="flex flex-col items-center gap-2.5">
-                                  <div className="w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 group-hover:scale-110 group-hover:bg-amber-500 group-hover:text-black transition duration-200 shadow-lg">
-                                    <Video className="w-6 h-6" />
-                                  </div>
-                                  <div>
-                                    <span className="text-xs font-bold text-white group-hover:text-amber-300 transition block">
-                                      Tải lên Trailer video
-                                    </span>
-                                    <span className="text-[10px] text-neutral-400 mt-0.5 block">
-                                      Click để chọn video từ máy tính
-                                    </span>
-                                  </div>
-                                  <span className="text-[9px] text-neutral-500 font-mono bg-white/[0.04] px-2 py-0.5 rounded-none">
-                                    MP4, WEBM, MOV
-                                  </span>
-                                </div>
-                              )}
-                              <input
-                                type="file"
-                                accept="video/mp4,video/webm,video/quicktime"
-                                onChange={handleTrailerVideoUpload}
-                                className="hidden"
-                              />
-                            </label>
-                          ) : (
-                            <div className="relative h-64 rounded-none border border-amber-500/30 bg-black overflow-hidden group shadow-lg">
-                              {isTrailerUploading && (
-                                <div className="absolute inset-0 z-30 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center gap-2">
-                                  <RefreshCw className="h-7 w-7 animate-spin text-amber-400" />
-                                  <span className="text-xs font-bold text-amber-300">ĐANG TẢI TRAILER MỚI...</span>
-                                </div>
-                              )}
-
-                              {/* Direct video player with controls for immediate review */}
-                              <video
-                                src={formData.trailerUrl}
-                                controls
-                                playsInline
-                                preload="metadata"
-                                className="w-full h-full object-contain bg-black"
-                              />
-
-                              {/* Top control bar overlay */}
-                              <div className="absolute top-2 right-2 z-20 flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition bg-black/80 backdrop-blur-md p-1 rounded-none border border-white/10 shadow-lg">
-                                <button
-                                  type="button"
-                                  onClick={() => setMediaReviewModal({ type: 'video', url: formData.trailerUrl, title: `Trailer: ${formData.title || 'Phim'}` })}
-                                  className="flex items-center gap-1 px-2 py-1 bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-black rounded-none text-[10px] font-bold transition"
-                                  title="Xem review toàn màn hình"
-                                >
-                                  <Eye className="w-3.5 h-3.5" />
-                                  <span>Review</span>
-                                </button>
-                                <label className="flex items-center gap-1 px-2 py-1 bg-white/10 hover:bg-white/20 text-white rounded-none text-[10px] font-bold cursor-pointer transition" title="Chọn video khác">
-                                  <RefreshCw className="w-3 h-3" />
-                                  <span>Đổi</span>
-                                  <input
-                                    type="file"
-                                    accept="video/mp4,video/webm,video/quicktime"
-                                    onChange={handleTrailerVideoUpload}
-                                    className="hidden"
-                                  />
-                                </label>
-                                <button
-                                  type="button"
-                                  onClick={() => setFormData((prev) => ({ ...prev, trailerUrl: '' }))}
-                                  className="p-1 hover:bg-rose-500/30 text-neutral-400 hover:text-rose-300 rounded-none transition"
-                                  title="Xóa video"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* 2. POSTER ĐỨNG */}
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-200 font-bold block">
-                              Poster đứng <span className="text-amber-400">*</span>
-                            </label>
-                            {formData.posterUrl ? (
-                              <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-none border border-emerald-500/20">
-                                Đã có poster
-                              </span>
-                            ) : (
-                              <span className="text-[9px] font-mono text-amber-400/80">Tỷ lệ 2:3</span>
-                            )}
-                          </div>
-
-                          {!formData.posterUrl ? (
-                            <label className={`relative h-64 flex flex-col items-center justify-center border-2 border-dashed border-white/15 hover:border-amber-400/70 bg-black/50 hover:bg-neutral-900/60 rounded-none transition cursor-pointer p-4 text-center group ${isPosterUploading ? 'pointer-events-none' : ''}`}>
-                              {isPosterUploading ? (
-                                <div className="flex flex-col items-center gap-2 text-amber-400">
-                                  <RefreshCw className="h-8 w-8 animate-spin" />
-                                  <span className="text-xs font-bold tracking-wider">ĐANG TẢI POSTER LÊN...</span>
-                                  <span className="text-[10px] text-neutral-400 font-mono">Vui lòng đợi xử lý</span>
-                                </div>
-                              ) : (
-                                <div className="flex flex-col items-center gap-2.5">
-                                  <div className="w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 group-hover:scale-110 group-hover:bg-amber-500 group-hover:text-black transition duration-200 shadow-lg">
-                                    <ImageUp className="w-6 h-6" />
-                                  </div>
-                                  <div>
-                                    <span className="text-xs font-bold text-white group-hover:text-amber-300 transition block">
-                                      Tải lên Poster đứng
-                                    </span>
-                                    <span className="text-[10px] text-neutral-400 mt-0.5 block">
-                                      Click để chọn ảnh từ máy tính
-                                    </span>
-                                  </div>
-                                  <span className="text-[9px] text-neutral-500 font-mono bg-white/[0.04] px-2 py-0.5 rounded-none">
-                                    Khuyên dùng tỷ lệ 2:3 (Dọc)
-                                  </span>
-                                </div>
-                              )}
-                              <input
-                                type="file"
-                                accept="image/jpeg,image/png,image/webp"
-                                onChange={(event) => handleMovieImageUpload('posterUrl', 'movies/posters', event)}
-                                className="hidden"
-                              />
-                            </label>
-                          ) : (
-                            <div className="relative h-64 rounded-none border border-amber-500/30 bg-black overflow-hidden group shadow-lg flex items-center justify-center">
-                              {isPosterUploading && (
-                                <div className="absolute inset-0 z-30 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center gap-2">
-                                  <RefreshCw className="h-7 w-7 animate-spin text-amber-400" />
-                                  <span className="text-xs font-bold text-amber-300">ĐANG TẢI POSTER MỚI...</span>
-                                </div>
-                              )}
-
-                              {/* Blurred ambient background */}
-                              <img
-                                src={formData.posterUrl}
-                                alt="Poster ambient"
-                                aria-hidden="true"
-                                className="absolute inset-0 w-full h-full object-cover blur-xl opacity-35 scale-125 pointer-events-none"
-                                referrerPolicy="no-referrer"
-                              />
-
-                              {/* Sharp centered poster */}
-                              <img
-                                src={formData.posterUrl}
-                                alt="Poster phim"
-                                className="relative z-10 h-full w-auto max-w-full object-contain cursor-pointer transition duration-300 group-hover:scale-[1.02]"
-                                referrerPolicy="no-referrer"
-                                onClick={() => setMediaReviewModal({ type: 'image', url: formData.posterUrl, title: `Poster: ${formData.title || 'Phim'}` })}
-                                title="Click để xem review phóng to"
-                              />
-
-                              {/* Top control bar overlay */}
-                              <div className="absolute top-2 right-2 z-20 flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition bg-black/80 backdrop-blur-md p-1 rounded-none border border-white/10 shadow-lg">
-                                <button
-                                  type="button"
-                                  onClick={() => setMediaReviewModal({ type: 'image', url: formData.posterUrl, title: `Poster: ${formData.title || 'Phim'}` })}
-                                  className="flex items-center gap-1 px-2 py-1 bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-black rounded-none text-[10px] font-bold transition"
-                                  title="Xem review phóng to"
-                                >
-                                  <Eye className="w-3.5 h-3.5" />
-                                  <span>Review</span>
-                                </button>
-                                <label className="flex items-center gap-1 px-2 py-1 bg-white/10 hover:bg-white/20 text-white rounded-none text-[10px] font-bold cursor-pointer transition" title="Chọn poster khác">
-                                  <RefreshCw className="w-3 h-3" />
-                                  <span>Đổi</span>
-                                  <input
-                                    type="file"
-                                    accept="image/jpeg,image/png,image/webp"
-                                    onChange={(event) => handleMovieImageUpload('posterUrl', 'movies/posters', event)}
-                                    className="hidden"
-                                  />
-                                </label>
-                                <button
-                                  type="button"
-                                  onClick={() => setFormData((prev) => ({ ...prev, posterUrl: '' }))}
-                                  className="p-1 hover:bg-rose-500/30 text-neutral-400 hover:text-rose-300 rounded-none transition"
-                                  title="Xóa poster"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* 3. BANNER NGANG */}
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between">
-                            <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-200 font-bold block">
-                              Banner ngang <span className="text-amber-400">*</span>
-                            </label>
-                            {formData.bannerUrl ? (
-                              <span className="text-[9px] font-mono text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-none border border-emerald-500/20">
-                                Đã có banner
-                              </span>
-                            ) : (
-                              <span className="text-[9px] font-mono text-amber-400/80">Tỷ lệ 16:9</span>
-                            )}
-                          </div>
-
-                          {!formData.bannerUrl ? (
-                            <label className={`relative h-64 flex flex-col items-center justify-center border-2 border-dashed border-white/15 hover:border-amber-400/70 bg-black/50 hover:bg-neutral-900/60 rounded-none transition cursor-pointer p-4 text-center group ${isBannerUploading ? 'pointer-events-none' : ''}`}>
-                              {isBannerUploading ? (
-                                <div className="flex flex-col items-center gap-2 text-amber-400">
-                                  <RefreshCw className="h-8 w-8 animate-spin" />
-                                  <span className="text-xs font-bold tracking-wider">ĐANG TẢI BANNER LÊN...</span>
-                                  <span className="text-[10px] text-neutral-400 font-mono">Vui lòng đợi xử lý</span>
-                                </div>
-                              ) : (
-                                <div className="flex flex-col items-center gap-2.5">
-                                  <div className="w-12 h-12 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 group-hover:scale-110 group-hover:bg-amber-500 group-hover:text-black transition duration-200 shadow-lg">
-                                    <ImageUp className="w-6 h-6" />
-                                  </div>
-                                  <div>
-                                    <span className="text-xs font-bold text-white group-hover:text-amber-300 transition block">
-                                      Tải lên Banner ngang
-                                    </span>
-                                    <span className="text-[10px] text-neutral-400 mt-0.5 block">
-                                      Click để chọn ảnh từ máy tính
-                                    </span>
-                                  </div>
-                                  <span className="text-[9px] text-neutral-500 font-mono bg-white/[0.04] px-2 py-0.5 rounded-none">
-                                    Khuyên dùng tỷ lệ 16:9 (Ngang)
-                                  </span>
-                                </div>
-                              )}
-                              <input
-                                type="file"
-                                accept="image/jpeg,image/png,image/webp"
-                                onChange={(event) => handleMovieImageUpload('bannerUrl', 'movies/banners', event)}
-                                className="hidden"
-                              />
-                            </label>
-                          ) : (
-                            <div className="relative h-64 rounded-none border border-amber-500/30 bg-black overflow-hidden group shadow-lg flex items-center justify-center">
-                              {isBannerUploading && (
-                                <div className="absolute inset-0 z-30 bg-black/85 backdrop-blur-sm flex flex-col items-center justify-center gap-2">
-                                  <RefreshCw className="h-7 w-7 animate-spin text-amber-400" />
-                                  <span className="text-xs font-bold text-amber-300">ĐANG TẢI BANNER MỚI...</span>
-                                </div>
-                              )}
-
-                              {/* Blurred ambient background */}
-                              <img
-                                src={formData.bannerUrl}
-                                alt="Banner ambient"
-                                aria-hidden="true"
-                                className="absolute inset-0 w-full h-full object-cover blur-xl opacity-35 scale-125 pointer-events-none"
-                                referrerPolicy="no-referrer"
-                              />
-
-                              {/* Sharp banner */}
-                              <img
-                                src={formData.bannerUrl}
-                                alt="Banner phim"
-                                className="relative z-10 w-full h-full object-cover cursor-pointer transition duration-300 group-hover:scale-[1.02]"
-                                referrerPolicy="no-referrer"
-                                onClick={() => setMediaReviewModal({ type: 'image', url: formData.bannerUrl, title: `Banner: ${formData.title || 'Phim'}` })}
-                                title="Click để xem review phóng to"
-                              />
-
-                              {/* Top control bar overlay */}
-                              <div className="absolute top-2 right-2 z-20 flex items-center gap-1.5 opacity-90 group-hover:opacity-100 transition bg-black/80 backdrop-blur-md p-1 rounded-none border border-white/10 shadow-lg">
-                                <button
-                                  type="button"
-                                  onClick={() => setMediaReviewModal({ type: 'image', url: formData.bannerUrl, title: `Banner: ${formData.title || 'Phim'}` })}
-                                  className="flex items-center gap-1 px-2 py-1 bg-amber-500/20 hover:bg-amber-500 text-amber-300 hover:text-black rounded-none text-[10px] font-bold transition"
-                                  title="Xem review phóng to"
-                                >
-                                  <Eye className="w-3.5 h-3.5" />
-                                  <span>Review</span>
-                                </button>
-                                <label className="flex items-center gap-1 px-2 py-1 bg-white/10 hover:bg-white/20 text-white rounded-none text-[10px] font-bold cursor-pointer transition" title="Chọn banner khác">
-                                  <RefreshCw className="w-3 h-3" />
-                                  <span>Đổi</span>
-                                  <input
-                                    type="file"
-                                    accept="image/jpeg,image/png,image/webp"
-                                    onChange={(event) => handleMovieImageUpload('bannerUrl', 'movies/banners', event)}
-                                    className="hidden"
-                                  />
-                                </label>
-                                <button
-                                  type="button"
-                                  onClick={() => setFormData((prev) => ({ ...prev, bannerUrl: '' }))}
-                                  className="p-1 hover:bg-rose-500/30 text-neutral-400 hover:text-rose-300 rounded-none transition"
-                                  title="Xóa banner"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase tracking-wider text-neutral-200 block">Nội dung phim</label>
-                    <textarea
-                      rows={3}
-                      maxLength={1000}
-                      value={formData.synopsis}
-                      onChange={(e) => setFormData({ ...formData, synopsis: e.target.value })}
-                      placeholder="Nội dung phim, tối đa 1000 ký tự"
-                      className="w-full bg-black border border-white/[0.06] p-2.5 text-xs text-white focus:outline-none focus:border-amber-400 leading-relaxed"
-                    />
-                  </div>
-
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3 pt-3 border-t border-white/10">
+                    {/* FIXED MODAL FOOTER */}
+                    <div className="flex flex-col-reverse items-stretch justify-between gap-3 border-t border-white/10 bg-black/40 px-5 py-2.5 sm:flex-row sm:items-center sm:px-6 shrink-0">
                       <button
                         type="button"
                         onClick={handleCloseMovieForm}
-                        className="px-5 py-3 border border-white/15 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white font-sans font-bold text-xs uppercase tracking-wider transition rounded-none"
+                        className="px-3 py-2 text-neutral-400 hover:text-white font-sans font-bold text-[10px] uppercase tracking-wider transition rounded-none"
                       >
-                        HỦY THAO TÁC
+                        Hủy thao tác
                       </button>
-                      <button
-                        type="submit"
-                        disabled={isMovieSaving || isMovieMediaUploading || isDuplicateTitle}
-                        className="px-5 py-3 bg-amber-500 hover:bg-amber-400 text-black font-sans font-black text-xs uppercase tracking-widest transition shadow-lg disabled:cursor-not-allowed disabled:opacity-50 rounded-none"
-                        title={isDuplicateTitle ? 'Không thể lưu khi tên phim bị trùng' : ''}
-                      >
-                        {isMovieMediaUploading
-                          ? 'ĐANG TẢI FILE LOCAL...'
-                          : isMovieSaving
-                            ? (editingMovie ? 'ĐANG CẬP NHẬT...' : 'ĐANG LƯU...')
-                            : isDuplicateTitle
-                              ? 'TRÙNG TÊN PHIM'
-                            : (editingMovie ? 'CẬP NHẬT & ĐĂNG' : 'ĐĂNG PHIM')}
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {movieFormStep > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => goToMovieFormStep(movieFormStep - 1)}
+                            className="flex flex-1 items-center justify-center gap-1.5 rounded-none border border-white/15 bg-neutral-900 px-4 py-2 text-xs font-bold uppercase tracking-wider text-neutral-200 transition hover:bg-neutral-800 sm:flex-none"
+                          >
+                            <ArrowLeft className="h-3.5 w-3.5" /> Quay lại
+                          </button>
+                        )}
+                        {movieFormStep < 3 ? (
+                          <button
+                            type="button"
+                            onClick={handleNextStep}
+                            className="flex flex-1 items-center justify-center gap-1.5 rounded-none bg-amber-400 px-5 py-2 text-xs font-black uppercase tracking-wider text-black transition hover:bg-amber-300 sm:flex-none shadow-md shadow-amber-500/20 cursor-pointer active:scale-95"
+                          >
+                            Tiếp tục <ArrowRight className="h-3.5 w-3.5" />
+                          </button>
+                        ) : (
+                          <button
+                            type="submit"
+                            disabled={isMovieSaving || isMovieMediaUploading || isDuplicateTitle}
+                            className="flex-1 rounded-none bg-amber-400 px-5 py-2 text-xs font-black uppercase tracking-widest text-black shadow-lg shadow-amber-500/20 transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
+                            title={isDuplicateTitle ? 'Không thể lưu khi tên phim bị trùng' : ''}
+                          >
+                            {isMovieMediaUploading
+                              ? 'Đang tải file...'
+                              : isMovieSaving
+                                ? (editingMovie ? 'Đang cập nhật...' : 'Đang lưu...')
+                                : isDuplicateTitle
+                                  ? 'Trùng tên phim'
+                                  : (editingMovie ? 'Cập nhật phim' : 'Đăng phim')}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </form>
                 </motion.div>
@@ -2323,7 +3140,7 @@ export default function AdminMoviesPanel({ ctx }) {
                         <tr>
                           <td colSpan={5} className="py-16 text-center">
                             <div className="flex flex-col items-center justify-center gap-3 text-neutral-400">
-                              <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-neutral-500">
+                              <div className="w-12 h-12 rounded-none bg-white/5 border border-white/10 flex items-center justify-center text-neutral-500">
                                 <FileText className="w-6 h-6" />
                               </div>
                               <p className="text-sm font-bold text-neutral-300">Không có bản nháp phim nào</p>
@@ -2349,7 +3166,7 @@ export default function AdminMoviesPanel({ ctx }) {
                         <tr>
                           <td colSpan={5} className="py-16 text-center">
                             <div className="flex flex-col items-center justify-center gap-3 text-neutral-400">
-                              <div className="w-12 h-12 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-neutral-500">
+                              <div className="w-12 h-12 rounded-none bg-white/5 border border-white/10 flex items-center justify-center text-neutral-500">
                                 <Film className="w-6 h-6" />
                               </div>
                               <p className="text-sm font-bold text-neutral-300">
@@ -2795,7 +3612,7 @@ export default function AdminMoviesPanel({ ctx }) {
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
                           {movieDetailModal.actors.map((actor, idx) => (
                             <div key={actor.id ?? idx} className="flex items-center gap-2.5 p-2 rounded-none bg-neutral-900/60 border border-white/8">
-                              <div className="w-8 h-8 rounded-full overflow-hidden bg-neutral-800 border border-white/10 shrink-0">
+                              <div className="w-8 h-8 rounded-none overflow-hidden bg-neutral-800 border border-white/10 shrink-0">
                                 {actor.avatarUrl ? (
                                   <img src={actor.avatarUrl} alt={actor.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.onerror = null; e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(actor.name || "A")}&background=1a1a1a&color=f59e0b&size=64&bold=true`; }} />
                                 ) : (

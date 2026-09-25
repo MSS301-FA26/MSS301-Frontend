@@ -634,7 +634,7 @@ export default function DetailView() {
   const rating = hasRating ? Number(sourceRating) : null;
 
   return (
-    <div className="min-h-screen bg-[#0a0c10] text-neutral-200 pb-24 relative selection:bg-amber-500 selection:text-black">
+    <div className="square-ui min-h-screen bg-[#0a0c10] text-neutral-200 pb-24 relative selection:bg-amber-500 selection:text-black">
       {/* Background ambient lighting */}
       <div className="pointer-events-none fixed inset-0 -z-50 overflow-hidden">
         <div className="absolute left-1/2 top-1/4 h-[700px] w-[700px] -translate-x-1/2 rounded-full bg-amber-500/[0.04] blur-[160px]" />

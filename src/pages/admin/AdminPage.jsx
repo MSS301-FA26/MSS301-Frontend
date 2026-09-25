@@ -26,12 +26,11 @@ import AdminWalletPanel from './system/AdminWalletPanel';
 import AdminCinemaPanel from './cinema/AdminCinemaPanel';
 import AdminRoomsPanel from './cinema/AdminRoomsPanel';
 import AdminTicketsPanel from './cinema/AdminTicketsPanel';
-import AdminPricingPanel from './cinema/AdminPricingPanel';
+
 import AdminAuditPanel from './system/AdminAuditPanel';
 import AdminStatsPanel from './overview/AdminStatsPanel';
 import AdminFnbReportPanel from './overview/AdminFnbReportPanel';
 import AdminShowtimeIncidentsPanel from './cinema/AdminShowtimeIncidentsPanel';
-import AdminPromotionsPanel from './promotions/AdminPromotionsPanel';
 
 function NavItem({ icon: Icon, label, active, onClick, indent = false, badge = null }) {
   return (
@@ -66,11 +65,11 @@ function NavSectionLabel({ children }) {
 const SECTION_TITLE = {
   overview: 'Tổng quan hệ thống', movies: 'Thư viện phim', genres: 'Thể loại phim',
   actors: 'Diễn viên', foods: 'Bắp nước / F&B', rooms: 'Phòng chiếu & ghế',
+
   showtimes: 'Điều phối lịch chiếu', tickets: 'Quản lý vé', transactions: 'Giao dịch',
   'showtime-incidents': 'Báo cáo sự cố & hoàn tiền', 'fnb-report': 'Báo cáo F&B',
   statistics: 'Thống kê mua bán', audit: 'Audit log', users: 'Quản lý người dùng',
   reviews: 'Đánh giá', loyalty: 'Quản lý điểm', cinewallet: 'CineWallet', cinema: 'Thông tin rạp',
-  promotions: 'Mã khuyến mãi & Ưu đãi',
 };
 
 const getNavGroup = (section) => {
@@ -79,7 +78,6 @@ const getNavGroup = (section) => {
   if (['rooms', 'showtimes', 'tickets', 'transactions', 'showtime-incidents'].includes(section)) return 'cinema';
   if (['statistics', 'audit'].includes(section)) return 'insights';
   if (['users', 'loyalty', 'reviews', 'cinewallet'].includes(section)) return 'system';
-  if (['promotions'].includes(section)) return 'promotions';
   return null;
 };
 
@@ -91,6 +89,7 @@ const ADMIN_SECTIONS = new Set([
   'foods',
   'fnb-report',
   'rooms',
+
   'showtimes',
   'showtime-incidents',
   'tickets',
@@ -102,7 +101,6 @@ const ADMIN_SECTIONS = new Set([
   'loyalty',
   'cinewallet',
   'cinema',
-  'promotions'
 ]);
 
 const normalizeAdminSection = (section) => (ADMIN_SECTIONS.has(section) ? section : 'overview');
@@ -1453,10 +1451,13 @@ export default function AdminDashboard({
   // Filter movies - backend handles status/approval/publication filters via query params
   // Client-side only applies search text filter as a fallback for immediate feedback
   const filteredMovies = moviesList.filter(mv => {
-    const matchesSearch =
-      mv.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      mv.englishTitle.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      mv.director.toLowerCase().includes(searchQuery.toLowerCase());
+    const normalizedQuery = String(searchQuery || '').trim().toLowerCase();
+    if (!normalizedQuery) return true;
+
+    // Admin movie responses can legitimately omit optional metadata. Coercing the
+    // searchable values prevents one incomplete movie from crashing the whole page.
+    const matchesSearch = [mv?.title, mv?.englishTitle, mv?.director]
+      .some((value) => String(value || '').toLowerCase().includes(normalizedQuery));
     return matchesSearch;
   });
 
@@ -1648,8 +1649,7 @@ export default function AdminDashboard({
     loyalty: AdminLoyaltyPanel,
     cinema: AdminCinemaPanel,
     rooms: AdminRoomsPanel,
-    pricing: AdminPricingPanel,
-    promotions: AdminPromotionsPanel
+
   };
 
   const ActiveAdminPanel = adminPanels[activeTab] || AdminOverviewPanel;
@@ -1699,10 +1699,8 @@ export default function AdminDashboard({
                 { icon: ShoppingBag, tab: 'foods', sound: 478 },
                 { icon: BarChart2, tab: 'fnb-report', sound: 486 },
                 null,
-                { icon: Tag, tab: 'promotions', sound: 495 },
                 null,
                 { icon: Layers, tab: 'rooms', sound: 470 },
-                { icon: DollarSign, tab: 'pricing', sound: 475 },
                 { icon: Calendar, tab: 'showtimes', sound: 480 },
                 { icon: AlertCircle, tab: 'showtime-incidents', sound: 486 },
                 { icon: FileText, tab: 'tickets', sound: 492 },
@@ -1763,12 +1761,8 @@ export default function AdminDashboard({
                 <NavItem indent icon={ShoppingBag} label="Quản lý bắp nước" active={activeTab === 'foods'} onClick={() => { playPulseSound(478, 'sine', 0.05); changeAdminSection('foods'); }} />
                 <NavItem indent icon={BarChart2} label="Báo cáo F&B" active={activeTab === 'fnb-report'} onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('fnb-report'); }} />
 
-                <NavSectionLabel>Khuyến mãi &amp; Ưu đãi</NavSectionLabel>
-                <NavItem indent icon={Tag} label="Mã khuyến mãi & Ưu đãi" active={activeTab === 'promotions'} onClick={() => { playPulseSound(495, 'sine', 0.05); changeAdminSection('promotions'); }} />
-
                 <NavSectionLabel>Quản lý rạp</NavSectionLabel>
                 <NavItem indent icon={Layers} label="Phòng chiếu & ghế" active={activeTab === 'rooms'} onClick={() => { playPulseSound(470, 'sine', 0.05); changeAdminSection('rooms'); }} />
-                <NavItem indent icon={DollarSign} label="Bảng giá vé" active={activeTab === 'pricing'} onClick={() => { playPulseSound(475, 'sine', 0.05); changeAdminSection('pricing'); }} />
                 <NavItem indent icon={Calendar} label="Điều phối lịch chiếu" active={activeTab === 'showtimes'} onClick={() => { playPulseSound(480, 'sine', 0.05); changeAdminSection('showtimes'); }} />
                 <NavItem indent icon={AlertCircle} label="Báo cáo sự cố & hoàn tiền" active={activeTab === 'showtime-incidents'} onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('showtime-incidents'); }} />
                 <NavItem indent icon={FileText} label="Quản lý vé" active={activeTab === 'tickets'} onClick={() => { playPulseSound(492, 'sine', 0.05); changeAdminSection('tickets'); }} />
@@ -2096,6 +2090,7 @@ export default function AdminDashboard({
                     </span>
                     {activeTab === 'rooms' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
                   </button>
+
 
                   <button
                     onClick={() => { playPulseSound(480, 'sine', 0.05); changeAdminSection('showtimes'); }}
