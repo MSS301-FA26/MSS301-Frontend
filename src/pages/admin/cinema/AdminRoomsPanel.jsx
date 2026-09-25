@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
-  Film, Plus, Save, Undo2, RotateCcw,
+  Film, Plus, Save, Undo2, RotateCcw, Download,
   Search, Trash2, AlertTriangle, X, Eraser,
   Sparkles, AlertCircle, CheckCircle2, Loader2
 } from 'lucide-react';
@@ -522,6 +522,24 @@ export default function AdminRoomsPanel({ ctx }) {
   // ==========================================
   // SAVE, CREATE & DELETE ACTIONS
   // ==========================================
+  const handleExportJSON = () => {
+    if (!currentRoom) return;
+    const dataToExport = {
+      room: currentRoom,
+      rows,
+      stats,
+      exportedAt: new Date().toISOString()
+    };
+    const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `phong-chieu-${currentRoom.name.replace(/\s+/g, '-').toLowerCase()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Đã xuất file JSON cấu hình phòng chiếu.');
+  };
+
   const handleSaveAll = async () => {
     if (!currentRoom) return;
     const cleanName = roomName.trim();
@@ -774,6 +792,16 @@ export default function AdminRoomsPanel({ ctx }) {
         <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
           <button
             type="button"
+            onClick={handleExportJSON}
+            title="Xuất cấu hình phòng và sơ đồ ghế ra file JSON"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-none border border-[#2e3540] bg-[#101318] hover:bg-[#1a2028] hover:border-[#3d4654] text-[#c3c7cd] hover:text-white text-xs font-bold uppercase tracking-wider transition"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Xuất JSON</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleOpenAddModal}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-none border border-amber-500/30 bg-[#101318] hover:bg-amber-500/10 hover:border-amber-500/60 text-[#f5b800] text-xs font-bold uppercase tracking-wider transition"
           >
@@ -873,19 +901,17 @@ export default function AdminRoomsPanel({ ctx }) {
                   <div
                     key={r.id}
                     onClick={() => handleSelectRoom(r)}
-                    className={`group relative p-2.5 rounded-none cursor-pointer transition-all duration-150 flex items-center gap-2.5 border ${
-                      isSelected
+                    className={`group relative p-2.5 rounded-none cursor-pointer transition-all duration-150 flex items-center gap-2.5 border ${isSelected
                         ? 'bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent border-[#a87900] border-l-[3px] border-l-[#f5b800] shadow-sm'
                         : 'bg-transparent border-transparent hover:bg-[#11151a] hover:border-[#24282f]'
-                    }`}
+                      }`}
                   >
                     {/* Room Avatar */}
                     <div
-                      className={`w-9 h-9 rounded-none flex items-center justify-center font-mono font-bold text-xs shrink-0 transition ${
-                        isSelected
+                      className={`w-9 h-9 rounded-none flex items-center justify-center font-mono font-bold text-xs shrink-0 transition ${isSelected
                           ? 'bg-[#f5b800]/20 text-[#f5b800] border border-[#f5b800]/40 shadow-inner'
                           : 'bg-[#15181d] text-[#8b9098] border border-[#24282f] group-hover:text-white'
-                      }`}
+                        }`}
                     >
                       {avatarCode}
                     </div>
@@ -916,7 +942,7 @@ export default function AdminRoomsPanel({ ctx }) {
             ========================================================================= */}
         <section className="bg-[#101318] border border-[#24282f] rounded-none flex flex-col min-h-0 shadow-[0_8px_24px_rgba(0,0,0,0.25)] overflow-hidden relative">
           {/* TOOLBAR */}
-          <div className="h-11 bg-[#0c0f13] border-b border-[#24282f] px-3.5 flex items-center gap-2 shrink-0 flex-wrap">
+          <div className="min-h-[44px] bg-[#0c0f13] border-b border-[#24282f] px-3.5 py-1.5 flex items-center gap-2 shrink-0 flex-wrap">
             <span className="text-[11px] font-bold text-[#8b9098] uppercase tracking-wider mr-1">
               Bút vẽ:
             </span>
@@ -931,15 +957,14 @@ export default function AdminRoomsPanel({ ctx }) {
                   type="button"
                   onClick={() => setBrush(b.id)}
                   title={isDelete ? 'Bút xóa ghế: click ghế để xóa và dồn hàng (Phím 5)' : `Bút ${b.name}`}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-none text-xs font-semibold border transition-all ${
-                    isActive
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-none text-xs font-semibold border transition-all ${isActive
                       ? isDelete
                         ? 'border-rose-500 bg-rose-500/15 text-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.25)] ring-1 ring-rose-500/40'
                         : 'border-[#f5b800] bg-[#f5b800]/10 text-[#f5b800] shadow-[0_0_8px_rgba(245,184,0,0.15)] ring-1 ring-[#f5b800]/40'
                       : isDelete
                         ? 'border-rose-500/40 bg-rose-950/20 text-rose-300 hover:border-rose-500 hover:bg-rose-500/20'
                         : 'border-[#2a2f36] bg-[#11151a] text-[#c3c7cd] hover:border-[#3a3f47] hover:text-white'
-                  }`}
+                    }`}
                 >
                   {isDelete ? (
                     <Eraser className="w-3.5 h-3.5 text-rose-400 shrink-0" />
@@ -1047,11 +1072,10 @@ export default function AdminRoomsPanel({ ctx }) {
                       title="Click để đổi cả hàng theo bút vẽ"
                       onClick={() => handlePaintRow(rIdx)}
                       style={{ width: 'var(--seat-w)', height: 'var(--seat-h)' }}
-                      className={`rounded-none font-mono text-xs font-bold border transition flex items-center justify-center shrink-0 ${
-                        isRowSelected
+                      className={`rounded-none font-mono text-xs font-bold border transition flex items-center justify-center shrink-0 ${isRowSelected
                           ? 'bg-[#f5b800] text-[#090909] border-[#f5b800] shadow-[0_0_8px_rgba(245,184,0,0.4)]'
                           : 'bg-[#101318] text-[#d5d8dc] border-[#30353d] hover:border-[#f5b800] hover:text-[#f5b800]'
-                      }`}
+                        }`}
                     >
                       {row.label}
                     </button>
@@ -1083,11 +1107,10 @@ export default function AdminRoomsPanel({ ctx }) {
                                 title={`${row.label}${num || ''} • ${BRUSHES[seatType]?.name || 'Ghế'}`}
                                 onPointerDown={() => handlePointerDownSeat(rIdx, sIdx)}
                                 onPointerEnter={() => handlePointerEnterSeat(rIdx, sIdx)}
-                                className={`rounded-none text-[10.5px] font-mono font-bold flex items-center justify-center cursor-pointer transition-transform duration-75 relative shrink-0 ${
-                                  isSeatSelected
+                                className={`rounded-none text-[10.5px] font-mono font-bold flex items-center justify-center cursor-pointer transition-transform duration-75 relative shrink-0 ${isSeatSelected
                                     ? 'ring-2 ring-[#f5b800] shadow-[0_0_10px_rgba(245,184,0,0.5)] z-10 scale-105'
                                     : 'hover:-translate-y-0.5'
-                                }`}
+                                  }`}
                                 style={{
                                   width: isCouple ? 'var(--couple-w)' : 'var(--seat-w)',
                                   height: 'var(--seat-h)',
@@ -1163,16 +1186,15 @@ export default function AdminRoomsPanel({ ctx }) {
         <section className="bg-[#101318] border border-[#24282f] rounded-none flex flex-col min-h-0 shadow-[0_8px_24px_rgba(0,0,0,0.25)] overflow-hidden lg:col-span-2 xl:col-span-1">
           {/* TABS HEADER */}
           <div className="flex border-b border-[#24282f] bg-[#0c0f13] shrink-0">
-            {['Thông tin', 'Hàng ghế', 'Giá vé'].map((tabLabel, idx) => {
+            {['Thông tin', 'Hàng ghế'].map((tabLabel, idx) => {
               const isActive = activeTab === idx;
               return (
                 <button
                   key={tabLabel}
                   type="button"
                   onClick={() => setActiveTab(idx)}
-                  className={`flex-1 py-2.5 text-xs font-bold transition-all relative ${
-                    isActive ? 'text-[#f5b800]' : 'text-[#777d86] hover:text-[#d5d8dc]'
-                  }`}
+                  className={`flex-1 py-2.5 text-xs font-bold transition-all relative ${isActive ? 'text-[#f5b800]' : 'text-[#777d86] hover:text-[#d5d8dc]'
+                    }`}
                 >
                   {tabLabel}
                   {isActive && (
@@ -1241,14 +1263,12 @@ export default function AdminRoomsPanel({ ctx }) {
                   </span>
                   <div
                     onClick={handleToggleRoomActive}
-                    className={`w-10 h-5 rounded-none p-0.5 cursor-pointer transition-colors duration-200 relative ${
-                      roomActive ? 'bg-[#00c987]' : 'bg-[#3e444c]'
-                    }`}
+                    className={`w-10 h-5 rounded-none p-0.5 cursor-pointer transition-colors duration-200 relative ${roomActive ? 'bg-[#00c987]' : 'bg-[#3e444c]'
+                      }`}
                   >
                     <div
-                      className={`w-4 h-4 rounded-none bg-white transition-transform duration-200 shadow-md ${
-                        roomActive ? 'translate-x-5' : 'translate-x-0'
-                      }`}
+                      className={`w-4 h-4 rounded-none bg-white transition-transform duration-200 shadow-md ${roomActive ? 'translate-x-5' : 'translate-x-0'
+                        }`}
                     />
                   </div>
                 </div>
@@ -1299,7 +1319,7 @@ export default function AdminRoomsPanel({ ctx }) {
                   </div>
                   <div>
                     <label className="block text-[11px] font-bold uppercase tracking-wider text-[#8b9098] mb-1">
-                      Ghế / hàng (mặc định)
+                      Ghế / hàng
                     </label>
                     <input
                       type="number"
@@ -1340,9 +1360,8 @@ export default function AdminRoomsPanel({ ctx }) {
                       return (
                         <div
                           key={rIdx}
-                          className={`flex items-center gap-2 p-1.5 rounded-none border transition ${
-                            isSel ? 'bg-[#f5b800]/10 border-[#f5b800]' : 'bg-[#0c0f13] border-[#272c33] hover:border-[#3a3f47]'
-                          }`}
+                          className={`flex items-center gap-2 p-1.5 rounded-none border transition ${isSel ? 'bg-[#f5b800]/10 border-[#f5b800]' : 'bg-[#0c0f13] border-[#272c33] hover:border-[#3a3f47]'
+                            }`}
                         >
                           <b className="w-5 text-center font-mono text-xs text-white">{row.label}</b>
                           <input
@@ -1388,86 +1407,6 @@ export default function AdminRoomsPanel({ ctx }) {
               </div>
             )}
 
-            {/* ---------------- TAB 2: GIÁ VÉ ---------------- */}
-            {activeTab === 2 && (
-              <div className="space-y-3.5">
-                <p className="text-xs text-[#8b9098] leading-relaxed">
-                  Thiết lập giá tham chiếu cơ bản theo từng loại ghế để tính toán doanh thu suất chiếu:
-                </p>
-
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2.5 p-2 rounded-none bg-[#0c0f13] border border-[#272c33]">
-                    <span className="w-3.5 h-3.5 rounded-none bg-[#161b20] border border-[#697078] shrink-0" />
-                    <span className="flex-1 text-xs text-white font-medium">Ghế thường</span>
-                    <input
-                      type="number"
-                      step={5000}
-                      value={prices.std}
-                      onChange={e => {
-                        const val = Math.max(0, Number(e.target.value) || 0);
-                        setPrices(p => ({ ...p, std: val }));
-                        markDirty();
-                      }}
-                      className="w-24 h-7 text-right px-2 rounded-none border border-[#24282f] bg-[#080a0d] text-xs font-mono text-white outline-none"
-                    />
-                    <small className="text-[#8b9098] text-xs font-mono">đ</small>
-                  </div>
-
-                  <div className="flex items-center gap-2.5 p-2 rounded-none bg-[#0c0f13] border border-[#272c33]">
-                    <span className="w-3.5 h-3.5 rounded-none bg-amber-500/15 border border-[#f5b800] shrink-0" />
-                    <span className="flex-1 text-xs text-white font-medium">Ghế VIP</span>
-                    <input
-                      type="number"
-                      step={5000}
-                      value={prices.vip}
-                      onChange={e => {
-                        const val = Math.max(0, Number(e.target.value) || 0);
-                        setPrices(p => ({ ...p, vip: val }));
-                        markDirty();
-                      }}
-                      className="w-24 h-7 text-right px-2 rounded-none border border-[#24282f] bg-[#080a0d] text-xs font-mono text-white outline-none"
-                    />
-                    <small className="text-[#8b9098] text-xs font-mono">đ</small>
-                  </div>
-
-                  <div className="flex items-center gap-2.5 p-2 rounded-none bg-[#0c0f13] border border-[#272c33]">
-                    <span className="w-4 h-3 rounded-none bg-[#831843] border border-[#ec4899] shrink-0" />
-                    <span className="flex-1 text-xs text-white font-medium">Ghế đôi</span>
-                    <input
-                      type="number"
-                      step={5000}
-                      value={prices.couple}
-                      onChange={e => {
-                        const val = Math.max(0, Number(e.target.value) || 0);
-                        setPrices(p => ({ ...p, couple: val }));
-                        markDirty();
-                      }}
-                      className="w-24 h-7 text-right px-2 rounded-none border border-[#24282f] bg-[#080a0d] text-xs font-mono text-white outline-none"
-                    />
-                    <small className="text-[#8b9098] text-xs font-mono">đ</small>
-                  </div>
-                </div>
-
-                {/* Revenue Box */}
-                <div
-                  className="rounded-none border p-3.5 space-y-1 mt-4"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(245,184,0,0.10), rgba(245,184,0,0.02))',
-                    borderColor: 'rgba(245,184,0,0.30)'
-                  }}
-                >
-                  <span className="block text-[10px] font-black uppercase tracking-wider text-[#8b9098]">
-                    DOANH THU TỐI ĐA / SUẤT (KÍN RẠP)
-                  </span>
-                  <div className="text-xl sm:text-2xl font-mono font-black text-[#f5b800] tracking-tight">
-                    {formatVnd(stats.maxRev)}
-                  </div>
-                  <p className="text-[10px] text-[#8b9098] pt-1 border-t border-white/5">
-                    Dựa trên {stats.std} thường + {stats.vip} VIP + {stats.couple} đôi.
-                  </p>
-                </div>
-              </div>
-            )}
           </div>
         </section>
       </main>

@@ -1,2046 +1,2238 @@
-import React, { useCallback, useEffect, useState, useRef, useMemo } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import {
-  Plus, Trash2, Edit3, Calendar, Clock, MapPin, Film,
-  Search, RefreshCw, Eye, CheckCircle2, XCircle, AlertCircle,
-  ChevronDown, ChevronLeft, ChevronRight, Layers, DollarSign,
-  Play, PauseCircle, Ban, Check, X, Info, Zap
-} from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { adminService } from '../../../services/adminService';
+import { movieService } from '../../../services/movieService';
 
-/* bulk slot controls */
-const STATUS_META = {
-  SCHEDULED: { label: 'Đã lên lịch', color: 'text-blue-400', bg: 'bg-blue-950/30 border-blue-500/30', dot: 'bg-blue-400' },
-  OPEN: { label: 'Đang mở bán', color: 'text-emerald-400', bg: 'bg-emerald-950/30 border-emerald-500/30', dot: 'bg-emerald-400' },
-  COMPLETED: { label: 'Đã kết thúc', color: 'text-neutral-200', bg: 'bg-white/[0.02] border-white/[0.06]', dot: 'bg-neutral-500' },
-  CANCELLED: { label: 'Đã hủy', color: 'text-rose-400', bg: 'bg-rose-950/30 border-rose-500/30', dot: 'bg-rose-400' },
-};
+/* ================= CONSTANTS & HELPERS ================= */
+const CLEAN = 15; // 15 phút dọn phòng
+const ADS = 10;   // 10 phút quảng cáo
+const OPEN = 8;   // Giờ mở cửa 08:00
+const CLOSE = 25; // 01:00 sáng hôm sau (25h)
+const DOW = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
 
-const fmt = (dt) => {
-  if (!dt) return '—';
-  const d = new Date(dt);
-  return d.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-};
-
-const fmtPrice = (n) => n ? Number(n).toLocaleString('vi-VN') + 'đ' : '—';
-const hasDetailPrice = (value) => value !== null && value !== undefined && value !== '';
-const fmtDetailPrice = (value) => hasDetailPrice(value) ? `${Number(value).toLocaleString('vi-VN')}đ` : null;
-
-const toInputDatetime = (dt) => {
-  if (!dt) return '';
-  const d = new Date(dt);
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
-
-const toApiLocalDateTime = (value) => {
-  if (!value) return '';
-  return String(value).length === 16 ? `${value}:00` : String(value).slice(0, 19);
-};
-
-const toLocalDateInput = (date = new Date()) => {
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-};
-
-const normalizeDateInput = (value) => {
-  if (!value) return '';
-  const raw = String(value).slice(0, 10);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? '' : toLocalDateInput(parsed);
-};
-
-const formatDateInput = (value) => {
-  const normalized = normalizeDateInput(value);
-  return normalized ? normalized.split('-').reverse().join('/') : '--/--/----';
-};
-
-const maxDateInput = (...values) => {
-  const sorted = values.filter(Boolean).sort();
-  return sorted.length ? sorted[sorted.length - 1] : '';
-};
-
-const buildDateTimeOnDate = (sourceDateTime, targetDate) => {
-  if (!sourceDateTime || !targetDate) return '';
-  const source = new Date(sourceDateTime);
-  if (Number.isNaN(source.getTime())) return '';
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${targetDate}T${pad(source.getHours())}:${pad(source.getMinutes())}`;
-};
-
-const isFutureDateInput = (dateValue) => {
-  if (!dateValue) return false;
-  const today = toLocalDateInput();
-  return dateValue > today;
-};
-
-const EMPTY_FORM = {
-  movieId: '', roomId: '', startTime: '',
-  basePrice: '', vipPrice: '', couplePrice: '',
-  adultStandardPrice: '', childStandardPrice: '', studentStandardPrice: '',
-  adultVipPrice: '', childVipPrice: '', studentVipPrice: '',
-  adultCouplePrice: '', childCouplePrice: '', studentCouplePrice: '',
-  weekendSurcharge: false, holidaySurcharge: false,
-  lateNightSurchargeAmount: '20.000',
-  status: 'SCHEDULED'
-};
-
-const EMPTY_BULK = {
-  movieId: '', basePrice: '', vipPrice: '', couplePrice: '',
-  adultStandardPrice: '', childStandardPrice: '', studentStandardPrice: '',
-  adultVipPrice: '', childVipPrice: '', studentVipPrice: '',
-  adultCouplePrice: '', childCouplePrice: '', studentCouplePrice: '',
-  weekendSurcharge: false, holidaySurcharge: false,
-  lateNightSurchargeAmount: '20.000',
-  defaultStatus: 'SCHEDULED',
-  slots: [{ roomId: '', startTime: '', selected: true }]
-};
-
-const PRICE_ROWS = [
-  { key: 'adult', label: 'Người lớn' },
-  { key: 'child', label: 'Trẻ em' },
-  { key: 'student', label: 'Sinh viên' },
+const MOVIE_PALETTE = [
+  '#dc2626', '#7c3aed', '#0ea5e9', '#ea580c', '#0d9488',
+  '#e11d48', '#10b981', '#8b5cf6', '#f59e0b', '#0284c7'
 ];
 
-const PRICE_COLS = [
-  { key: 'Standard', label: 'Ghế thường', addon: 0 },
-  { key: 'Vip', label: 'VIP', addon: 20000 },
-  { key: 'Couple', label: 'Ghế đôi', addon: 30000 },
-];
-
-const priceField = (row, col) => `${row}${col}Price`;
-const priceDigits = (value) => String(value ?? '').replace(/\D/g, '');
-const toPriceNumber = (value) => Number(priceDigits(value) || 0);
-const hasPriceInput = (value) => priceDigits(value).length > 0;
-const canAutoDeriveSeatPrice = (value) => {
-  if (!hasPriceInput(value)) return false;
-  const price = toPriceNumber(value);
-  return price >= 10000;
+const pad = (n) => String(n).padStart(2, '0');
+const todayStr = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
-const MIN_LATE_NIGHT_SURCHARGE = 10000;
-const MAX_LATE_NIGHT_SURCHARGE = 100000;
-const formatPriceInput = (value) => {
-  const digits = priceDigits(value);
-  return digits ? Number(digits).toLocaleString('vi-VN') : '';
+const toMin = (t) => {
+  if (!t) return 0;
+  const [h, m] = t.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
 };
-const withDerivedSeatPrices = (next, rowKey) => {
-  const standardField = priceField(rowKey, 'Standard');
-  const vipField = priceField(rowKey, 'Vip');
-  const coupleField = priceField(rowKey, 'Couple');
-  const standard = toPriceNumber(next[standardField]);
-  if (!canAutoDeriveSeatPrice(next[standardField])) {
-    return {
-      ...next,
-      [vipField]: '',
-      [coupleField]: '',
-    };
-  }
-  return {
-    ...next,
-    [vipField]: formatPriceInput(standard + 20000),
-    [coupleField]: formatPriceInput(standard + 30000),
-  };
+const toT = (m) => {
+  const safeM = Math.max(0, m);
+  const h = Math.floor(safeM / 60) % 24;
+  const min = safeM % 60;
+  return `${pad(h)}:${pad(min)}`;
+};
+const fmtVN = (n) => (n || 0).toLocaleString('vi-VN');
+const addDays = (s, n) => {
+  const d = new Date(s + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+const normalizeDateStr = (dateVal) => {
+  if (!dateVal) return '';
+  if (typeof dateVal === 'string' && dateVal.includes('T')) return dateVal.split('T')[0];
+  return String(dateVal).slice(0, 10);
 };
 
-const priceOrFallback = (value, fallbackValue) => (
-  hasPriceInput(value) ? toPriceNumber(value) : toPriceNumber(fallbackValue)
-);
-
-const priceOrNull = (value) => (
-  hasPriceInput(value) ? toPriceNumber(value) : null
-);
-
-const seatPriceOrDerived = (value, standardValue, addon) => (
-  hasPriceInput(value) && toPriceNumber(value) >= toPriceNumber(standardValue)
-    ? toPriceNumber(value)
-    : toPriceNumber(standardValue) + addon
-);
-
-const displaySeatPrice = (matrixValue, rowKey, colKey) => {
-  const currentValue = matrixValue?.[priceField(rowKey, colKey)];
-  if (colKey === 'Standard') return formatPriceInput(currentValue);
-  const standardValue = matrixValue?.[priceField(rowKey, 'Standard')];
-  if (!canAutoDeriveSeatPrice(standardValue)) return '';
-
-  const derivedValue = toPriceNumber(standardValue) + (colKey === 'Vip' ? 20000 : 30000);
-  if (!hasPriceInput(currentValue) || toPriceNumber(currentValue) < toPriceNumber(standardValue)) {
-    return formatPriceInput(derivedValue);
-  }
-  return formatPriceInput(currentValue);
+const DEFAULT_PRICES = {
+  '2D': { std: 60000, vip: 90000, couple: 150000 },
+  '3D': { std: 80000, vip: 110000, couple: 180000 },
+  'IMAX': { std: 120000, vip: 160000, couple: 280000 },
+  '4DX': { std: 140000, vip: 180000, couple: 300000 },
 };
 
-const validateStandardTicketPrice = (value, message) => (
-  hasPriceInput(value) && !canAutoDeriveSeatPrice(value) ? message : null
-);
-
-const buildShowtimePayload = (formState, allowChildTickets = true) => ({
-  basePrice: priceOrFallback(formState.adultStandardPrice, formState.basePrice),
-  vipPrice: priceOrNull(formState.adultVipPrice),
-  couplePrice: priceOrNull(formState.adultCouplePrice),
-  adultStandardPrice: priceOrFallback(formState.adultStandardPrice, formState.basePrice),
-  childStandardPrice: allowChildTickets ? priceOrFallback(formState.childStandardPrice, formState.basePrice) : null,
-  studentStandardPrice: priceOrFallback(formState.studentStandardPrice, formState.basePrice),
-  adultVipPrice: seatPriceOrDerived(formState.adultVipPrice, priceOrFallback(formState.adultStandardPrice, formState.basePrice), 20000),
-  childVipPrice: allowChildTickets ? seatPriceOrDerived(formState.childVipPrice, priceOrFallback(formState.childStandardPrice, formState.basePrice), 20000) : null,
-  studentVipPrice: seatPriceOrDerived(formState.studentVipPrice, priceOrFallback(formState.studentStandardPrice, formState.basePrice), 20000),
-  adultCouplePrice: seatPriceOrDerived(formState.adultCouplePrice, priceOrFallback(formState.adultStandardPrice, formState.basePrice), 30000),
-  childCouplePrice: allowChildTickets ? seatPriceOrDerived(formState.childCouplePrice, priceOrFallback(formState.childStandardPrice, formState.basePrice), 30000) : null,
-  studentCouplePrice: seatPriceOrDerived(formState.studentCouplePrice, priceOrFallback(formState.studentStandardPrice, formState.basePrice), 30000),
-  weekendSurcharge: Boolean(formState.weekendSurcharge),
-  holidaySurcharge: Boolean(formState.holidaySurcharge),
-  lateNightSurchargeAmount: toPriceNumber(formState.lateNightSurchargeAmount || 20000),
-});
-
-const addMinutes = (value, minutes) => {
-  if (!value || !minutes) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  d.setMinutes(d.getMinutes() + minutes);
-  return d;
-};
-
-const formatTimeOnly = (value) => {
-  if (!value) return '--:--';
-  const d = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(d.getTime())) return '--:--';
-  return d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-};
-
-const getRoomCapacity = (room) => {
-  const direct = Number(room?.capacity ?? room?.totalSeats ?? room?.seatCount ?? room?.numberOfSeats);
-  if (Number.isFinite(direct) && direct > 0) return direct;
-  const rows = Number(room?.rows ?? room?.rowCount);
-  const columns = Number(room?.columns ?? room?.cols ?? room?.columnCount);
-  return Number.isFinite(rows) && Number.isFinite(columns) ? rows * columns : 0;
-};
-
-const getBulkSlotIndexFromError = (message) => {
-  const normalizedMessage = String(message || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/Ä'/g, 'd')
-    .replace(/Đ/g, 'D');
-  const match = normalizedMessage.match(/thoi gian so\s*(\d+)/i);
-  const slotNumber = match ? Number(match[1]) : 0;
-  return Number.isFinite(slotNumber) && slotNumber > 0 ? slotNumber - 1 : null;
-};
-
-const getShowtimeRoomId = (showtime) => showtime?.roomId ?? showtime?.room?.id;
-
-const intervalsOverlap = (startA, endA, startB, endB) => (
-  startA < endB && startB < endA
-);
-
-const isNightSlot = (value) => {
-  if (!value) return false;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return false;
-  const hour = d.getHours();
-  return hour >= 23 || hour < 5;
-};
-
-const getMovieOptionId = (movie) => String(movie?.backendId ?? movie?.id ?? '');
-
-const getAgeRatingMinimum = (ageRating) => {
-  if (!ageRating) return 0;
-  const match = String(ageRating).match(/\d+/);
-  return match ? Number(match[0]) : 0;
-};
-
-const CHILD_TICKET_MAX_AGE = 12;
-const allowsChildTicketsForMovie = (movie) => getAgeRatingMinimum(movie?.ageRating) <= CHILD_TICKET_MAX_AGE;
-
-const clearChildPrices = (state) => ({
-  ...state,
-  childStandardPrice: '',
-  childVipPrice: '',
-  childCouplePrice: '',
-});
-
-const validateLateNightSurcharge = (value) => {
-  const amount = toPriceNumber(value);
-  if (!amount) return 'Nhập phụ thu đêm';
-  if (amount < MIN_LATE_NIGHT_SURCHARGE) return 'Phụ thu đêm tối thiểu 10.000';
-  if (amount > MAX_LATE_NIGHT_SURCHARGE) return 'Phụ thu đêm tối đa 100.000';
-  return '';
-};
-
-/**
- * DateTimePicker
- * Renders a compact date <input> + manual time inputs.
- * value  : "YYYY-MM-DDTHH:mm" (same as datetime-local)
- * onChange: (newValue: string) => void
- */
-function DateTimePicker({ value, onChange, error, label, minDate, maxDate, helpText }) {
-  const dateInputRef = React.useRef(null);
-  const datePart = value ? value.split('T')[0] : '';
-  const timePart = value && value.includes('T') ? value.split('T')[1].slice(0, 5) : '';
-  const today = toLocalDateInput();
-  const effectiveMinDate = maxDateInput(today, minDate);
-  const hasValidDateRange = !maxDate || !effectiveMinDate || effectiveMinDate <= maxDate;
-
-  const prevValueRef = React.useRef(value);
-
-  const clampDateToRange = (dateValue) => {
-    if (!dateValue) return '';
-    if (effectiveMinDate && dateValue < effectiveMinDate) return effectiveMinDate;
-    if (maxDate && dateValue > maxDate) return maxDate;
-    return dateValue;
-  };
-
-  const handleDate = (e) => {
-    const d = clampDateToRange(e.target.value);
-    onChange(d ? `${d}T${timePart || '00:00'}` : '');
-  };
-
-  const handleTime = (t) => {
-    if (!hasValidDateRange) return;
-    const d = clampDateToRange(datePart || effectiveMinDate || toLocalDateInput());
-    onChange(`${d}T${t}`);
-  };
-
-  const openDatePicker = () => {
-    if (!hasValidDateRange) return;
-    const input = dateInputRef.current;
-    if (!input) return;
-    input.focus();
-    if (typeof input.showPicker === 'function') {
-      input.showPicker();
-    }
-  };
-
-  return (
-    <div className="space-y-2">
-      {label && (
-        <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-200 font-black block">{label}</label>
-      )}
-      {/* Date row */}
-      <div className="relative">
-        <input
-          ref={dateInputRef}
-          type="date"
-          min={effectiveMinDate || undefined}
-          max={maxDate || undefined}
-          value={datePart}
-          disabled={!hasValidDateRange}
-          onChange={handleDate}
-          className="h-11 w-full bg-black border border-white/[0.08] py-2.5 pl-3 pr-11 text-xs text-white font-mono [color-scheme:dark] focus:outline-none focus:border-amber-400 disabled:cursor-not-allowed disabled:opacity-50 [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:right-0 [&::-webkit-calendar-picker-indicator]:w-11 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:cursor-pointer"
-        />
-        <button
-          type="button"
-          onClick={openDatePicker}
-          disabled={!hasValidDateRange}
-          title="Chọn ngày chiếu"
-          className="absolute right-2 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center border border-amber-500/30 bg-amber-500/10 text-amber-300 transition hover:bg-amber-500 hover:text-black disabled:cursor-not-allowed disabled:opacity-40 pointer-events-none"
-        >
-          <Calendar className="h-3.5 w-3.5" />
-        </button>
-      </div>
-      {!hasValidDateRange ? (
-        <p className="text-[9px] font-bold text-rose-300">Không có ngày hợp lệ trong thời gian phát hành.</p>
-      ) : (
-        helpText && <p className="text-[9px] text-neutral-300 font-bold">{helpText}</p>
-      )}
-      {/* Time inputs */}
-      <div className="border border-white/[0.08] bg-black p-3 mt-1">
-        <p className="text-[9px] uppercase tracking-widest text-neutral-200 mb-2.5 font-bold">Giờ chiếu</p>
-        <div className="flex items-center gap-1.5">
-          <select
-            disabled={!hasValidDateRange}
-            value={timePart ? timePart.split(':')[0] : '00'}
-            onChange={(e) => handleTime(`${e.target.value}:${timePart ? timePart.split(':')[1] : '00'}`)}
-            className="flex-1 bg-black border border-white/[0.08] text-white text-sm font-mono font-bold text-center py-2.5 focus:border-amber-400 focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed [color-scheme:dark] appearance-none cursor-pointer hover:border-white/[0.15] transition-colors"
-          >
-            {Array.from({ length: 24 }, (_, i) => (
-              <option key={i} value={String(i).padStart(2, '0')}>{String(i).padStart(2, '0')} giờ</option>
-            ))}
-          </select>
-          <span className="text-neutral-400 font-black text-lg shrink-0">:</span>
-          <select
-            disabled={!hasValidDateRange}
-            value={timePart ? timePart.split(':')[1] : '00'}
-            onChange={(e) => handleTime(`${timePart ? timePart.split(':')[0] : '00'}:${e.target.value}`)}
-            className="flex-1 bg-black border border-white/[0.08] text-white text-sm font-mono font-bold text-center py-2.5 focus:border-amber-400 focus:outline-none disabled:opacity-40 disabled:cursor-not-allowed [color-scheme:dark] appearance-none cursor-pointer hover:border-white/[0.15] transition-colors"
-          >
-            {Array.from({ length: 60 }, (_, i) => (
-              <option key={i} value={String(i).padStart(2, '0')}>{String(i).padStart(2, '0')} phút</option>
-            ))}
-          </select>
-        </div>
-        {timePart && (
-          <p className="text-[9px] text-amber-400 font-mono font-bold mt-2.5 text-center bg-amber-900/20 py-1.5 rounded border border-amber-900/30">
-            ✓ Đã chọn: {datePart ? `${datePart.split('-').reverse().join('/')} lúc ${timePart}` : timePart}
-          </p>
-        )}
-      </div>
-      {error && <p className="text-rose-400 text-[9px]">{error}</p>}
-    </div>
-  );
-}
-
-function PriceMatrix({ value, onChange, errors = {}, prefix = '', allowChildTickets = true, ageRatingLabel = '' }) {
-  const setPrice = (field, nextValue) => {
-    const next = { ...value, [field]: formatPriceInput(nextValue) };
-    const row = PRICE_ROWS.find(item => field === priceField(item.key, 'Standard'));
-    onChange(row ? withDerivedSeatPrices(next, row.key) : next);
-  };
-  const visibleRows = PRICE_ROWS.filter(row => allowChildTickets || row.key !== 'child');
-
-  return (
-    <div className="md:col-span-2 border border-white/[0.06] bg-black/30 p-4 space-y-3">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-        <div>
-          <p className="text-[11px] uppercase tracking-widest text-amber-500 font-black">Bảng giá theo lứa tuổi</p>
-          <p className="text-[10px] text-neutral-300">Nhập giá ghế thường, hệ thống tự cộng VIP +20k và ghế đôi +30k. Bạn có thể sửa từng mục.</p>
-        </div>
-        <div className="flex gap-3 text-[9px] uppercase tracking-wider text-neutral-200">
-          <label className="flex items-center gap-1.5 cursor-pointer">
-            <input type="checkbox" checked={Boolean(value.weekendSurcharge)}
-              onChange={e => onChange({ ...value, weekendSurcharge: e.target.checked })}
-              className="accent-amber-500" />
-            Cuối tuần +10k
-          </label>
-          <label className="flex items-center gap-1.5 cursor-pointer">
-            <input type="checkbox" checked={Boolean(value.holidaySurcharge)}
-              onChange={e => onChange({ ...value, holidaySurcharge: e.target.checked })}
-              className="accent-amber-500" />
-            Ngày lễ +10k
-          </label>
-        </div>
-      </div>
-
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[560px] text-[10px]">
-          <thead>
-            <tr className="text-left text-neutral-300 uppercase tracking-wider">
-              <th className="py-2 pr-2">Loại vé</th>
-              {PRICE_COLS.map(col => <th key={col.key} className="py-2 px-2">{col.label}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {visibleRows.map(row => (
-              <tr key={row.key} className="border-t border-white/[0.06]">
-                <td className="py-2 pr-2 text-neutral-200 font-bold uppercase whitespace-nowrap">{row.label}</td>
-                {PRICE_COLS.map(col => {
-                  const field = priceField(row.key, col.key);
-                  return (
-                    <td key={field} className="py-2 px-2">
-                      <input type="text" inputMode="numeric" value={displaySeatPrice(value, row.key, col.key)}
-                        onChange={e => setPrice(field, e.target.value)}
-                        placeholder={col.addon ? `+${formatPriceInput(col.addon)}` : '90.000'}
-                        className="w-full bg-black border border-white/[0.08] p-2 text-xs text-white font-mono focus:outline-none focus:border-amber-400" />
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {!allowChildTickets && (
-        <p className="text-[11px] font-black uppercase tracking-wide text-amber-300">
-          Phim {ageRatingLabel || '16+'} Không cho phép bán vé trẻ em, bảng giá mục này vô hiệu hóa!
-        </p>
-      )}
-      <div className="grid gap-2 border border-white/[0.06] bg-black/40 p-3 sm:grid-cols-[1fr_180px] sm:items-end">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-widest text-orange-300">Phụ thu đêm</p>
-          <p className="mt-1 text-[10px] text-neutral-300">
-            Áp dụng cho suất bắt đầu từ 23:00 đến trước 05:00. Nhập trong khoảng 10.000 - 100.000.
-          </p>
-        </div>
-        <div>
-          <input
-            type="text"
-            inputMode="numeric"
-            value={formatPriceInput(value.lateNightSurchargeAmount)}
-            onChange={e => onChange({ ...value, lateNightSurchargeAmount: formatPriceInput(e.target.value) })}
-            placeholder="20.000"
-            className="w-full bg-black border border-white/[0.08] p-2 text-xs text-white font-mono focus:outline-none focus:border-orange-400"
-          />
-        </div>
-      </div>
-      {['adultStandardPrice', ...(allowChildTickets ? ['childStandardPrice'] : []), 'studentStandardPrice'].map(field => (
-        errors[`${prefix}${field}`] ? <p key={field} className="text-rose-400 text-[9px]">{errors[`${prefix}${field}`]}</p> : null
-      ))}
-      {errors[`${prefix}lateNightSurchargeAmount`] && (
-        <p className="text-rose-400 text-[9px]">{errors[`${prefix}lateNightSurchargeAmount`]}</p>
-      )}
-      <p className="text-[11px] text-neutral-200">
-        Phụ thu đêm 23:00-04:59 được cộng theo mức admin nhập: {formatPriceInput(value.lateNightSurchargeAmount || 20000)}đ/vé.
-      </p>
-    </div>
-  );
-}
-
-
-/* ─── main component ─────────────────────────────────────── */
 export default function AdminShowtimesPanel({ ctx }) {
-  const { getAdminToken, showToast, moviesList } = ctx;
+  const { getAdminToken, showToast, moviesList } = ctx || {};
+  const getTokenRef = useRef(getAdminToken);
+  useEffect(() => { getTokenRef.current = getAdminToken; }, [getAdminToken]);
 
-  // Stable ref – ensures useEffect([]) always calls the latest getAdminToken
-  const getTokenRef = React.useRef(getAdminToken);
-  React.useEffect(() => { getTokenRef.current = getAdminToken; }, [getAdminToken]);
-
-  /* state */
-  const [showtimes, setShowtimes] = useState([]);
+  /* State */
+  const [date, setDate] = useState(todayStr());
+  const [view, setView] = useState('day'); // 'day' | 'week'
   const [rooms, setRooms] = useState([]);
   const [adminMovies, setAdminMovies] = useState([]);
+  const [shows, setShows] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [page, setPage] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
-  const [filters, setFilters] = useState({ movieId: '', roomId: '', status: '', date: '' });
-  const filtersRef = useRef(filters);
-  useEffect(() => { filtersRef.current = filters; }, [filters]);
-  const dateFilterRef = useRef(null);
+  const [selId, setSelId] = useState(null);
+  const [selMovie, setSelMovie] = useState(null);
+  const [tabIdx, setTabIdx] = useState(0); // 0: detail, 1: overview, 2: warnings
+  const [searchQuery, setSearchQuery] = useState('');
+  const [dragGhost, setDragGhost] = useState(null);
+  const [draggingShowId, setDraggingShowId] = useState(null);
+  const [movieFilter, setMovieFilter] = useState('NOW_SHOWING'); // 'NOW_SHOWING' | 'UPCOMING' | 'ALL'
+  const [loadingMovies, setLoadingMovies] = useState(false);
 
-  const [mode, setMode] = useState('list'); // 'list' | 'create' | 'bulk' | 'edit' | 'refunds'
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [bulkForm, setBulkForm] = useState(EMPTY_BULK);
-  const [editingBulkSlotIndex, setEditingBulkSlotIndex] = useState(0);
-  const [editingId, setEditingId] = useState(null);
-  const [editingStatus, setEditingStatus] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [errors, setErrors] = useState({});
-  // Cảnh báo trùng lịch sớm (live) cho form bulk: { slotIndex: message }
-  const [liveConflicts, setLiveConflicts] = useState({});
+  /* Modals */
+  const [addModal, setAddModal] = useState(null);
+  const [copyModal, setCopyModal] = useState(false);
+  const [autoModal, setAutoModal] = useState(false);
 
-  // Gợi ý khung giờ trống cho form tạo suất (phim + phòng + ngày đã chọn)
-  const [suggestedSlots, setSuggestedSlots] = useState([]);
-  const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+  /* Timeline Scroll */
+  const tlWrapRef = useRef(null);
+  const scrolledOnceRef = useRef(false);
 
-  const [confirmDelete, setConfirmDelete] = useState(null); // showtimeId
-  const [confirmCancel, setConfirmCancel] = useState(null); // showtime object
-  const [cancelReason, setCancelReason] = useState('');
-  const [refundSummary, setRefundSummary] = useState(null); // result từ cancelShowtimeAndRefund
-  const [copySource, setCopySource] = useState(null); // showtime object
-  const [copyDate, setCopyDate] = useState('');
-  const [isCopying, setIsCopying] = useState(false);
-  const [detailModal, setDetailModal] = useState(null); // showtime object
-  const [roomSeatTypesById, setRoomSeatTypesById] = useState({});
-  const allMovies = useMemo(() => {
-    const source = adminMovies.length > 0 ? adminMovies : (moviesList || []);
-    return [...source].sort((a, b) => String(a.title || '').localeCompare(String(b.title || ''), 'vi'));
-  }, [adminMovies, moviesList]);
+  /* ================= FETCH MOVIES TỪ BE (NOW SHOWING & ALL) ================= */
+  const fetchMovies = useCallback(async () => {
+    setLoadingMovies(true);
+    try {
+      const token = getTokenRef.current?.();
+      let list = [];
 
-  const findUiMovie = useCallback((movieId) => (
-    allMovies.find(m => String(m.backendId ?? m.id) === String(movieId) || String(m.id) === String(movieId))
-  ), [allMovies]);
+      // 1. Thử gọi API Admin (nếu có token)
+      if (token) {
+        try {
+          const res = await adminService.searchAdminMovies(token, { size: 100 });
+          list = Array.isArray(res) ? res : (res?.content || res?.items || []);
+        } catch (e) {
+          console.warn('adminService.searchAdminMovies không thành công, thử fallback sang public API:', e);
+        }
+      }
 
-  // Tải gợi ý khung giờ trống (debounced) khi đã chọn đủ phim + phòng + ngày ở form tạo suất
-  const slotSuggestionDate = form.startTime ? String(form.startTime).split('T')[0] : '';
-  useEffect(() => {
-    if (mode !== 'create' || !form.movieId || !form.roomId || !slotSuggestionDate) {
-      setSuggestedSlots([]);
-      return undefined;
-    }
-    const token = getTokenRef.current?.();
-    if (!token) return undefined;
-    let cancelled = false;
-    const timeoutId = window.setTimeout(() => {
-      setIsLoadingSlots(true);
-      adminService.getAvailableShowtimeSlots(token, {
-        roomId: Number(form.roomId),
-        movieId: Number(form.movieId),
-        date: slotSuggestionDate
-      })
-        .then((slots) => { if (!cancelled) setSuggestedSlots(Array.isArray(slots) ? slots : []); })
-        .catch(() => { if (!cancelled) setSuggestedSlots([]); })
-        .finally(() => { if (!cancelled) setIsLoadingSlots(false); });
-    }, 400);
-    return () => { cancelled = true; window.clearTimeout(timeoutId); };
-  }, [mode, form.movieId, form.roomId, slotSuggestionDate]);
+      // 2. Fallback gọi public API /api/v1/movies (luôn hoạt động trực tiếp qua Gateway)
+      if (!list || list.length === 0) {
+        try {
+          const publicRes = await movieService.searchMovies({ size: 100 });
+          list = Array.isArray(publicRes) ? publicRes : (publicRes?.content || publicRes?.items || []);
+        } catch (e) {
+          console.warn('Lỗi searchMovies public:', e);
+        }
+      }
 
-  const findShowtimeMovie = useCallback((showtime) => {
-    const movieId = showtime?.movieId ?? showtime?.movie?.id ?? showtime?.movie?.backendId;
-    return findUiMovie(movieId) || showtime?.movie || null;
-  }, [findUiMovie]);
-
-  const allowsChildTicketsForShowtime = useCallback((showtime) => {
-    const movie = findShowtimeMovie(showtime);
-    const ageRating = movie?.ageRating ?? movie?.raw?.ageRating ?? showtime?.ageRating ?? showtime?.movieAgeRating ?? showtime?.movie?.ageRating;
-    return getAgeRatingMinimum(ageRating) <= CHILD_TICKET_MAX_AGE;
-  }, [findShowtimeMovie]);
-
-  const getMovieReleaseWindow = useCallback((movie) => ({
-    releaseDate: normalizeDateInput(movie?.releaseDate || movie?.raw?.releaseDate),
-    endDate: normalizeDateInput(movie?.endDate || movie?.raw?.endDate),
-  }), []);
-
-  const getShowtimeWindowError = useCallback((movie, startTime) => {
-    if (!movie) return null;
-    const { releaseDate, endDate } = getMovieReleaseWindow(movie);
-    if (!releaseDate || !endDate) return 'Ngày chiếu phim đang không nằm trong khoảng ngày phát hành hợp lệ.';
-    const showDate = normalizeDateInput(startTime);
-    if (!showDate) return null;
-    if (showDate < releaseDate || showDate > endDate) {
-      return `Suất chiếu phải nằm trong thời gian phát hành ${formatDateInput(releaseDate)} - ${formatDateInput(endDate)}.`;
-    }
-    return null;
-  }, [getMovieReleaseWindow]);
-
-  /* fetch rooms and admin movies once */
-  useEffect(() => {
-    const token = getTokenRef.current?.();
-    if (!token) return;
-    adminService.getAdminRooms(token).then(data => {
-      const list = Array.isArray(data) ? data : (data?.content || data?.items || []);
-      setRooms(list);
-    }).catch(() => { });
-
-    adminService.searchAdminMovies(token, { size: 500 }).then(data => {
-      const list = Array.isArray(data) ? data : (data?.content || data?.items || []);
-      if (Array.isArray(list) && list.length > 0) {
+      if (list && list.length > 0) {
         setAdminMovies(list);
       }
-    }).catch(err => {
-      console.warn('Failed to load admin movies in showtimes panel:', err);
-    });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    } catch (err) {
+      console.warn('Lỗi tải danh sách phim từ BE:', err);
+    } finally {
+      setLoadingMovies(false);
+    }
+  }, []);
+
+  /* ================= FETCH ROOMS TỪ BE ================= */
+  const fetchRooms = useCallback(async () => {
+    try {
+      const token = getTokenRef.current?.();
+      let list = [];
+      if (token) {
+        try {
+          const res = await adminService.getAdminRooms(token);
+          list = Array.isArray(res) ? res : (res?.content || res?.items || []);
+        } catch (e) {
+          console.warn('Lỗi getAdminRooms:', e);
+        }
+      }
+      if (list && list.length > 0) {
+        const formatted = list.map((r, i) => ({
+          id: r.id || r.roomId,
+          name: r.name || `Phòng ${pad(i + 1)}`,
+          type: r.type || r.roomType || '2D',
+          seats: r.totalSeats || r.seatCount || 80,
+          active: r.active !== false && r.status !== 'INACTIVE',
+          price: r.price || DEFAULT_PRICES[r.type || '2D'] || DEFAULT_PRICES['2D']
+        }));
+        setRooms(formatted);
+      }
+    } catch (err) {
+      console.warn('Lỗi lấy danh sách phòng:', err);
+    }
+  }, []);
 
   useEffect(() => {
-    const roomId = getShowtimeRoomId(detailModal);
-    if (!roomId || roomSeatTypesById[roomId]) return;
+    fetchMovies();
+    fetchRooms();
+  }, [fetchMovies, fetchRooms]);
 
+  /* Merged Movies List từ Backend */
+  const movies = useMemo(() => {
+    const raw = adminMovies.length > 0 ? adminMovies : (moviesList || []);
+    return raw.map((m, i) => {
+      const dur = Number(m.duration || m.durationMinutes || 120);
+      const formats = m.formats || (m.type ? [m.type] : ['2D', '3D', 'IMAX']);
+      const age = m.ageRating || m.rating || (m.age ? `T${m.age}` : 'P');
+      const release = normalizeDateStr(m.releaseDate || m.startDate || '2026-09-10');
+      const end = normalizeDateStr(m.endDate || '2026-11-24');
+      const color = m.color || MOVIE_PALETTE[i % MOVIE_PALETTE.length];
+      const status = String(m.status || m.movieStatus || 'NOW_SHOWING').toUpperCase();
+      return {
+        id: m.id || m.backendId || i + 1,
+        title: m.title || 'Phim chưa đặt tên',
+        dur: dur > 0 ? dur : 120,
+        formats: Array.isArray(formats) ? formats : ['2D'],
+        age: age || 'P',
+        color,
+        release,
+        end,
+        hot: Boolean(m.isHot || m.featured || m.hot),
+        lang: m.language || 'Tiếng Việt',
+        posterUrl: m.posterUrl || m.poster || m.avatarUrl || null,
+        status
+      };
+    });
+  }, [adminMovies, moviesList]);
+
+  /* ================= CALL API LOAD SHOWTIMES ================= */
+  const fetchShowtimes = useCallback(async (targetDate = date) => {
     const token = getTokenRef.current?.();
     if (!token) return;
 
-    adminService.getAdminRoomSeats(token, roomId)
-      .then(data => {
-        const seats = Array.isArray(data) ? data : (data?.content || data?.items || []);
-        const seatTypes = [...new Set(seats.map(seat => seat.seatType).filter(Boolean))];
-        setRoomSeatTypesById(current => ({ ...current, [roomId]: seatTypes }));
-      })
-      .catch(() => {
-        setRoomSeatTypesById(current => ({ ...current, [roomId]: [] }));
-      });
-  }, [detailModal, roomSeatTypesById]);
-
-  /* fetch showtimes */
-  const fetchShowtimes = useCallback(async (p = 0, overrideFilters = null) => {
-    const token = getTokenRef.current?.();
-    if (!token) return;
     setLoading(true);
     try {
-      const activeFilters = overrideFilters != null ? overrideFilters : filtersRef.current;
-      const params = { page: p, size: 10, ...activeFilters };
-      Object.keys(params).forEach(k => {
-        if (params[k] === '' || params[k] === null || params[k] === undefined) {
-          delete params[k];
+      // Gọi API lấy danh sách suất chiếu (hỗ trợ phân trang và filter)
+      // Gọi 2 query: lấy tất cả suất chiếu gần đây (size: 100) và lấy suất chiếu ngày đang chọn (nếu có)
+      const resAll = await adminService.getAdminShowtimes(token, { page: 0, size: 100 });
+      let itemsAll = Array.isArray(resAll) ? resAll : (resAll?.content || resAll?.items || resAll?.data?.content || []);
+
+      // Nếu targetDate được chỉ định, gọi thêm query theo date để đảm bảo không bị miss
+      let itemsDate = [];
+      if (targetDate) {
+        try {
+          const resDate = await adminService.getAdminShowtimes(token, { date: targetDate, page: 0, size: 100 });
+          itemsDate = Array.isArray(resDate) ? resDate : (resDate?.content || resDate?.items || resDate?.data?.content || []);
+        } catch { /* ignore */ }
+      }
+
+      // Hợp nhất dữ liệu tránh trùng ID
+      const mergedMap = new Map();
+      [...itemsAll, ...itemsDate].forEach(item => {
+        const idKey = String(item.id || item.showtimeId);
+        if (idKey) mergedMap.set(idKey, item);
+      });
+      const combinedItems = Array.from(mergedMap.values());
+
+      const mapped = combinedItems.map(s => {
+        const movieId = s.movieId || s.movie?.id || s.movie?.backendId;
+        const roomId = s.roomId || s.room?.id;
+
+        // Trích xuất ngày và giờ chính xác từ chuỗi startTime ISO (không bị lệch timezone)
+        let showDate = '';
+        let showTime = '09:00';
+        if (typeof s.startTime === 'string' && s.startTime.includes('T')) {
+          const parts = s.startTime.split('T');
+          showDate = parts[0];
+          showTime = parts[1].slice(0, 5);
+        } else if (s.startTime) {
+          const dt = new Date(s.startTime);
+          showDate = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+          showTime = `${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+        }
+
+        const foundMovie = movies.find(m => String(m.id) === String(movieId));
+        const fmt = s.format || s.projectionType || (foundMovie?.formats?.[0]) || '2D';
+        const statusMap = {
+          'OPEN': 'open',
+          'SCHEDULED': 'plan',
+          'CANCELLED': 'cancel',
+          'COMPLETED': 'done'
+        };
+
+        return {
+          id: String(s.id || s.showtimeId || Math.random().toString(36).slice(2, 9)),
+          date: showDate || todayStr(),
+          roomId: Number(roomId),
+          movieId: Number(movieId),
+          start: showTime,
+          fmt,
+          lang: s.language || foundMovie?.lang || 'Phụ đề',
+          sold: Number(s.bookedSeatsCount || s.sold || 0),
+          status: statusMap[s.status] || (String(s.status || '').toLowerCase()) || 'open',
+          note: s.note || '',
+          price: {
+            std: Number(s.basePrice || s.adultStandardPrice || 60000),
+            vip: Number(s.vipPrice || s.adultVipPrice || 90000),
+            couple: Number(s.couplePrice || s.adultCouplePrice || 150000)
+          },
+          raw: s
+        };
+      });
+
+      setShows(mapped);
+
+      // Tự động bổ sung phòng từ suất chiếu nếu phòng đó chưa có trong `rooms`
+      combinedItems.forEach(item => {
+        const rid = Number(item.roomId || item.room?.id);
+        const rname = item.roomName || item.room?.name;
+        if (rid && rname) {
+          setRooms(prevRooms => {
+            if (!prevRooms.some(r => Number(r.id) === rid)) {
+              return [...prevRooms, {
+                id: rid,
+                name: rname,
+                type: item.roomType || '2D',
+                seats: 80,
+                active: true,
+                price: DEFAULT_PRICES['2D']
+              }];
+            }
+            return prevRooms;
+          });
         }
       });
-      if (params.movieId) params.movieId = Number(params.movieId);
-      if (params.roomId) params.roomId = Number(params.roomId);
-      const data = await adminService.getAdminShowtimes(token, params);
-      const items = data?.content || data?.items || (Array.isArray(data) ? data : []);
-      const sortedItems = [...items].sort((a, b) => {
-        const idA = Number(a.id ?? a.showtimeId ?? 0);
-        const idB = Number(b.id ?? b.showtimeId ?? 0);
-        return idB - idA;
-      });
-      setShowtimes(sortedItems);
-      setTotalPages(data?.totalPages || 1);
-      setPage(p);
-    } catch (e) {
-      showToast?.('Không thể tải danh sách suất chiếu: ' + e.message, 'error');
+    } catch (err) {
+      console.warn('Lỗi gọi API getAdminShowtimes:', err);
+      showToast?.('Không thể tải lịch chiếu từ server: ' + err.message, 'error');
     } finally {
       setLoading(false);
     }
-  }, [showToast]);
+  }, [date, movies, showToast]);
 
-
-  useEffect(() => { fetchShowtimes(0); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  /* ── create / edit submit ── */
-  const handleFormSubmit = async (e) => {
-    e.preventDefault();
-    const token = getAdminToken();
-    if (!token) return;
-    setErrors({});
-    const errs = {};
-    const selectedMovie = findUiMovie(form.movieId);
-    const allowChildTickets = allowsChildTicketsForMovie(selectedMovie);
-    if (!form.movieId) errs.movieId = 'Chọn phim';
-    if (!form.roomId) errs.roomId = 'Chọn phòng';
-    if (!form.startTime || isNaN(new Date(form.startTime).getTime())) errs.startTime = 'Nhập thời gian hợp lệ';
-    const formWindowError = selectedMovie && form.startTime ? getShowtimeWindowError(selectedMovie, form.startTime) : null;
-    if (formWindowError) errs.startTime = formWindowError;
-    if (!hasPriceInput(form.adultStandardPrice) && !hasPriceInput(form.basePrice)) errs.adultStandardPrice = 'Nhập giá người lớn ghế thường';
-    if (allowChildTickets && !hasPriceInput(form.childStandardPrice)) errs.childStandardPrice = 'Nhập giá trẻ em ghế thường';
-    if (!hasPriceInput(form.studentStandardPrice)) errs.studentStandardPrice = 'Nhập giá sinh viên ghế thường';
-    const adultStandardError = validateStandardTicketPrice(form.adultStandardPrice || form.basePrice, 'Giá người lớn phải là 0 hoặc từ 10.000');
-    const childStandardError = allowChildTickets ? validateStandardTicketPrice(form.childStandardPrice, 'Giá trẻ em phải là 0 hoặc từ 10.000') : null;
-    const studentStandardError = validateStandardTicketPrice(form.studentStandardPrice, 'Giá sinh viên phải là 0 hoặc từ 10.000');
-    if (adultStandardError) errs.adultStandardPrice = adultStandardError;
-    if (childStandardError) errs.childStandardPrice = childStandardError;
-    if (studentStandardError) errs.studentStandardPrice = studentStandardError;
-    const formLateNightError = validateLateNightSurcharge(form.lateNightSurchargeAmount);
-    if (formLateNightError) errs.lateNightSurchargeAmount = formLateNightError;
-    if (Object.keys(errs).length) { setErrors(errs); return; }
-
-    const payload = {
-      movieId: Number(form.movieId),
-      roomId: Number(form.roomId),
-      startTime: toApiLocalDateTime(form.startTime),
-      ...buildShowtimePayload(form, allowChildTickets),
-      status: form.status || 'SCHEDULED',
-    };
-
-    setSaving(true);
-    try {
-      if (editingId) {
-        if (editingStatus === 'OPEN') {
-          showToast?.('Suất chiếu đang mở bán không thể chỉnh sửa.', 'error');
-          return;
-        }
-        await adminService.updateAdminShowtime(token, editingId, payload);
-        showToast?.('Cập nhật suất chiếu thành công', 'success');
-      } else {
-        await adminService.createAdminShowtime(token, payload);
-        showToast?.('Tạo suất chiếu thành công', 'success');
-      }
-      setMode('list');
-      setForm(EMPTY_FORM);
-      setEditingId(null);
-      setEditingStatus('');
-      fetchShowtimes(0);
-    } catch (e) {
-      showToast?.('Lỗi: ' + e.message, 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  /* ── bulk submit ── */
-  const handleBulkSubmit = async (e) => {
-    e.preventDefault();
-    const token = getAdminToken();
-    if (!token) return;
-    const errs = {};
-    const selectedMovie = findUiMovie(bulkForm.movieId);
-    const allowChildTickets = allowsChildTicketsForMovie(selectedMovie);
-    if (!bulkForm.movieId) errs.movieId = 'Chọn phim';
-    if (!hasPriceInput(bulkForm.adultStandardPrice) && !hasPriceInput(bulkForm.basePrice)) errs.adultStandardPrice = 'Nhập giá người lớn ghế thường';
-    if (allowChildTickets && !hasPriceInput(bulkForm.childStandardPrice)) errs.childStandardPrice = 'Nhập giá trẻ em ghế thường';
-    if (!hasPriceInput(bulkForm.studentStandardPrice)) errs.studentStandardPrice = 'Nhập giá sinh viên ghế thường';
-    const bulkAdultStandardError = validateStandardTicketPrice(bulkForm.adultStandardPrice || bulkForm.basePrice, 'Giá người lớn phải là 0 hoặc từ 10.000');
-    const bulkChildStandardError = allowChildTickets ? validateStandardTicketPrice(bulkForm.childStandardPrice, 'Giá trẻ em phải là 0 hoặc từ 10.000') : null;
-    const bulkStudentStandardError = validateStandardTicketPrice(bulkForm.studentStandardPrice, 'Giá sinh viên phải là 0 hoặc từ 10.000');
-    if (bulkAdultStandardError) errs.adultStandardPrice = bulkAdultStandardError;
-    if (bulkChildStandardError) errs.childStandardPrice = bulkChildStandardError;
-    if (bulkStudentStandardError) errs.studentStandardPrice = bulkStudentStandardError;
-    const bulkLateNightError = validateLateNightSurcharge(bulkForm.lateNightSurchargeAmount);
-    if (bulkLateNightError) errs.lateNightSurchargeAmount = bulkLateNightError;
-    const selectedSlotIndexes = bulkForm.slots
-      .map((slot, index) => (slot.selected !== false ? index : null))
-      .filter(index => index !== null);
-    const selectedSlots = selectedSlotIndexes.map(index => bulkForm.slots[index]);
-    if (!selectedSlots.length) errs.slot_selection = 'Chon it nhat mot khung gio';
-    const seenRoomStartTimes = new Set();
-    selectedSlots.forEach((s, i) => {
-      const slotIndex = selectedSlotIndexes[i];
-      if (!s.roomId) errs[`slot_room_${slotIndex}`] = 'Chọn phòng';
-      if (!s.startTime || isNaN(new Date(s.startTime).getTime())) {
-        errs[`slot_time_${slotIndex}`] = 'Nhập thời gian hợp lệ';
-        return;
-      }
-      const slotWindowError = selectedMovie ? getShowtimeWindowError(selectedMovie, s.startTime) : null;
-      if (slotWindowError) {
-        errs[`slot_time_${slotIndex}`] = slotWindowError;
-        return;
-      }
-      const normalizedStart = toApiLocalDateTime(s.startTime).slice(0, 16);
-      const roomStartKey = `${s.roomId}|${normalizedStart}`;
-      if (seenRoomStartTimes.has(roomStartKey)) {
-        errs[`slot_time_${slotIndex}`] = 'Phòng này đã có slot khác cùng giờ trong danh sách đang chọn';
-      }
-      seenRoomStartTimes.add(roomStartKey);
-    });
-    if (bulkStepMinutes) {
-      selectedSlots.forEach((slot, slotPosition) => {
-        const slotIndex = selectedSlotIndexes[slotPosition];
-        if (!slot.roomId || !slot.startTime || Number.isNaN(new Date(slot.startTime).getTime())) return;
-        const slotStart = new Date(slot.startTime);
-        const slotEnd = addMinutes(slot.startTime, bulkStepMinutes);
-        if (!slotEnd) return;
-
-        selectedSlots.forEach((otherSlot, otherPosition) => {
-          if (otherPosition <= slotPosition) return;
-          const otherIndex = selectedSlotIndexes[otherPosition];
-          if (String(slot.roomId) !== String(otherSlot.roomId)) return;
-          if (!otherSlot.startTime || Number.isNaN(new Date(otherSlot.startTime).getTime())) return;
-
-          const otherStart = new Date(otherSlot.startTime);
-          const otherEnd = addMinutes(otherSlot.startTime, bulkStepMinutes);
-          if (!otherEnd) return;
-
-          if (intervalsOverlap(slotStart, slotEnd, otherStart, otherEnd)) {
-            const message = 'Slot này trùng thời gian với slot khác cùng phòng trong danh sách đang chọn';
-            errs[`slot_time_${slotIndex}`] = message;
-            errs[`slot_time_${otherIndex}`] = message;
-          }
-        });
-      });
-    }
-    if (Object.keys(errs).length) { setErrors(errs); return; }
-
-    const conflictErrs = {};
-    const slotDates = [...new Set(selectedSlots
-      .map(slot => normalizeDateInput(slot.startTime))
-      .filter(Boolean))];
-    try {
-      const existingShowtimes = await fetchExistingShowtimesForDates(token, slotDates);
-
-      selectedSlots.forEach((slot, slotPosition) => {
-        const slotIndex = selectedSlotIndexes[slotPosition];
-        if (slotConflictsWithExisting(slot, existingShowtimes)) {
-          conflictErrs[`slot_time_${slotIndex}`] = 'Slot này trùng thời gian với suất chiếu đã tồn tại trong phòng này';
-        }
-      });
-    } catch (error) {
-      showToast?.('Không thể kiểm tra trùng lịch trước khi tạo: ' + error.message, 'error');
-    }
-
-    if (Object.keys(conflictErrs).length) {
-      const firstConflictIndex = Number(Object.keys(conflictErrs)[0].replace('slot_time_', ''));
-      setErrors(conflictErrs);
-      setEditingBulkSlotIndex(Number.isFinite(firstConflictIndex) ? firstConflictIndex : 0);
-      showToast?.(`Có ${Object.keys(conflictErrs).length} khung giờ bị trùng thời gian. Các ô lỗi đã được đánh viền đỏ.`, 'error');
-      return;
-    }
-
-    setErrors({});
-
-    const payload = {
-      movieId: Number(bulkForm.movieId),
-      ...buildShowtimePayload(bulkForm, allowChildTickets),
-      defaultStatus: bulkForm.defaultStatus || 'SCHEDULED',
-      slots: selectedSlots.map(s => ({
-        roomId: Number(s.roomId),
-        startTime: toApiLocalDateTime(s.startTime),
-        status: s.status || null,
-      })),
-    };
-
-    setSaving(true);
-    try {
-      const result = await adminService.createAdminShowtimesBulk(token, payload);
-      const count = Array.isArray(result) ? result.length : '?';
-      showToast?.(`Tạo thành công ${count} suất chiếu`, 'success');
-      setMode('list');
-      setBulkForm(EMPTY_BULK);
-      setEditingStatus('');
-      fetchShowtimes(0);
-    } catch (e) {
-      const errorMessage = e.message || '';
-      const errorSlotIndex = getBulkSlotIndexFromError(errorMessage);
-      if (errorSlotIndex !== null) {
-        const actualSlotIndex = selectedSlotIndexes[errorSlotIndex] ?? errorSlotIndex;
-        setErrors(prev => ({
-          ...prev,
-          [`slot_time_${actualSlotIndex}`]: errorMessage,
-        }));
-        setEditingBulkSlotIndex(actualSlotIndex);
-      }
-      showToast?.('Lỗi: ' + e.message, 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  /* ── status change ── */
-  const handleStatusChange = async (showtimeId, newStatus) => {
-    const token = getAdminToken();
-    if (!token) return;
-    try {
-      await adminService.updateAdminShowtimeStatus(token, showtimeId, newStatus);
-      showToast?.('Cập nhật trạng thái thành công', 'success');
-      fetchShowtimes(page);
-    } catch (e) {
-      showToast?.('Lỗi: ' + e.message, 'error');
-    }
-  };
-
-  /* ── delete ── */
-  const handleConfirmCancel = async () => {
-    if (!confirmCancel?.id) return;
-    const showtimeId = confirmCancel.id;
-    const token = getAdminToken();
-    if (!token) return;
-    setSaving(true);
-    try {
-      const result = await adminService.cancelShowtimeAndRefund(token, showtimeId, cancelReason.trim());
-      setRefundSummary(result);
-      showToast?.(`Đã hủy suất chiếu. Hoàn tiền: ${result?.successCount ?? 0} thành công, ${result?.failedCount ?? 0} lỗi.`, 'success');
-      setConfirmCancel(null);
-      setCancelReason('');
-      setDetailModal(null);
-      fetchShowtimes(page);
-    } catch (e) {
-      showToast?.('Lỗi hủy suất chiếu và hoàn tiền: ' + e.message, 'error');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-
-  const handleDelete = async (showtimeId) => {
-    const token = getAdminToken();
-    if (!token) return;
-    try {
-      await adminService.deleteAdminShowtime(token, showtimeId);
-      showToast?.('Đã xóa suất chiếu', 'success');
-      setConfirmDelete(null);
-      fetchShowtimes(page);
-    } catch (e) {
-      showToast?.('Lỗi: ' + e.message, 'error');
-      setConfirmDelete(null);
-    }
-  };
-
-  /* ── open edit form ── */
-  const openCopy = (st) => {
-    const sourceDate = st.startTime ? new Date(st.startTime) : new Date();
-    const target = new Date(sourceDate);
-    target.setDate(target.getDate() + 1);
-    const defaultDate = toLocalDateInput(target);
-    setCopySource(st);
-    setCopyDate(isFutureDateInput(defaultDate) ? defaultDate : '');
-    setErrors({});
-  };
-
-  const handleCopySubmit = async (event) => {
-    event.preventDefault();
-    const token = getAdminToken();
-    if (!token || !copySource) return;
-    if (!isFutureDateInput(copyDate)) {
-      setErrors({ copyDate: 'Chọn một ngày trong tương lai.' });
-      return;
-    }
-
-    const movieId = copySource.movieId ?? copySource.movie?.id;
-    const roomId = copySource.roomId ?? copySource.room?.id;
-    const nextStartTime = buildDateTimeOnDate(copySource.startTime, copyDate);
-    const copyMovie = findUiMovie(movieId) || copySource.movie;
-    const allowChildTickets = allowsChildTicketsForMovie(copyMovie);
-    if (!movieId || !roomId || !nextStartTime) {
-      showToast?.('Không đủ dữ liệu phim/phòng/giờ để copy suất chiếu.', 'error');
-      return;
-    }
-
-    const payload = {
-      movieId: Number(movieId),
-      roomId: Number(roomId),
-      startTime: toApiLocalDateTime(nextStartTime),
-      basePrice: copySource.basePrice ?? copySource.adultStandardPrice ?? 0,
-      vipPrice: copySource.vipPrice ?? copySource.adultVipPrice ?? null,
-      couplePrice: copySource.couplePrice ?? copySource.adultCouplePrice ?? null,
-      adultStandardPrice: copySource.adultStandardPrice ?? copySource.basePrice ?? 0,
-      childStandardPrice: allowChildTickets ? copySource.childStandardPrice ?? null : null,
-      studentStandardPrice: copySource.studentStandardPrice ?? copySource.basePrice ?? 0,
-      adultVipPrice: copySource.adultVipPrice ?? copySource.vipPrice ?? null,
-      childVipPrice: allowChildTickets ? copySource.childVipPrice ?? null : null,
-      studentVipPrice: copySource.studentVipPrice ?? null,
-      adultCouplePrice: copySource.adultCouplePrice ?? copySource.couplePrice ?? null,
-      childCouplePrice: allowChildTickets ? copySource.childCouplePrice ?? null : null,
-      studentCouplePrice: copySource.studentCouplePrice ?? null,
-      weekendSurcharge: Boolean(copySource.weekendSurcharge),
-      holidaySurcharge: Boolean(copySource.holidaySurcharge),
-      lateNightSurchargeAmount: copySource.lateNightSurchargeAmount ?? 20000,
-      status: 'SCHEDULED',
-    };
-
-    setIsCopying(true);
-    try {
-      await adminService.createAdminShowtime(token, payload);
-      showToast?.('Đã copy suất chiếu sang ngày mới.', 'success');
-      setCopySource(null);
-      setCopyDate('');
-      setErrors({});
-      fetchShowtimes(page);
-    } catch (e) {
-      showToast?.('Lỗi: ' + e.message, 'error');
-    } finally {
-      setIsCopying(false);
-    }
-  };
-
-  const openEdit = (st) => {
-    if (st.status === 'OPEN') {
-      showToast?.('Suất chiếu đang mở bán không thể chỉnh sửa.', 'error');
-      return;
-    }
-    setEditingId(st.id);
-    setEditingStatus(st.status || '');
-    setForm({
-      movieId: st.movieId ?? st.movie?.id ?? '',
-      roomId: st.roomId ?? st.room?.id ?? '',
-      startTime: toInputDatetime(st.startTime),
-      basePrice: st.basePrice ?? '',
-      vipPrice: st.vipPrice ?? '',
-      couplePrice: st.couplePrice ?? '',
-      adultStandardPrice: st.adultStandardPrice ?? st.basePrice ?? '',
-      childStandardPrice: st.childStandardPrice ?? st.basePrice ?? '',
-      studentStandardPrice: st.studentStandardPrice ?? st.basePrice ?? '',
-      adultVipPrice: st.adultVipPrice ?? st.vipPrice ?? '',
-      childVipPrice: st.childVipPrice ?? '',
-      studentVipPrice: st.studentVipPrice ?? '',
-      adultCouplePrice: st.adultCouplePrice ?? st.couplePrice ?? '',
-      childCouplePrice: st.childCouplePrice ?? '',
-      studentCouplePrice: st.studentCouplePrice ?? '',
-      weekendSurcharge: Boolean(st.weekendSurcharge),
-      holidaySurcharge: Boolean(st.holidaySurcharge),
-      lateNightSurchargeAmount: formatPriceInput(st.lateNightSurchargeAmount ?? 20000),
-      status: st.status ?? 'SCHEDULED',
-    });
-    setErrors({});
-    setMode('edit');
-  };
-
-  const activeMovies = useMemo(() => (
-    allMovies.filter(m =>
-      (m.approvalStatus === 'APPROVED' || (!m.approvalStatus && m.status !== 'INACTIVE')) &&
-      m.approvalStatus !== 'DRAFT' &&
-      m.approvalStatus !== 'PENDING_APPROVAL' &&
-      m.approvalStatus !== 'REJECTED' &&
-      m.publicationStatus !== 'ARCHIVED' &&
-      m.status !== 'INACTIVE'
-    )
-  ), [allMovies]);
-  const formMovie = findUiMovie(form.movieId);
-  const formReleaseWindow = getMovieReleaseWindow(formMovie);
-  const formAllowsChildTickets = allowsChildTicketsForMovie(formMovie);
-  const bulkMovie = findUiMovie(bulkForm.movieId);
-  const bulkReleaseWindow = getMovieReleaseWindow(bulkMovie);
-  const bulkAllowsChildTickets = allowsChildTicketsForMovie(bulkMovie);
-  const bulkMovieDuration = Number(bulkMovie?.durationMinutes ?? bulkMovie?.duration ?? 0);
-  const bulkStepMinutes = bulkMovieDuration ? bulkMovieDuration + 15 : 0;
-  const selectedBulkSlotsCount = bulkForm.slots.filter(s => s.selected !== false).length;
-  const activeBulkSlotIndex = Math.min(editingBulkSlotIndex, Math.max(bulkForm.slots.length - 1, 0));
-  const activeBulkSlot = bulkForm.slots[activeBulkSlotIndex] || EMPTY_BULK.slots[0];
-
-  const getBulkSlotEnd = (startTime) => addMinutes(startTime, bulkMovieDuration);
-
-  const getBulkSlotCapacity = (slot) => {
-    const room = rooms.find(r => String(r.id) === String(slot.roomId));
-    return getRoomCapacity(room);
-  };
-
-  const fetchExistingShowtimesForDates = async (token, dates) => {
-    const existingByDate = await Promise.all(dates.map(async (date) => {
-      const data = await adminService.getAdminShowtimes(token, { page: 0, size: 500, date });
-      const items = data?.content || data?.items || (Array.isArray(data) ? data : []);
-      return items.map(item => ({ ...item, __date: date }));
-    }));
-    return existingByDate.flat()
-      .filter(item => String(item.status || '').toUpperCase() !== 'CANCELLED');
-  };
-
-  const slotConflictsWithExisting = (slot, existingShowtimes) => {
-    const slotStart = new Date(slot.startTime);
-    const slotEnd = addMinutes(slot.startTime, bulkStepMinutes || bulkMovieDuration || 0);
-    if (!slot.roomId || Number.isNaN(slotStart.getTime()) || !slotEnd) return false;
-    return existingShowtimes.some((showtime) => {
-      if (String(getShowtimeRoomId(showtime)) !== String(slot.roomId)) return false;
-      if (normalizeDateInput(showtime.startTime) !== normalizeDateInput(slot.startTime)) return false;
-
-      const existingStart = new Date(showtime.startTime);
-      const rawExistingEnd = showtime.endTime
-        ? new Date(showtime.endTime)
-        : addMinutes(showtime.startTime, bulkMovieDuration || 0);
-      const existingEnd = rawExistingEnd instanceof Date
-        ? addMinutes(rawExistingEnd, 15)
-        : null;
-      if (Number.isNaN(existingStart.getTime()) || !existingEnd) return false;
-      return intervalsOverlap(slotStart, slotEnd, existingStart, existingEnd);
-    });
-  };
-
-  // Cảnh báo trùng lịch SỚM: chạy debounce ngay khi slot đủ phòng + giờ,
-  // không đợi bấm submit. Submit vẫn validate lại lần cuối như cũ.
+  // Gọi API tải suất chiếu khi component mount hoặc khi đổi ngày `date`
   useEffect(() => {
-    if (mode !== 'bulk' || !bulkForm.movieId) {
-      setLiveConflicts({});
-      return undefined;
-    }
-    const readySlots = bulkForm.slots
-      .map((slot, index) => ({ slot, index }))
-      .filter(({ slot }) => slot.selected !== false
-        && slot.roomId
-        && slot.startTime
-        && !Number.isNaN(new Date(slot.startTime).getTime()));
-    if (!readySlots.length) {
-      setLiveConflicts({});
-      return undefined;
-    }
-    const token = getTokenRef.current?.();
-    let cancelled = false;
-    const timeoutId = window.setTimeout(async () => {
-      const next = {};
-      // Trùng/chồng giờ giữa các slot trong form (không cần API)
-      readySlots.forEach(({ slot, index }, position) => {
-        readySlots.slice(position + 1).forEach(({ slot: other, index: otherIndex }) => {
-          if (String(slot.roomId) !== String(other.roomId)) return;
-          if (toApiLocalDateTime(slot.startTime).slice(0, 16) === toApiLocalDateTime(other.startTime).slice(0, 16)) {
-            const message = 'Phòng này đã có slot khác cùng giờ trong danh sách đang chọn';
-            next[index] = message;
-            next[otherIndex] = message;
-            return;
-          }
-          if (!bulkStepMinutes) return;
-          const slotEnd = addMinutes(slot.startTime, bulkStepMinutes);
-          const otherEnd = addMinutes(other.startTime, bulkStepMinutes);
-          if (!slotEnd || !otherEnd) return;
-          if (intervalsOverlap(new Date(slot.startTime), slotEnd, new Date(other.startTime), otherEnd)) {
-            const message = 'Slot này trùng thời gian với slot khác cùng phòng trong danh sách đang chọn';
-            next[index] = message;
-            next[otherIndex] = message;
-          }
-        });
-      });
-      // Trùng với suất chiếu đã tồn tại (lỗi mạng thì bỏ qua — submit sẽ check lại)
-      if (token) {
-        try {
-          const dates = [...new Set(readySlots
-            .map(({ slot }) => normalizeDateInput(slot.startTime))
-            .filter(Boolean))];
-          const existingShowtimes = await fetchExistingShowtimesForDates(token, dates);
-          if (cancelled) return;
-          readySlots.forEach(({ slot, index }) => {
-            if (!next[index] && slotConflictsWithExisting(slot, existingShowtimes)) {
-              next[index] = 'Slot này trùng thời gian với suất chiếu đã tồn tại trong phòng này';
-            }
-          });
-        } catch { /* im lặng khi đang nhập dở */ }
-      }
-      if (!cancelled) setLiveConflicts(next);
-    }, 500);
-    return () => { cancelled = true; window.clearTimeout(timeoutId); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, bulkForm.movieId, bulkForm.slots, bulkStepMinutes]);
+    fetchShowtimes(date);
+  }, [date, fetchShowtimes]);
 
-  const setAllBulkSlotsRoom = (roomId) => {
-    const nextSlots = (bulkForm.slots.length ? bulkForm.slots : EMPTY_BULK.slots)
-      .map(slot => ({ ...slot, roomId, selected: slot.selected !== false }));
-    setBulkForm({ ...bulkForm, slots: nextSlots });
+  /* Helpers */
+  const M = useCallback((id) => movies.find(m => String(m.id) === String(id)) || {
+    id, title: 'Chưa xác định', dur: 120, formats: ['2D'], age: 'P', color: '#64748b', lang: 'Phụ đề'
+  }, [movies]);
+
+  const R = useCallback((id) => rooms.find(r => Number(r.id) === Number(id)) || {
+    id, name: 'Phòng', type: '2D', seats: 80, active: true
+  }, [rooms]);
+
+  const endOf = useCallback((s) => {
+    const movie = M(s.movieId);
+    return toMin(s.start) + (movie?.dur || 120) + ADS;
+  }, [M]);
+
+  const dayShows = useCallback((d = date) => {
+    return shows.filter(s => s.date === d);
+  }, [shows, date]);
+
+  /* Validation */
+  const validate = useCallback((s, ignoreId = null) => {
+    const errs = [];
+    const warns = [];
+    const m = M(s.movieId);
+    const r = R(s.roomId);
+
+    if (!m || !r) return { errs: ['Thiếu phim hoặc phòng'], warns };
+    const st = toMin(s.start);
+    const en = st + m.dur + ADS;
+
+    if (!r.active) errs.push(`${r.name} đang tạm ngưng hoạt động`);
+    if (m.formats && !m.formats.includes(s.fmt)) errs.push(`Phim không có bản ${s.fmt}`);
+    if (s.fmt !== r.type && s.fmt !== '2D') {
+      errs.push(`${r.name} là phòng ${r.type}, không chiếu được ${s.fmt}`);
+    }
+    if (m.release && s.date < m.release) errs.push(`Phim khởi chiếu từ ${m.release}`);
+    if (m.end && s.date > m.end) warns.push(`Phim đã hết hạn chiếu (${m.end})`);
+    if (st < OPEN * 60) errs.push(`Rạp mở cửa từ ${pad(OPEN)}:00`);
+    if (en > CLOSE * 60) errs.push(`Suất kết thúc quá ${toT(CLOSE * 60)} (sau giờ đóng cửa)`);
+
+    dayShows(s.date)
+      .filter(o => Number(o.roomId) === Number(s.roomId) && String(o.id) !== String(ignoreId) && o.status !== 'cancel')
+      .forEach(o => {
+        const os = toMin(o.start);
+        const oe = endOf(o) + CLEAN;
+        if (st < oe && en + CLEAN > os) {
+          errs.push(`Trùng với "${M(o.movieId).title}" (${o.start}–${toT(endOf(o))}) – cần cách ≥ ${CLEAN} phút dọn phòng`);
+        }
+      });
+
+    const same = dayShows(s.date).filter(o =>
+      Number(o.movieId) === Number(s.movieId) &&
+      String(o.id) !== String(ignoreId) &&
+      Math.abs(toMin(o.start) - st) < 20 &&
+      o.status !== 'cancel'
+    );
+    if (same.length) {
+      warns.push(`Có suất khác của cùng phim cách < 20 phút (${same.map(o => R(o.roomId).name).join(', ')})`);
+    }
+
+    if (m.age === 'P' && st >= 21 * 60) warns.push('Phim thiếu nhi chiếu sau 21:00 thường ít khách');
+    if (m.age === 'T18' && st < 12 * 60) warns.push('Phim T18 chiếu buổi sáng thường ít khách');
+
+    return { errs, warns };
+  }, [M, R, endOf, dayShows]);
+
+  const allConflicts = useMemo(() => {
+    return dayShows().map(s => ({ s, ...validate(s, s.id) })).filter(x => x.errs.length || x.warns.length);
+  }, [dayShows, validate]);
+
+  /* Scroll Timeline to current time */
+  useEffect(() => {
+    if (tlWrapRef.current && !scrolledOnceRef.current) {
+      scrolledOnceRef.current = true;
+      const now = new Date();
+      const mm = date === todayStr() ? now.getHours() * 60 + now.getMinutes() : OPEN * 60;
+      tlWrapRef.current.scrollLeft = Math.max(0, (mm - OPEN * 60) / 60 * 96 - 200);
+    }
+  }, [date]);
+
+  /* Actions */
+  const shiftDay = (n) => {
+    const next = addDays(date, view === 'week' ? n * 7 : n);
+    setDate(next);
+    setSelId(null);
   };
 
-  const updateBulkSlot = (index, patch) => {
-    const nextSlots = [...bulkForm.slots];
-    nextSlots[index] = { ...nextSlots[index], ...patch };
-    setBulkForm({ ...bulkForm, slots: nextSlots });
-    // Sửa slot thì bỏ lỗi cũ của slot đó — live check sẽ đánh giá lại ngay sau đó
-    setErrors(prev => {
-      if (!(`slot_time_${index}` in prev) && !(`slot_room_${index}` in prev)) return prev;
-      const next = { ...prev };
-      delete next[`slot_time_${index}`];
-      delete next[`slot_room_${index}`];
+  const pickMovie = (id) => {
+    const next = selMovie === id ? null : id;
+    setSelMovie(next);
+    if (next) showToast?.('Đã chọn phim – click vào khoảng trống trên dòng phòng để đặt suất', 'info');
+  };
+
+  const quickAdd = async (roomId, movieId, start) => {
+    const m = M(movieId);
+    const r = R(roomId);
+    const fmt = m.formats.includes(r.type) ? r.type : (m.formats.includes('2D') ? '2D' : m.formats[0]);
+    const candidate = {
+      id: Math.random().toString(36).slice(2, 9),
+      date,
+      roomId,
+      movieId,
+      start,
+      fmt,
+      lang: m.lang,
+      sold: 0,
+      status: 'plan',
+      note: ''
+    };
+    const v = validate(candidate);
+    if (v.errs.length) {
+      setAddModal({ roomId, movieId, start, date });
+      showToast?.('⚠ ' + v.errs[0], 'warning');
+      return;
+    }
+
+    const token = getTokenRef.current?.();
+    if (token) {
+      try {
+        const payload = {
+          movieId: Number(movieId),
+          roomId: Number(roomId),
+          startTime: `${date}T${start}:00`,
+          basePrice: DEFAULT_PRICES[fmt]?.std || 60000,
+          vipPrice: DEFAULT_PRICES[fmt]?.vip || 90000,
+          couplePrice: DEFAULT_PRICES[fmt]?.couple || 150000,
+          status: 'SCHEDULED'
+        };
+        const created = await adminService.createAdminShowtime(token, payload);
+        if (created?.id) candidate.id = String(created.id);
+        showToast?.(`✓ Đã tạo suất chiếu ${m.title} lúc ${start}`, 'success');
+        fetchShowtimes(date);
+      } catch (err) {
+        showToast?.('Lỗi tạo suất chiếu: ' + err.message, 'error');
+        return;
+      }
+    }
+    setShows(prev => [...prev, candidate]);
+    setSelId(candidate.id);
+  };
+
+  const handleUpdate = async (key, val) => {
+    const s = shows.find(x => String(x.id) === String(selId));
+    if (!s) return;
+    const cand = { ...s, [key]: val };
+    if (key === 'movieId') {
+      const m = M(val);
+      if (!m.formats.includes(cand.fmt)) cand.fmt = m.formats[0];
+      cand.lang = m.lang;
+    }
+    const valRes = validate(cand, s.id);
+    if (valRes.errs.length) {
+      showToast?.('⚠ Đã lưu nhưng có xung đột: ' + valRes.errs[0], 'warning');
+    }
+
+    const token = getTokenRef.current?.();
+    if (token && s.id && !isNaN(Number(s.id))) {
+      try {
+        const statusMap = { 'open': 'OPEN', 'plan': 'SCHEDULED', 'cancel': 'CANCELLED', 'done': 'COMPLETED' };
+        const payload = {
+          movieId: Number(cand.movieId),
+          roomId: Number(cand.roomId),
+          startTime: `${cand.date}T${cand.start}:00`,
+          status: statusMap[cand.status] || 'SCHEDULED'
+        };
+        await adminService.updateAdminShowtime(token, s.id, payload);
+        showToast?.('Đã cập nhật suất chiếu thành công', 'success');
+        fetchShowtimes(date);
+      } catch (err) {
+        console.warn('Lỗi update showtime:', err);
+      }
+    }
+
+    setShows(prev => prev.map(x => String(x.id) === String(selId) ? cand : x));
+    if (key === 'date') setDate(val);
+  };
+
+  const handleDelete = async () => {
+    const s = shows.find(x => String(x.id) === String(selId));
+    if (!s) return;
+    if (!window.confirm(`Xoá suất ${s.start} – ${M(s.movieId).title}?`)) return;
+    if (s.sold > 0 && !window.confirm(`Suất này đã bán ${s.sold} vé! Vẫn xoá? (Nên chuyển sang "Đã huỷ" thay vì xoá)`)) return;
+
+    const token = getTokenRef.current?.();
+    if (token && s.id && !isNaN(Number(s.id))) {
+      try {
+        await adminService.deleteAdminShowtime(token, s.id);
+        showToast?.('Đã xoá suất chiếu thành công', 'success');
+        fetchShowtimes(date);
+      } catch (err) {
+        showToast?.('Lỗi khi xoá: ' + err.message, 'error');
+        return;
+      }
+    }
+    setShows(prev => prev.filter(x => String(x.id) !== String(selId)));
+    setSelId(null);
+  };
+
+  const handleNextSlot = () => {
+    const s = shows.find(x => String(x.id) === String(selId));
+    if (!s) return;
+    const start = toT(Math.ceil((endOf(s) + CLEAN) / 5) * 5);
+    quickAdd(s.roomId, s.movieId, start);
+  };
+
+  const handleExportJSON = () => {
+    const data = shows.map(s => ({
+      ...s,
+      end: toT(endOf(s)),
+      movie: M(s.movieId).title,
+      room: R(s.roomId).name
+    }));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
+    a.download = `lich-chieu-${date}.json`;
+    a.click();
+    showToast?.('Đã xuất JSON', 'success');
+  };
+
+  /* Filtered Movies (Hỗ trợ lọc Phim đang chiếu từ BE) */
+  const filteredMovies = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    return movies.filter(m => {
+      const matchSearch = !q || m.title.toLowerCase().includes(q);
+      if (!matchSearch) return false;
+      if (movieFilter === 'NOW_SHOWING') {
+        return m.status === 'NOW_SHOWING' || (m.release <= date && m.end >= date);
+      }
+      if (movieFilter === 'UPCOMING') {
+        return m.status === 'UPCOMING' || m.release > date;
+      }
+      return true;
+    });
+  }, [movies, searchQuery, movieFilter, date]);
+
+  /* Stats */
+  const stats = useMemo(() => {
+    const ds = dayShows().filter(s => s.status !== 'cancel');
+    const cap = ds.reduce((a, s) => a + R(s.roomId).seats, 0);
+    const sold = ds.reduce((a, s) => a + s.sold, 0);
+    const act = rooms.filter(r => r.active);
+    const used = ds.reduce((a, s) => a + M(s.movieId).dur + ADS + CLEAN, 0);
+    const util = act.length ? Math.round(used / (act.length * (CLOSE - OPEN) * 60) * 100) : 0;
+    const c = allConflicts.filter(x => x.errs.length > 0).length;
+    return {
+      showCount: ds.length,
+      movieCount: new Set(ds.map(s => s.movieId)).size,
+      util,
+      fillRate: cap ? Math.round(sold / cap * 100) : 0,
+      sold,
+      cap,
+      conflictsCount: c
+    };
+  }, [dayShows, rooms, allConflicts, M, R]);
+
+  return (
+    <div className="cinema-schedule-dark">
+      {/* ── EMBEDDED CSS MATCHING EXACT SIZES OF HTML 1 (DARK THEMED) ── */}
+      <style>{`
+        .cinema-schedule-dark {
+          --bg: #07090c;
+          --card: #0d1117;
+          --card-hover: #161b22;
+          --line: #21262d;
+          --text: #f0f6fc;
+          --muted: #8b949e;
+          --primary: #f5b800;
+          --primary-2: rgba(245, 184, 0, 0.12);
+          --ok: #16a34a;
+          --warn: #f59e0b;
+          --danger: #dc2626;
+          --radius: 14px;
+          --shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+          --hourW: 96px;
+          --rowH: 74px;
+          font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+          background: var(--bg);
+          color: var(--text);
+          font-size: 14px;
+          height: calc(100vh - 72px);
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          box-sizing: border-box;
+        }
+        .cinema-schedule-dark * { box-sizing: border-box; }
+        .cinema-schedule-dark button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+        .cinema-schedule-dark input, .cinema-schedule-dark select, .cinema-schedule-dark textarea { font: inherit; color: inherit; }
+
+        /* Custom Dark Scrollbar (Mỏng, thẩm mỹ) */
+        .cinema-schedule-dark ::-webkit-scrollbar {
+          width: 5px;
+          height: 5px;
+        }
+        .cinema-schedule-dark ::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .cinema-schedule-dark ::-webkit-scrollbar-thumb {
+          background: #28303b;
+          border-radius: 99px;
+        }
+        .cinema-schedule-dark ::-webkit-scrollbar-thumb:hover {
+          background: #3e4856;
+        }
+
+        .cinema-schedule-dark header {
+          height: 56px;
+          background: #0d1117;
+          border-bottom: 1px solid var(--line);
+          display: flex;
+          align-items: center;
+          padding: 0 20px;
+          gap: 12px;
+          flex-shrink: 0;
+        }
+        .cinema-schedule-dark .logo {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-weight: 700;
+          font-size: 15px;
+        }
+        .cinema-schedule-dark .logo i {
+          width: 32px;
+          height: 32px;
+          border-radius: 10px;
+          background: linear-gradient(135deg, #f5b800, #b45309);
+          display: grid;
+          place-items: center;
+          color: #000;
+          font-style: normal;
+          font-size: 16px;
+        }
+        .cinema-schedule-dark .nav {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          margin-left: 10px;
+        }
+        .cinema-schedule-dark .nav .btn { padding: 6px 10px; }
+        .cinema-schedule-dark .datebox {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 12px;
+          border: 1px solid var(--line);
+          border-radius: 10px;
+          background: #161b22;
+          font-weight: 600;
+        }
+        .cinema-schedule-dark .datebox input {
+          border: none;
+          outline: none;
+          font-weight: 600;
+          background: transparent;
+          color: #fff;
+          cursor: pointer;
+        }
+        .cinema-schedule-dark .datebox small { color: var(--muted); font-weight: 500; }
+        .cinema-schedule-dark .seg {
+          display: flex;
+          border: 1px solid var(--line);
+          border-radius: 10px;
+          overflow: hidden;
+          background: #161b22;
+        }
+        .cinema-schedule-dark .seg button {
+          padding: 7px 14px;
+          font-weight: 600;
+          font-size: 13px;
+          color: var(--muted);
+          transition: .15s;
+        }
+        .cinema-schedule-dark .seg button.on {
+          background: var(--primary);
+          color: #000;
+        }
+        .cinema-schedule-dark .spacer { flex: 1; }
+        .cinema-schedule-dark .btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 14px;
+          border-radius: 10px;
+          font-weight: 600;
+          font-size: 13px;
+          border: 1px solid var(--line);
+          background: #161b22;
+          color: #f0f6fc;
+          transition: .15s;
+          white-space: nowrap;
+        }
+        .cinema-schedule-dark .btn:hover { background: #21262d; border-color: #30363d; }
+        .cinema-schedule-dark .btn.primary {
+          background: var(--primary);
+          color: #000;
+          border-color: var(--primary);
+          font-weight: 700;
+        }
+        .cinema-schedule-dark .btn.primary:hover { background: #e5a700; }
+        .cinema-schedule-dark .btn.danger { color: var(--danger); }
+        .cinema-schedule-dark .btn.danger:hover { background: rgba(220, 38, 38, 0.15); border-color: rgba(220, 38, 38, 0.3); }
+        .cinema-schedule-dark .btn.sm { padding: 5px 10px; font-size: 12px; border-radius: 8px; }
+        .cinema-schedule-dark .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+        /* Main 3 columns layout (cột phải mở rộng 345px để không bị thanh cuộn ngang) */
+        .cinema-schedule-dark main {
+          flex: 1;
+          display: grid;
+          grid-template-columns: 260px 1fr 345px;
+          gap: 14px;
+          padding: 14px;
+          min-height: 0;
+        }
+        .cinema-schedule-dark .card {
+          background: var(--card);
+          border: 1px solid var(--line);
+          border-radius: var(--radius);
+          box-shadow: var(--shadow);
+          display: flex;
+          flex-direction: column;
+          min-height: 0;
+          overflow: hidden;
+        }
+        .cinema-schedule-dark .card-h {
+          padding: 12px 16px;
+          border-bottom: 1px solid var(--line);
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          flex-shrink: 0;
+        }
+        .cinema-schedule-dark .card-h h3 { font-size: 14px; font-weight: 700; color: #fff; }
+        .cinema-schedule-dark .card-h small { color: var(--muted); font-weight: 400; display: block; margin-top: 2px; }
+        .cinema-schedule-dark .card-b {
+          padding: 12px 14px;
+          overflow-y: auto;
+          overflow-x: hidden;
+          flex: 1;
+        }
+        .cinema-schedule-dark .search {
+          width: 100%;
+          padding: 8px 10px 8px 32px;
+          border: 1px solid #30363d;
+          border-radius: 10px;
+          background: #161b22 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%238b949e' stroke-width='2' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E") 10px center no-repeat;
+          color: #fff;
+          outline: none;
+          margin-bottom: 10px;
+        }
+        .cinema-schedule-dark .search:focus { border-color: var(--primary); background-color: #1a202c; }
+
+        /* movies */
+        .cinema-schedule-dark .movie {
+          display: flex;
+          gap: 10px;
+          padding: 9px;
+          border-radius: 11px;
+          border: 1px solid transparent;
+          cursor: grab;
+          margin-bottom: 6px;
+          transition: .12s;
+          background: #161b22;
+        }
+        .cinema-schedule-dark .movie:hover { background: #1c2128; border-color: #30363d; }
+        .cinema-schedule-dark .movie:active { cursor: grabbing; }
+        .cinema-schedule-dark .movie.sel { background: var(--primary-2); border-color: var(--primary); }
+        .cinema-schedule-dark .poster {
+          width: 38px;
+          height: 52px;
+          border-radius: 7px;
+          flex-shrink: 0;
+          display: grid;
+          place-items: center;
+          color: #fff;
+          font-weight: 800;
+          font-size: 15px;
+          text-shadow: 0 1px 2px rgba(0,0,0,.5);
+        }
+        .cinema-schedule-dark .movie .t { font-weight: 600; font-size: 13px; line-height: 1.3; color: #fff; }
+        .cinema-schedule-dark .movie .m { font-size: 11.5px; color: var(--muted); margin-top: 3px; display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+        .cinema-schedule-dark .tag { font-size: 10px; padding: 1px 6px; border-radius: 5px; background: #21262d; color: #c9d1d9; font-weight: 700; }
+        .cinema-schedule-dark .tag.age { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+        .cinema-schedule-dark .tag.hot { background: rgba(245, 184, 0, 0.2); color: #fde047; }
+        .cinema-schedule-dark .drag-hint { font-size: 11.5px; color: var(--muted); text-align: center; padding: 8px; border: 1px dashed var(--line); border-radius: 10px; margin-top: 6px; }
+
+        /* timeline */
+        .cinema-schedule-dark .tl-wrap { flex: 1; overflow: auto; position: relative; }
+        .cinema-schedule-dark .tl { display: grid; grid-template-columns: 150px 1fr; min-width: max-content; }
+        .cinema-schedule-dark .corner {
+          position: sticky;
+          top: 0;
+          left: 0;
+          z-index: 6 !important;
+          padding: 10px 14px;
+          font-size: 12px;
+          color: var(--muted);
+          font-weight: 600;
+          border-right: 1px solid var(--line);
+          background: #0d1117;
+          border-bottom: 1px solid var(--line);
+        }
+        .cinema-schedule-dark .hours {
+          display: flex;
+          height: 38px;
+          position: sticky;
+          top: 0;
+          z-index: 5;
+          background: #0d1117;
+          border-bottom: 1px solid var(--line);
+        }
+        .cinema-schedule-dark .hours span {
+          width: var(--hourW);
+          flex-shrink: 0;
+          font-size: 11.5px;
+          color: var(--muted);
+          font-weight: 600;
+          padding: 12px 0 0 6px;
+          border-left: 1px solid var(--line);
+        }
+        .cinema-schedule-dark .roomcell {
+          position: sticky;
+          left: 0;
+          background: #0d1117;
+          z-index: 4;
+          border-right: 1px solid var(--line);
+          border-bottom: 1px solid var(--line);
+          height: var(--rowH);
+          padding: 10px 14px;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+        }
+        .cinema-schedule-dark .roomcell b { font-size: 13px; color: #fff; }
+        .cinema-schedule-dark .roomcell small { color: var(--muted); font-size: 11px; margin-top: 2px; }
+        .cinema-schedule-dark .roomcell .bar { height: 4px; background: #21262d; border-radius: 99px; margin-top: 6px; overflow: hidden; }
+        .cinema-schedule-dark .roomcell .bar i { display: block; height: 100%; background: var(--primary); border-radius: 99px; }
+        .cinema-schedule-dark .roomcell.off { opacity: .5; }
+        .cinema-schedule-dark .track {
+          position: relative;
+          height: var(--rowH);
+          border-bottom: 1px solid var(--line);
+          background: repeating-linear-gradient(90deg, #161b22 0 1px, transparent 1px var(--hourW)),
+                      repeating-linear-gradient(90deg, transparent 0 calc(var(--hourW)/2 - .5px), #13171e calc(var(--hourW)/2 - .5px) calc(var(--hourW)/2 + .5px), transparent calc(var(--hourW)/2 + .5px) var(--hourW));
+        }
+        .cinema-schedule-dark .track.over { background-color: rgba(245, 184, 0, 0.08); }
+        .cinema-schedule-dark .track.off { background-color: rgba(22, 27, 34, 0.4); cursor: not-allowed; }
+        .cinema-schedule-dark .blk {
+          position: absolute;
+          top: 9px;
+          height: calc(var(--rowH) - 18px);
+          border-radius: 9px;
+          padding: 6px 9px;
+          color: #fff;
+          font-size: 12px;
+          overflow: hidden;
+          cursor: pointer;
+          box-shadow: 0 2px 6px rgba(0,0,0,.3);
+          transition: transform .1s, box-shadow .1s;
+          border: 2px solid transparent;
+        }
+        .cinema-schedule-dark .blk:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(0,0,0,.45); z-index: 2; }
+        .cinema-schedule-dark .blk.sel { border-color: #f5b800; box-shadow: 0 0 0 3px rgba(245, 184, 0, 0.35); }
+        .cinema-schedule-dark .blk b { display: block; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+        .cinema-schedule-dark .blk span { opacity: .9; font-size: 11px; white-space: nowrap; font-family: monospace; }
+        .cinema-schedule-dark .blk .clean {
+          position: absolute;
+          right: 0;
+          top: 0;
+          bottom: 0;
+          background: repeating-linear-gradient(135deg, rgba(255,255,255,.35) 0 4px, transparent 4px 8px);
+          border-left: 1px dashed rgba(255,255,255,.7);
+        }
+        .cinema-schedule-dark .blk.conflict { outline: 2px solid var(--danger); outline-offset: 1px; animation: pulse 1.2s infinite; }
+        .cinema-schedule-dark .blk.cancel { background: #334155 !important; color: #94a3b8; text-decoration: line-through; }
+        .cinema-schedule-dark .blk .sold { position: absolute; left: 0; bottom: 0; height: 3px; background: rgba(255,255,255,.85); }
+
+        /* GHOST DROP TARGET PREVIEW - VIỀN NÉT ĐỨT SIÊU NỔI BẬT */
+        .cinema-schedule-dark .ghost {
+          position: absolute;
+          top: 7px;
+          height: calc(var(--rowH) - 14px);
+          border-radius: 9px;
+          border: 2.5px dashed #f59e0b;
+          background: linear-gradient(135deg, rgba(245, 158, 11, 0.25) 0%, rgba(245, 158, 11, 0.09) 100%);
+          box-shadow: 0 0 20px rgba(245, 158, 11, 0.6), inset 0 0 14px rgba(245, 158, 11, 0.22);
+          pointer-events: none;
+          z-index: 10;
+          display: flex;
+          align-items: center;
+          padding: 0 10px;
+          overflow: hidden;
+          animation: ghostPulseNeon 1.1s infinite alternate ease-in-out;
+          backdrop-filter: blur(3px);
+        }
+        @keyframes ghostPulseNeon {
+          0% {
+            border-color: #f59e0b;
+            box-shadow: 0 0 14px rgba(245, 158, 11, 0.45), inset 0 0 10px rgba(245, 158, 11, 0.15);
+          }
+          100% {
+            border-color: #fde047;
+            box-shadow: 0 0 26px rgba(253, 224, 71, 0.85), inset 0 0 18px rgba(253, 224, 71, 0.3);
+          }
+        }
+        .cinema-schedule-dark .ghost-time {
+          font-size: 11.5px;
+          font-weight: 800;
+          color: #ffffff;
+          text-shadow: 0 1px 4px rgba(0,0,0,0.9), 0 0 10px rgba(245, 158, 11, 0.95);
+          white-space: nowrap;
+          letter-spacing: 0.3px;
+          z-index: 2;
+        }
+        .cinema-schedule-dark .ghost-clean {
+          position: absolute;
+          right: 0;
+          top: 0;
+          bottom: 0;
+          background: repeating-linear-gradient(135deg, rgba(245, 158, 11, 0.35) 0 4px, transparent 4px 8px);
+          border-left: 1.5px dashed rgba(245, 158, 11, 0.85);
+        }
+        @keyframes pulse { 50% { outline-color: #fca5a5; } }
+        .cinema-schedule-dark .nowline { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--danger); z-index: 3; pointer-events: none; }
+        .cinema-schedule-dark .nowline::before { content: ""; position: absolute; top: -1px; left: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--danger); }
+
+        /* week view */
+        .cinema-schedule-dark .week { display: grid; grid-template-columns: 150px repeat(7, 1fr); min-width: 900px; }
+        .cinema-schedule-dark .week > div { border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); padding: 8px; min-height: 60px; font-size: 12px; }
+        .cinema-schedule-dark .week .wh { position: sticky; top: 0; background: #0d1117; font-weight: 700; text-align: center; z-index: 3; padding: 10px 4px; color: #fff; }
+        .cinema-schedule-dark .week .wh small { display: block; color: var(--muted); font-weight: 500; }
+        .cinema-schedule-dark .week .wh.today { color: var(--primary); }
+        .cinema-schedule-dark .week .wr { position: sticky; left: 0; background: #0d1117; font-weight: 700; z-index: 2; color: #fff; }
+        .cinema-schedule-dark .week .cell { cursor: pointer; display: flex; flex-direction: column; gap: 3px; }
+        .cinema-schedule-dark .week .cell:hover { background: #161b22; }
+        .cinema-schedule-dark .week .chip { padding: 2px 6px; border-radius: 5px; color: #fff; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .cinema-schedule-dark .week .more { color: var(--muted); font-size: 11px; }
+
+        .cinema-schedule-dark .legend {
+          display: flex;
+          gap: 14px;
+          padding: 9px 16px;
+          border-top: 1px solid var(--line);
+          font-size: 12px;
+          color: var(--muted);
+          flex-wrap: wrap;
+          align-items: center;
+          background: #0d1117;
+          flex-shrink: 0;
+        }
+        .cinema-schedule-dark .legend span { display: flex; align-items: center; gap: 6px; }
+        .cinema-schedule-dark .legend i { width: 14px; height: 12px; border-radius: 4px; display: inline-block; }
+        .cinema-schedule-dark .stats {
+          display: grid;
+          grid-template-columns: repeat(5, 1fr);
+          gap: 8px;
+          padding: 10px 16px;
+          border-top: 1px solid var(--line);
+          background: #0d1117;
+          flex-shrink: 0;
+        }
+        .cinema-schedule-dark .stat { background: #161b22; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+        .cinema-schedule-dark .stat b { display: block; font-size: 17px; color: #fff; font-family: monospace; }
+        .cinema-schedule-dark .stat span { font-size: 11px; color: var(--muted); }
+
+        /* right tabs */
+        .cinema-schedule-dark .tabs { display: flex; border-bottom: 1px solid var(--line); flex-shrink: 0; background: #0d1117; }
+        .cinema-schedule-dark .tabs button {
+          flex: 1;
+          padding: 11px 4px;
+          font-weight: 600;
+          font-size: 12.5px;
+          white-space: nowrap;
+          color: var(--muted);
+          border-bottom: 2px solid transparent;
+          transition: .15s;
+        }
+        .cinema-schedule-dark .tabs button.on { color: var(--primary); border-color: var(--primary); }
+        .cinema-schedule-dark .field { margin-bottom: 11px; }
+        .cinema-schedule-dark .field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+        .cinema-schedule-dark .field input, .cinema-schedule-dark .field select, .cinema-schedule-dark .field textarea {
+          width: 100%;
+          padding: 8px 10px;
+          border: 1px solid #30363d;
+          border-radius: 9px;
+          background: #161b22;
+          color: #fff;
+          outline: none;
+          transition: .15s;
+          font-size: 13px;
+        }
+        .cinema-schedule-dark .field input:focus, .cinema-schedule-dark .field select:focus {
+          border-color: var(--primary);
+          box-shadow: 0 0 0 3px rgba(245, 184, 0, 0.2);
+        }
+        .cinema-schedule-dark .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .cinema-schedule-dark .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+        .cinema-schedule-dark .kv { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+        .cinema-schedule-dark .kv span { color: var(--muted); }
+        .cinema-schedule-dark .kv b { color: #fff; font-family: monospace; }
+        .cinema-schedule-dark .alert { padding: 9px 12px; border-radius: 9px; font-size: 12.5px; line-height: 1.5; margin-bottom: 10px; }
+        .cinema-schedule-dark .alert.err { background: rgba(220, 38, 38, 0.15); color: #fca5a5; border: 1px solid rgba(220, 38, 38, 0.3); }
+        .cinema-schedule-dark .alert.ok { background: rgba(22, 163, 74, 0.15); color: #86efac; border: 1px solid rgba(22, 163, 74, 0.3); }
+        .cinema-schedule-dark .alert.warn { background: rgba(245, 158, 11, 0.15); color: #fde047; border: 1px solid rgba(245, 158, 11, 0.3); }
+        .cinema-schedule-dark .empty { color: var(--muted); text-align: center; padding: 40px 10px; font-size: 13px; line-height: 1.6; }
+        .cinema-schedule-dark .empty i { font-size: 34px; display: block; margin-bottom: 8px; font-style: normal; }
+        .cinema-schedule-dark .status { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 99px; }
+        .cinema-schedule-dark .st-open { background: rgba(22, 163, 74, 0.2); color: #4ade80; }
+        .cinema-schedule-dark .st-plan { background: rgba(79, 70, 229, 0.2); color: #818cf8; }
+        .cinema-schedule-dark .st-cancel { background: rgba(100, 116, 139, 0.2); color: #94a3b8; }
+        .cinema-schedule-dark .st-done { background: rgba(107, 114, 128, 0.2); color: #9ca3af; }
+        .cinema-schedule-dark .occ { height: 8px; background: #21262d; border-radius: 99px; overflow: hidden; margin-top: 4px; }
+        .cinema-schedule-dark .occ i { display: block; height: 100%; background: linear-gradient(90deg, #f5b800, #ea580c); }
+        .cinema-schedule-dark .list { display: flex; flex-direction: column; gap: 6px; }
+        .cinema-schedule-dark .li { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; font-size: 12.5px; cursor: pointer; background: #161b22; }
+        .cinema-schedule-dark .li:hover { background: #1c2128; border-color: #30363d; }
+        .cinema-schedule-dark .li i { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+        .cinema-schedule-dark .li .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #fff; }
+        .cinema-schedule-dark .li small { color: var(--muted); }
+
+        /* modals */
+        .cinema-schedule-dark .modal-bg { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(4px); display: grid; place-items: center; z-index: 50; }
+        .cinema-schedule-dark .modal { background: #0d1117; border: 1px solid var(--line); border-radius: 16px; width: 440px; padding: 22px; box-shadow: 0 20px 60px rgba(0,0,0,.5); max-height: 90vh; overflow: auto; color: #fff; }
+        .cinema-schedule-dark .modal h3 { margin-bottom: 4px; font-size: 15px; font-weight: 700; color: #fff; }
+        .cinema-schedule-dark .modal p { color: var(--muted); font-size: 12.5px; margin-bottom: 14px; }
+        .cinema-schedule-dark .modal .acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+        .cinema-schedule-dark .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+        .cinema-schedule-dark .chip-btn { padding: 5px 10px; border: 1px solid #30363d; border-radius: 8px; font-size: 12px; font-weight: 600; background: #161b22; color: #c9d1d9; cursor: pointer; transition: .15s; }
+        .cinema-schedule-dark .chip-btn.on { background: var(--primary); color: #000; border-color: var(--primary); font-weight: 700; }
+      `}</style>
+
+      {/* ── HEADER ── */}
+      <header>
+        <div className="logo">
+          <i>🎬</i>
+          CinemaAdmin
+          <span style={{ color: 'var(--muted)', fontWeight: 500, fontSize: '13px', marginLeft: '6px' }}>
+            / Lịch chiếu
+          </span>
+        </div>
+
+        <div className="nav">
+          <button className="btn" onClick={() => shiftDay(-1)}>‹</button>
+          <div className="datebox">
+            <input type="date" value={date} onChange={(e) => { setDate(e.target.value); setSelId(null); }} />
+            <small>
+              {DOW[new Date(date + 'T00:00:00').getDay()]}
+              {date === todayStr() ? ' • Hôm nay' : ''}
+            </small>
+          </div>
+          <button className="btn" onClick={() => shiftDay(1)}>›</button>
+          <button className="btn sm" onClick={() => { setDate(todayStr()); setSelId(null); }}>Hôm nay</button>
+          <button
+            className="btn sm"
+            onClick={() => fetchShowtimes(date)}
+            title="Làm mới từ máy chủ"
+            style={{ marginLeft: '4px', color: loading ? 'var(--primary)' : 'inherit' }}
+          >
+            ↻ {loading ? 'Đang tải...' : 'Làm mới'}
+          </button>
+        </div>
+
+        <div className="seg">
+          <button className={view === 'day' ? 'on' : ''} onClick={() => setView('day')}>Ngày</button>
+          <button className={view === 'week' ? 'on' : ''} onClick={() => setView('week')}>Tuần</button>
+        </div>
+
+        <div className="spacer" />
+
+        <button className="btn" onClick={() => setCopyModal(true)}>⧉ Sao chép lịch</button>
+        <button className="btn" onClick={() => setAutoModal(true)}>✨ Xếp tự động</button>
+        <button className="btn" onClick={handleExportJSON}>⬇ Xuất</button>
+        <button className="btn primary" onClick={() => setAddModal({ date })}>＋ Thêm suất chiếu</button>
+      </header>
+
+      {/* ── MAIN 3 COLUMNS ── */}
+      <main>
+        {/* LEFT: movies */}
+        <section className="card">
+          <div className="card-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <h3>Phim đang chiếu</h3>
+              <small>
+                {movies.filter(m => m.status === 'NOW_SHOWING' || (m.release <= date && m.end >= date)).length} phim đang chiếu • {movies.filter(m => m.status === 'UPCOMING' || m.release > date).length} sắp chiếu
+              </small>
+            </div>
+            <button
+              className="btn sm"
+              onClick={fetchMovies}
+              title="Lấy lại danh sách phim từ Backend"
+              style={{ fontSize: '11px', padding: '3px 8px', color: loadingMovies ? 'var(--primary)' : 'inherit' }}
+            >
+              ↻ {loadingMovies ? 'Đang tải...' : 'BE'}
+            </button>
+          </div>
+          <div className="card-b">
+            {/* Filter Tabs: Đang chiếu / Sắp chiếu / Tất cả */}
+            <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
+              <button
+                type="button"
+                className={`tag ${movieFilter === 'NOW_SHOWING' ? 'hot' : ''}`}
+                style={{
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--line)',
+                  background: movieFilter === 'NOW_SHOWING' ? 'var(--primary)' : '#161b22',
+                  color: movieFilter === 'NOW_SHOWING' ? '#000' : '#c9d1d9',
+                  fontWeight: movieFilter === 'NOW_SHOWING' ? 700 : 500,
+                  fontSize: '11px',
+                  transition: '0.15s'
+                }}
+                onClick={() => setMovieFilter('NOW_SHOWING')}
+              >
+                Đang chiếu ({movies.filter(m => m.status === 'NOW_SHOWING' || (m.release <= date && m.end >= date)).length})
+              </button>
+              <button
+                type="button"
+                className={`tag ${movieFilter === 'UPCOMING' ? 'hot' : ''}`}
+                style={{
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--line)',
+                  background: movieFilter === 'UPCOMING' ? 'var(--primary)' : '#161b22',
+                  color: movieFilter === 'UPCOMING' ? '#000' : '#c9d1d9',
+                  fontWeight: movieFilter === 'UPCOMING' ? 700 : 500,
+                  fontSize: '11px',
+                  transition: '0.15s'
+                }}
+                onClick={() => setMovieFilter('UPCOMING')}
+              >
+                Sắp chiếu ({movies.filter(m => m.status === 'UPCOMING' || m.release > date).length})
+              </button>
+              <button
+                type="button"
+                className={`tag ${movieFilter === 'ALL' ? 'hot' : ''}`}
+                style={{
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  borderRadius: '6px',
+                  border: '1px solid var(--line)',
+                  background: movieFilter === 'ALL' ? 'var(--primary)' : '#161b22',
+                  color: movieFilter === 'ALL' ? '#000' : '#c9d1d9',
+                  fontWeight: movieFilter === 'ALL' ? 700 : 500,
+                  fontSize: '11px',
+                  transition: '0.15s'
+                }}
+                onClick={() => setMovieFilter('ALL')}
+              >
+                Tất cả ({movies.length})
+              </button>
+            </div>
+
+            <input
+              className="search"
+              placeholder="Tìm phim..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+            <div>
+              {filteredMovies.map(m => {
+                const n = dayShows().filter(s => Number(s.movieId) === Number(m.id) && s.status !== 'cancel').length;
+                const soon = m.status === 'UPCOMING' || m.release > date;
+                const isSel = selMovie === m.id;
+
+                return (
+                  <div
+                    key={m.id}
+                    className={`movie ${isSel ? 'sel' : ''}`}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('movieId', String(m.id));
+                      window._dragMovieId = m.id;
+                      window._dragShowId = null;
+                      setDraggingShowId(null);
+                      e.dataTransfer.effectAllowed = 'copy';
+                    }}
+                    onDragEnd={() => {
+                      setDragGhost(null);
+                      window._dragMovieId = null;
+                      window._dragShowId = null;
+                      setDraggingShowId(null);
+                    }}
+                    onClick={() => pickMovie(m.id)}
+                    style={{ opacity: soon ? 0.6 : 1 }}
+                  >
+                    <div className="poster" style={{ background: `linear-gradient(160deg, ${m.color}, ${m.color}99)`, overflow: 'hidden' }}>
+                      {m.posterUrl ? (
+                        <img
+                          src={m.posterUrl}
+                          alt={m.title}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                        />
+                      ) : (
+                        m.title.charAt(0)
+                      )}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="t">{m.title}</div>
+                      <div className="m">
+                        {m.dur}′ <span className="tag age">{m.age}</span>
+                        {m.formats.map(f => (
+                          <span key={f} className="tag">{f}</span>
+                        ))}
+                        {m.hot && <span className="tag hot">HOT</span>}
+                      </div>
+                      <div className="m">
+                        {soon ? `Khởi chiếu ${m.release.split('-').reverse().join('/')}` : `${n} suất hôm nay`}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="drag-hint">Kéo phim thả vào dòng phòng để tạo suất chiếu nhanh</div>
+          </div>
+        </section>
+
+        {/* CENTER: timeline or week */}
+        <section className="card">
+          <div ref={tlWrapRef} className="tl-wrap">
+            {view === 'day' ? (
+              <div className="tl">
+                <div className="corner">Phòng / Giờ</div>
+                <div className="hours">
+                  {Array.from({ length: CLOSE - OPEN }, (_, i) => {
+                    const h = OPEN + i;
+                    return (
+                      <span key={h}>{pad(h % 24)}:00</span>
+                    );
+                  })}
+                </div>
+
+                {rooms.map(r => {
+                  const rs = dayShows().filter(s => Number(s.roomId) === Number(r.id));
+                  const used = rs.filter(s => s.status !== 'cancel').reduce((a, s) => a + (M(s.movieId).dur || 120) + ADS + CLEAN, 0);
+                  const pct = Math.min(100, Math.round(used / ((CLOSE - OPEN) * 60) * 100));
+
+                  return (
+                    <React.Fragment key={r.id}>
+                      <div className={`roomcell ${r.active ? '' : 'off'}`}>
+                        <b>{r.name}</b>
+                        <small>{r.type} • {r.seats} ghế • {rs.length} suất{r.active ? '' : ' • Tạm ngưng'}</small>
+                        <div className="bar">
+                          <i style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+
+                      <div
+                        className={`track ${r.active ? '' : 'off'}`}
+                        style={{ width: `calc(var(--hourW) * ${CLOSE - OPEN})` }}
+                        onClick={(e) => {
+                          if (!r.active) return showToast?.('Phòng đang tạm ngưng', 'warning');
+                          const x = e.clientX - e.currentTarget.getBoundingClientRect().left;
+                          const mins = Math.round((OPEN * 60 + (x / 96) * 60) / 5) * 5;
+                          const start = toT(mins);
+                          if (selMovie) {
+                            quickAdd(r.id, selMovie, start);
+                          } else {
+                            setAddModal({ roomId: r.id, start, date });
+                          }
+                        }}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          if (!r.active) return;
+                          e.currentTarget.classList.add('over');
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const x = e.clientX - rect.left;
+                          const mins = Math.round((OPEN * 60 + (x / 96) * 60) / 5) * 5;
+                          const start = toT(mins);
+                          const mid = window._dragMovieId;
+                          const gm = mid ? M(mid) : null;
+                          const dur = (gm?.dur || 120) + ADS;
+                          const left = ((mins - OPEN * 60) / 60) * 96;
+                          const wd = ((dur + CLEAN) / 60) * 96;
+                          const cw = (CLEAN / 60) * 96;
+
+                          setDragGhost({
+                            roomId: r.id,
+                            left,
+                            width: wd,
+                            cleanWidth: cw,
+                            time: `${start}–${toT(mins + dur)}`,
+                            title: gm?.title || ''
+                          });
+                        }}
+                        onDragLeave={(e) => {
+                          if (!e.currentTarget.contains(e.relatedTarget)) {
+                            e.currentTarget.classList.remove('over');
+                            setDragGhost(null);
+                          }
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.currentTarget.classList.remove('over');
+                          setDragGhost(null);
+                          setDraggingShowId(null);
+                          if (!r.active) return showToast?.('Phòng đang tạm ngưng', 'warning');
+                          const x = e.clientX - e.currentTarget.getBoundingClientRect().left;
+                          const mins = Math.round((OPEN * 60 + (x / 96) * 60) / 5) * 5;
+                          const start = toT(mins);
+                          const mid = e.dataTransfer.getData('movieId') || window._dragMovieId;
+                          const sid = e.dataTransfer.getData('showId') || window._dragShowId;
+
+                          if (mid && !sid) {
+                            quickAdd(r.id, Number(mid), start);
+                          } else if (sid) {
+                            const curShow = shows.find(x => String(x.id) === String(sid));
+                            if (curShow) {
+                              const cand = { ...curShow, roomId: r.id, start };
+                              const val = validate(cand, curShow.id);
+                              if (val.errs.length) return showToast?.('✕ ' + val.errs[0], 'error');
+                              setShows(prev => prev.map(x => String(x.id) === String(sid) ? cand : x));
+                              setSelId(curShow.id);
+                              showToast?.('Đã di chuyển suất chiếu', 'success');
+                            }
+                          }
+                        }}
+                      >
+                        {/* Now Line */}
+                        {date === todayStr() && (() => {
+                          const now = new Date();
+                          const mm = now.getHours() * 60 + now.getMinutes();
+                          if (mm >= OPEN * 60 && mm < CLOSE * 60) {
+                            const left = ((mm - OPEN * 60) / 60) * 96;
+                            return <div className="nowline" style={{ left: `${left}px` }} />;
+                          }
+                          return null;
+                        })()}
+
+                        {/* Ghost Drop Preview Indicator */}
+                        {dragGhost && dragGhost.roomId === r.id && (
+                          <div
+                            className="ghost"
+                            style={{
+                              left: `${dragGhost.left}px`,
+                              width: `${dragGhost.width}px`
+                            }}
+                          >
+                            <span className="ghost-time">
+                              📍 ${dragGhost.time} ${dragGhost.title ? `• ${dragGhost.title}` : ''}
+                            </span>
+                            <div className="ghost-clean" style={{ width: `${dragGhost.cleanWidth}px` }} />
+                          </div>
+                        )}
+
+                        {/* Show Blocks */}
+                        {rs.map(s => {
+                          const m = M(s.movieId);
+                          const st = toMin(s.start);
+                          const dur = (m.dur || 120) + ADS;
+                          const left = ((st - OPEN * 60) / 60) * 96;
+                          const wd = (dur / 60) * 96;
+                          const cw = (CLEAN / 60) * 96;
+                          const v = validate(s, s.id);
+                          const sold = r.seats > 0 ? Math.round((s.sold / r.seats) * 100) : 0;
+                          const isSel = selId === s.id;
+
+                          return (
+                            <div
+                              key={s.id}
+                              draggable
+                              onDragStart={(e) => {
+                                e.stopPropagation();
+                                e.dataTransfer.setData('showId', String(s.id));
+                                window._dragShowId = s.id;
+                                window._dragMovieId = s.movieId;
+                                setDraggingShowId(s.id);
+                              }}
+                              onDragEnd={() => {
+                                setDragGhost(null);
+                                window._dragMovieId = null;
+                                window._dragShowId = null;
+                                setDraggingShowId(null);
+                              }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelId(s.id);
+                                setTabIdx(0);
+                              }}
+                              className={`blk ${isSel ? 'sel' : ''} ${v.errs.length ? 'conflict' : ''} ${s.status === 'cancel' ? 'cancel' : ''}`}
+                              style={{
+                                left: `${left}px`,
+                                width: `${wd + cw}px`,
+                                background: m.color,
+                                opacity: draggingShowId === s.id ? 0.35 : 1,
+                                transition: 'opacity 0.15s ease'
+                              }}
+                              title={`${m.title} • ${s.start}–${toT(st + dur)} • ${s.sold}/${r.seats} vé`}
+                            >
+                              <b>{m.title}</b>
+                              <span>
+                                {s.start}–{toT(st + dur)} • {s.fmt} {s.lang === 'Lồng tiếng' ? 'LT' : s.lang === 'Phụ đề' ? 'PĐ' : ''} • {sold}%
+                              </span>
+                              <div className="clean" style={{ width: `${cw}px` }} />
+                              <div className="sold" style={{ width: `${(wd * sold) / 100}px` }} />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            ) : (
+              /* Week View */
+              (() => {
+                const dayOfWeek = (new Date(date + 'T00:00:00').getDay() + 6) % 7;
+                const weekStart = addDays(date, -dayOfWeek);
+                const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+
+                return (
+                  <div className="week">
+                    <div className="wh wr" style={{ zIndex: 4 }}>Phòng</div>
+                    {days.map(d => {
+                      const n = shows.filter(s => s.date === d && s.status !== 'cancel').length;
+                      return (
+                        <div key={d} className={`wh ${d === todayStr() ? 'today' : ''}`}>
+                          {DOW[new Date(d + 'T00:00:00').getDay()]}
+                          <small>{d.split('-').reverse().slice(0, 2).join('/')} • {n} suất</small>
+                        </div>
+                      );
+                    })}
+
+                    {rooms.map(r => (
+                      <React.Fragment key={r.id}>
+                        <div className="wr">
+                          {r.name}
+                          <small style={{ display: 'block', color: 'var(--muted)', fontWeight: 500 }}>{r.type}</small>
+                        </div>
+                        {days.map(d => {
+                          const rShows = shows
+                            .filter(s => s.date === d && Number(s.roomId) === Number(r.id))
+                            .sort((a, b) => a.start.localeCompare(b.start));
+
+                          return (
+                            <div
+                              key={d}
+                              className="cell"
+                              onClick={() => { setDate(d); setView('day'); }}
+                            >
+                              {rShows.slice(0, 4).map(s => (
+                                <div
+                                  key={s.id}
+                                  className="chip"
+                                  style={{
+                                    background: M(s.movieId).color,
+                                    opacity: s.status === 'cancel' ? 0.4 : 1
+                                  }}
+                                >
+                                  {s.start} {M(s.movieId).title}
+                                </div>
+                              ))}
+                              {rShows.length > 4 && <div className="more">+{rShows.length - 4} suất khác</div>}
+                              {rShows.length === 0 && <div className="more">—</div>}
+                            </div>
+                          );
+                        })}
+                      </React.Fragment>
+                    ))}
+                  </div>
+                );
+              })()
+            )}
+          </div>
+
+          {/* Legend */}
+          <div className="legend">
+            {Array.from(new Set(dayShows().map(s => s.movieId))).map(id => (
+              <span key={id}>
+                <i style={{ background: M(id).color }} />
+                {M(id).title}
+              </span>
+            ))}
+            <span style={{ marginLeft: 'auto' }}>
+              <i style={{ background: 'repeating-linear-gradient(135deg, #94a3b8 0 3px, transparent 3px 6px)', border: '1px solid #94a3b8' }} />
+              Dọn phòng {CLEAN}′
+            </span>
+            <span>
+              <i style={{ border: '2px solid var(--danger)', background: 'none' }} />
+              Xung đột
+            </span>
+          </div>
+
+          {/* Stats */}
+          <div className="stats">
+            <div className="stat">
+              <b>{stats.showCount}</b>
+              <span>Suất chiếu</span>
+            </div>
+            <div className="stat">
+              <b>{stats.movieCount}</b>
+              <span>Phim</span>
+            </div>
+            <div className="stat">
+              <b>{stats.util}%</b>
+              <span>Công suất phòng</span>
+            </div>
+            <div className="stat">
+              <b>{stats.fillRate}%</b>
+              <span>Lấp đầy ({stats.sold}/{stats.cap} vé)</span>
+            </div>
+            <div className="stat">
+              <b style={{ color: stats.conflictsCount ? 'var(--danger)' : 'var(--ok)' }}>{stats.conflictsCount}</b>
+              <span>Xung đột</span>
+            </div>
+          </div>
+        </section>
+
+        {/* RIGHT: tabs */}
+        <section className="card right">
+          <div className="tabs">
+            <button className={tabIdx === 0 ? 'on' : ''} onClick={() => setTabIdx(0)}>Chi tiết suất</button>
+            <button className={tabIdx === 1 ? 'on' : ''} onClick={() => setTabIdx(1)}>Tổng quan ngày</button>
+            <button className={tabIdx === 2 ? 'on' : ''} onClick={() => setTabIdx(2)}>
+              Cảnh báo {allConflicts.length > 0 && <span style={{ background: 'var(--danger)', color: '#fff', borderRadius: '99px', padding: '0 6px', fontSize: '11px', marginLeft: '4px' }}>{allConflicts.length}</span>}
+            </button>
+          </div>
+
+          <div className="card-b">
+            {/* TAB 0 */}
+            {tabIdx === 0 && (() => {
+              const s = shows.find(x => String(x.id) === String(selId));
+              if (!s) {
+                return (
+                  <div className="empty">
+                    <i>🎟️</i>
+                    Chọn một suất chiếu trên lịch để xem / chỉnh sửa.<br />
+                    Hoặc kéo phim vào dòng phòng để tạo suất mới.
+                  </div>
+                );
+              }
+
+              const m = M(s.movieId);
+              const r = R(s.roomId);
+              const v = validate(s, s.id);
+              const end = toT(endOf(s));
+              const stMap = { open: 'Đang bán vé', plan: 'Đã lên lịch', cancel: 'Đã huỷ', done: 'Đã chiếu' };
+              const pct = r.seats > 0 ? Math.round((s.sold / r.seats) * 100) : 0;
+              const prices = s.price || r.price || DEFAULT_PRICES[s.fmt] || DEFAULT_PRICES['2D'];
+
+              return (
+                <div>
+                  <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
+                    <div className="poster" style={{ background: m.color, width: '44px', height: '60px' }}>
+                      {m.title.charAt(0)}
+                    </div>
+                    <div>
+                      <b style={{ fontSize: '14px', color: '#fff' }}>{m.title}</b>
+                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '3px' }}>
+                        {m.dur} phút • {m.age} • {m.formats.join('/')}
+                      </div>
+                      <span className={`status st-${s.status}`} style={{ marginTop: '6px' }}>
+                        {stMap[s.status]}
+                      </span>
+                    </div>
+                  </div>
+
+                  {v.errs.map((e, i) => (
+                    <div key={i} className="alert err">⛔ {e}</div>
+                  ))}
+                  {v.warns.map((w, i) => (
+                    <div key={i} className="alert warn">⚠️ {w}</div>
+                  ))}
+
+                  <div className="field">
+                    <label>Phim</label>
+                    <select value={s.movieId} onChange={(e) => handleUpdate('movieId', Number(e.target.value))}>
+                      {movies.map(x => (
+                        <option key={x.id} value={x.id}>{x.title}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="row2">
+                    <div className="field">
+                      <label>Phòng</label>
+                      <select value={s.roomId} onChange={(e) => handleUpdate('roomId', Number(e.target.value))}>
+                        {rooms.map(x => (
+                          <option key={x.id} value={x.id}>{x.name} ({x.type})</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label>Ngày</label>
+                      <input type="date" value={s.date} onChange={(e) => handleUpdate('date', e.target.value)} />
+                    </div>
+                  </div>
+
+                  <div className="row3">
+                    <div className="field">
+                      <label>Bắt đầu</label>
+                      <input type="time" step="300" value={s.start} onChange={(e) => handleUpdate('start', e.target.value)} />
+                    </div>
+                    <div className="field">
+                      <label>Kết thúc</label>
+                      <input value={end} disabled style={{ background: '#1c2128', color: 'var(--muted)' }} />
+                    </div>
+                    <div className="field">
+                      <label>Trống tới</label>
+                      <input value={toT(endOf(s) + CLEAN)} disabled style={{ background: '#1c2128', color: 'var(--muted)' }} />
+                    </div>
+                  </div>
+
+                  <div className="row2">
+                    <div className="field">
+                      <label>Định dạng</label>
+                      <select value={s.fmt} onChange={(e) => handleUpdate('fmt', e.target.value)}>
+                        {['2D', '3D', 'IMAX', '4DX'].map(f => (
+                          <option key={f} value={f}>{f}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label>Ngôn ngữ</label>
+                      <select value={s.lang} onChange={(e) => handleUpdate('lang', e.target.value)}>
+                        {['Phụ đề', 'Lồng tiếng', 'Tiếng Việt'].map(f => (
+                          <option key={f} value={f}>{f}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="field">
+                    <label>Trạng thái</label>
+                    <select value={s.status} onChange={(e) => handleUpdate('status', e.target.value)}>
+                      {Object.entries(stMap).map(([k, vv]) => (
+                        <option key={k} value={k}>{vv}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="field">
+                    <label>Ghi chú</label>
+                    <input value={s.note || ''} placeholder="VD: suất chiếu sớm, ưu đãi thành viên..." onChange={(e) => handleUpdate('note', e.target.value)} />
+                  </div>
+
+                  <div className="kv">
+                    <span>Vé đã bán</span>
+                    <b>{s.sold}/{r.seats} ({pct}%)</b>
+                  </div>
+                  <div className="occ"><i style={{ width: `${pct}%` }} /></div>
+
+                  <div className="kv" style={{ marginTop: '8px' }}>
+                    <span>Giá vé (thường / VIP)</span>
+                    <b>{fmtVN(prices.std)} / {fmtVN(prices.vip)} đ</b>
+                  </div>
+                  <div className="kv">
+                    <span>Doanh thu ước tính</span>
+                    <b>{fmtVN(s.sold * prices.std)} đ</b>
+                  </div>
+                  <div className="kv">
+                    <span>Gồm quảng cáo / dọn phòng</span>
+                    <b style={{ color: '#fff' }}>{ADS}′ / {CLEAN}′</b>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '6px', marginTop: '14px' }}>
+                    <button
+                      className="btn"
+                      style={{ flex: 1, justifyContent: 'center', padding: '8px 6px', fontSize: '12px' }}
+                      onClick={() => setAddModal({ roomId: s.roomId, movieId: s.movieId, date: s.date })}
+                    >
+                      ⧉ Nhân bản…
+                    </button>
+                    <button
+                      className="btn"
+                      style={{ flex: 1, justifyContent: 'center', padding: '8px 6px', fontSize: '12px' }}
+                      onClick={handleNextSlot}
+                    >
+                      ⏭ Suất kế tiếp
+                    </button>
+                    <button
+                      className="btn danger"
+                      style={{ padding: '8px 10px' }}
+                      onClick={handleDelete}
+                      title="Xoá suất chiếu"
+                    >
+                      🗑
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* TAB 1 */}
+            {tabIdx === 1 && (() => {
+              const ds = dayShows();
+              const byMovie = Array.from(new Set(ds.map(s => s.movieId))).map(id => ({
+                m: M(id),
+                n: ds.filter(s => Number(s.movieId) === Number(id) && s.status !== 'cancel').length,
+                sold: ds.filter(s => Number(s.movieId) === Number(id)).reduce((a, s) => a + s.sold, 0)
+              })).sort((a, b) => b.n - a.n);
+
+              const notIn = movies.filter(m => m.release <= date && m.end >= date && !ds.some(s => Number(s.movieId) === Number(m.id)));
+
+              return (
+                <div>
+                  <h4 style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '10px' }}>THEO PHÒNG</h4>
+                  {rooms.map(r => {
+                    const rs = ds.filter(s => Number(s.roomId) === Number(r.id) && s.status !== 'cancel')
+                      .sort((a, b) => a.start.localeCompare(b.start));
+                    const gaps = [];
+                    let cur = OPEN * 60;
+                    rs.forEach(s => {
+                      const st = toMin(s.start);
+                      if (st - cur >= 60) gaps.push(`${toT(cur)}–${toT(st)}`);
+                      cur = endOf(s) + CLEAN;
+                    });
+                    if (CLOSE * 60 - cur >= 90) gaps.push(`${toT(cur)}–đóng cửa`);
+
+                    const sold = rs.reduce((a, s) => a + s.sold, 0);
+                    const cap = rs.length * r.seats;
+
+                    return (
+                      <div key={r.id} style={{ marginBottom: '14px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                          <span>{r.name} <small style={{ color: 'var(--muted)', fontWeight: 500 }}>{r.type}</small></span>
+                          <span>{rs.length} suất</span>
+                        </div>
+                        <div className="occ"><i style={{ width: `${cap ? (sold / cap) * 100 : 0}%` }} /></div>
+                        <div style={{ fontSize: '11.5px', color: 'var(--muted)', marginTop: '4px' }}>
+                          Lấp đầy {cap ? Math.round((sold / cap) * 100) : 0}% • {rs.length ? `${rs[0].start} → ${toT(endOf(rs[rs.length - 1]))}` : 'Chưa có suất'}
+                        </div>
+                        {gaps.length > 0 && (
+                          <div style={{ fontSize: '11.5px', color: '#f59e0b', marginTop: '3px' }}>
+                            ⏱ Khoảng trống: {gaps.join(', ')}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  <h4 style={{ fontSize: '12px', color: 'var(--muted)', margin: '14px 0 8px' }}>THEO PHIM</h4>
+                  <div className="list">
+                    {byMovie.map(x => (
+                      <div key={x.m.id} className="li">
+                        <i style={{ background: x.m.color }} />
+                        <span className="t">{x.m.title}</span>
+                        <small>{x.n} suất • {x.sold} vé</small>
+                      </div>
+                    ))}
+                    {byMovie.length === 0 && <div className="empty">Chưa có suất</div>}
+                  </div>
+
+                  {notIn.length > 0 && (
+                    <div className="alert warn" style={{ marginTop: '12px' }}>
+                      Phim đang chiếu nhưng <b>chưa có suất</b> hôm nay: {notIn.map(m => m.title).join(', ')}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* TAB 2 */}
+            {tabIdx === 2 && (() => {
+              if (allConflicts.length === 0) {
+                return (
+                  <div>
+                    <div className="alert ok">✓ Lịch chiếu ngày này không có xung đột.</div>
+                    <div className="empty" style={{ padding: '20px' }}>
+                      Hệ thống kiểm tra: trùng giờ + thời gian dọn phòng, định dạng phim/phòng, ngày khởi chiếu, giờ mở/đóng cửa, phim cùng lúc, khung giờ phù hợp độ tuổi.
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div className="list">
+                  {allConflicts.map((x, idx) => (
+                    <div
+                      key={idx}
+                      className="li"
+                      style={{ flexDirection: 'column', alignItems: 'stretch', gap: '4px' }}
+                      onClick={() => { setSelId(x.s.id); setTabIdx(0); }}
+                    >
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <i style={{ background: M(x.s.movieId).color }} />
+                        <b className="t">{x.s.start} • {M(x.s.movieId).title}</b>
+                        <small>{R(x.s.roomId).name}</small>
+                      </div>
+                      {x.errs.map((e, ei) => (
+                        <div key={ei} style={{ color: '#f87171', fontSize: '12px' }}>⛔ {e}</div>
+                      ))}
+                      {x.warns.map((w, wi) => (
+                        <div key={wi} style={{ color: '#fde047', fontSize: '12px' }}>⚠️ {w}</div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        </section>
+      </main>
+
+      {/* ── MODALS ── */}
+      {addModal && (
+        <div className="modal-bg" onClick={(e) => { if (e.target.classList.contains('modal-bg')) setAddModal(null); }}>
+          <AddModalContent
+            params={addModal}
+            movies={movies}
+            rooms={rooms}
+            onClose={() => setAddModal(null)}
+            onSuccess={() => {
+              setAddModal(null);
+              showToast?.('✓ Đã tạo suất chiếu thành công', 'success');
+              fetchShowtimes(date);
+            }}
+            getAdminToken={getAdminToken}
+            validate={validate}
+            M={M}
+            R={R}
+            endOf={endOf}
+          />
+        </div>
+      )}
+
+      {copyModal && (
+        <div className="modal-bg" onClick={(e) => { if (e.target.classList.contains('modal-bg')) setCopyModal(false); }}>
+          <CopyModalContent
+            date={date}
+            shows={shows}
+            onClose={() => setCopyModal(false)}
+            onSuccess={(targetDate) => {
+              setDate(targetDate);
+              setCopyModal(false);
+              showToast?.(`✓ Đã sao chép lịch chiếu sang ngày ${targetDate}`, 'success');
+              fetchShowtimes(targetDate);
+            }}
+            getAdminToken={getAdminToken}
+            validate={validate}
+          />
+        </div>
+      )}
+
+      {autoModal && (
+        <div className="modal-bg" onClick={(e) => { if (e.target.classList.contains('modal-bg')) setAutoModal(false); }}>
+          <AutoModalContent
+            date={date}
+            rooms={rooms}
+            movies={movies}
+            onClose={() => setAutoModal(false)}
+            onSuccess={() => {
+              setAutoModal(false);
+              showToast?.('✓ Đã xếp lịch tự động thành công', 'success');
+              fetchShowtimes(date);
+            }}
+            getAdminToken={getAdminToken}
+            validate={validate}
+            M={M}
+            R={R}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ================= SUB-MODAL COMPONENTS ================= */
+
+function AddModalContent({ params, movies, rooms, onClose, onSuccess, getAdminToken, validate, M, R, endOf }) {
+  const [movieId, setMovieId] = useState(params.movieId || movies[0]?.id || 1);
+  const [roomId, setRoomId] = useState(params.roomId || rooms[0]?.id || 1);
+  const [date, setDate] = useState(params.date || todayStr());
+  const [times, setTimes] = useState(new Set(params.start ? [params.start] : ['09:00', '13:30', '18:00']));
+  const [customTime, setCustomTime] = useState('09:00');
+  const [fmt, setFmt] = useState('2D');
+  const [lang, setLang] = useState('Phụ đề');
+  const [saving, setSaving] = useState(false);
+
+  const m = M(movieId);
+  const r = R(roomId);
+
+  const sug = ['09:00', '11:30', '14:00', '16:30', '19:00', '21:30'];
+  const allTimes = useMemo(() => Array.from(new Set([...sug, ...times])).sort(), [times]);
+
+  const toggleTime = (t) => {
+    setTimes(prev => {
+      const next = new Set(prev);
+      if (next.has(t)) next.delete(t);
+      else next.add(t);
       return next;
     });
   };
 
-  const toggleBulkSlot = (index) => {
-    const nextSlots = [...bulkForm.slots];
-    nextSlots[index] = { ...nextSlots[index], selected: nextSlots[index].selected === false };
-    setBulkForm({ ...bulkForm, slots: nextSlots });
+  const addCustom = () => {
+    if (!customTime) return;
+    setTimes(prev => new Set([...prev, customTime]));
   };
 
-  const addManualBulkSlot = (event) => {
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
+  const candidates = useMemo(() => {
+    return Array.from(times).sort().map(t => ({
+      id: Math.random().toString(36).slice(2, 9),
+      date,
+      roomId: Number(roomId),
+      movieId: Number(movieId),
+      start: t,
+      fmt,
+      lang,
+      sold: 0,
+      status: 'plan',
+      note: ''
+    }));
+  }, [times, date, roomId, movieId, fmt, lang]);
 
-    const sourceSlot = bulkForm.slots[activeBulkSlotIndex] || bulkForm.slots[0] || {};
-    const firstSlot = {
-      roomId: sourceSlot.roomId || bulkForm.slots[0]?.roomId || '',
-      startTime: sourceSlot.startTime || bulkForm.slots[0]?.startTime || ''
-    };
-    const lastSlot = bulkForm.slots[bulkForm.slots.length - 1] || firstSlot;
-    const nextStart = lastSlot.startTime && bulkStepMinutes ? toInputDatetime(addMinutes(lastSlot.startTime, bulkStepMinutes)) : '';
-    const nextIndex = bulkForm.slots.length;
-    setBulkForm({
-      ...bulkForm,
-      slots: [...bulkForm.slots, { roomId: firstSlot.roomId || '', startTime: nextStart, selected: true }]
-    });
-    setEditingBulkSlotIndex(nextIndex);
+  const handleSubmit = async () => {
+    if (candidates.length === 0) return alert('Chọn ít nhất một giờ bắt đầu');
+    const ok = candidates.filter(s => validate(s).errs.length === 0);
+    if (ok.length === 0) return alert('✕ Không có suất nào hợp lệ (bị xung đột giờ hoặc phòng)');
+
+    setSaving(true);
+    const token = getAdminToken?.();
+
+    let createdCount = 0;
+    for (const c of ok) {
+      if (token) {
+        try {
+          const payload = {
+            movieId: Number(c.movieId),
+            roomId: Number(c.roomId),
+            startTime: `${c.date}T${c.start}:00`,
+            basePrice: DEFAULT_PRICES[c.fmt]?.std || 60000,
+            vipPrice: DEFAULT_PRICES[c.fmt]?.vip || 90000,
+            couplePrice: DEFAULT_PRICES[c.fmt]?.couple || 150000,
+            status: 'SCHEDULED'
+          };
+          await adminService.createAdminShowtime(token, payload);
+          createdCount++;
+        } catch (err) {
+          console.warn('Lỗi API create showtime:', err);
+        }
+      }
+    }
+
+    setSaving(false);
+    onSuccess();
   };
 
-  const removeBulkSlot = (index) => {
-    if (bulkForm.slots.length === 1) return;
-    const nextSlots = bulkForm.slots.filter((_, j) => j !== index);
-    setBulkForm({ ...bulkForm, slots: nextSlots });
-    setEditingBulkSlotIndex(prev => Math.max(0, Math.min(prev >= index ? prev - 1 : prev, nextSlots.length - 1)));
-  };
-
-  const generateBulkSlotsForDay = (event) => {
-    event?.preventDefault?.();
-    event?.stopPropagation?.();
-
-    const sourceSlot = bulkForm.slots[activeBulkSlotIndex] || bulkForm.slots[0] || {};
-    const firstSlot = {
-      roomId: sourceSlot.roomId || bulkForm.slots[0]?.roomId || '',
-      startTime: sourceSlot.startTime || bulkForm.slots[0]?.startTime || ''
-    };
-    if (!bulkForm.movieId || !firstSlot.roomId || !firstSlot.startTime) {
-      setErrors(prev => ({
-        ...prev,
-        ...(!bulkForm.movieId ? { movieId: 'Chọn phim trước khi tự tạo khung giờ.' } : {}),
-        ...(!firstSlot.roomId ? { [`slot_room_${activeBulkSlotIndex}`]: 'Chọn phòng cho slot đang sửa.' } : {}),
-        ...(!firstSlot.startTime ? { [`slot_time_${activeBulkSlotIndex}`]: 'Nhập giờ bắt đầu cho slot đang sửa.' } : {})
-      }));
-      showToast?.('Chọn phim, phòng và giờ bắt đầu đầu tiên để tự tạo khung giờ.', 'error');
-      return;
-    }
-    if (!bulkMovieDuration) {
-      showToast?.('Phim chưa có thời lượng hợp lệ.', 'error');
-      return;
-    }
-    const start = new Date(firstSlot.startTime);
-    if (Number.isNaN(start.getTime())) {
-      showToast?.('Giờ bắt đầu không hợp lệ.', 'error');
-      return;
-    }
-    const windowError = getShowtimeWindowError(bulkMovie, firstSlot.startTime);
-    if (windowError) {
-      setErrors(prev => ({ ...prev, [`slot_time_${activeBulkSlotIndex}`]: windowError }));
-      showToast?.(windowError, 'error');
-      return;
-    }
-    const dayEnd = new Date(start);
-    dayEnd.setHours(23, 59, 59, 999);
-    const slots = [];
-    const cursor = new Date(start);
-    while (cursor <= dayEnd) {
-      slots.push({ roomId: firstSlot.roomId, startTime: toInputDatetime(cursor), selected: true });
-      cursor.setMinutes(cursor.getMinutes() + bulkStepMinutes);
-    }
-    setBulkForm({ ...bulkForm, slots });
-    setEditingBulkSlotIndex(0);
-    /* ════════════════════════════════════════════════ */
-  };
-
-  /* bulk slot controls */
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        <div>
-          <h2 className="text-xs font-black uppercase tracking-[0.18em] text-neutral-200">Quản lý Suất Chiếu</h2>
-          <p className="text-xs text-neutral-300 mt-0.5">Tạo, chỉnh sửa và giám sát lịch chiếu phim</p>
-        </div>
-        {mode === 'list' && (
-          <div className="flex gap-2">
-            <button onClick={() => ctx?.changeAdminSection?.('showtime-incidents')}
-              className="flex items-center gap-1.5 px-3 py-2 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-bold uppercase tracking-wider hover:bg-amber-500 hover:text-black transition cursor-pointer">
-              <AlertCircle className="w-3 h-3" /> Báo cáo sự cố &amp; hoàn tiền
-            </button>
-            <button onClick={() => { setMode('bulk'); setBulkForm(EMPTY_BULK); setEditingBulkSlotIndex(0); setEditingId(null); setEditingStatus(''); setErrors({}); }}
-              className="flex items-center gap-1.5 px-3 py-2 bg-amber-500 text-black text-[10px] font-black uppercase tracking-wider hover:bg-amber-400 transition cursor-pointer">
-              <Zap className="w-3 h-3" /> Tạo suất chiếu
-            </button>
-          </div>
-        )}
-        {mode !== 'list' && (
-          <button onClick={() => { setMode('list'); setEditingId(null); setEditingStatus(''); setErrors({}); }}
-            className="flex items-center gap-1.5 px-3 py-2 border border-white/[0.10] text-neutral-200 text-[10px] font-bold uppercase tracking-wider hover:border-white/[0.20] transition">
-            <X className="w-3 h-3" /> Hủy
-          </button>
-        )}
+    <div className="modal">
+      <h3>Thêm suất chiếu</h3>
+      <p>Giờ kết thúc tự tính = bắt đầu + thời lượng + {ADS}′ quảng cáo. Có thể tạo nhiều suất một lần.</p>
+
+      <div className="field">
+        <label>Phim</label>
+        <select value={movieId} onChange={(e) => setMovieId(Number(e.target.value))}>
+          {movies.map(x => (
+            <option key={x.id} value={x.id}>{x.title} ({x.dur}′)</option>
+          ))}
+        </select>
       </div>
 
-      {/* ── EDIT FORM ── */}
-
-      <AnimatePresence mode="wait">
-        {mode === 'edit' && (
-          <motion.div key="form-single" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-            className="border border-white/[0.08] bg-gradient-to-b from-[#0a0a0a] to-[#040404] p-6">
-            <h3 className="text-xs font-black uppercase tracking-[0.18em] text-white mb-4 pb-2 border-b border-white/[0.06]">
-              {mode === 'edit' ? '✏️ Chỉnh sửa suất chiếu' : '➕ Tạo suất chiếu mới'}
-            </h3>
-            <form onSubmit={handleFormSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-sans">
-
-              {/* Movie */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-200 font-black">Phim *</label>
-                <select value={form.movieId} onChange={e => {
-                  const nextMovieId = e.target.value;
-                  const nextMovie = findUiMovie(nextMovieId);
-                  const nextState = { ...form, movieId: nextMovieId };
-                  if (nextState.startTime && getShowtimeWindowError(nextMovie, nextState.startTime)) {
-                    nextState.startTime = '';
-                  }
-                  setForm(allowsChildTicketsForMovie(nextMovie) ? nextState : clearChildPrices(nextState));
-                }}
-                  className="w-full bg-black border border-white/[0.08] p-2.5 text-xs text-white focus:outline-none focus:border-amber-400">
-                  <option value="">-- Chọn phim --</option>
-                  {activeMovies.map(m => (
-                    <option key={m.id} value={m.backendId ?? m.id}>{m.title}</option>
-                  ))}
-                </select>
-                {errors.movieId && <p className="text-rose-400 text-[9px]">{errors.movieId}</p>}
-              </div>
-
-              {/* Room */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-200 font-black">Phòng chiếu *</label>
-                <select value={form.roomId} onChange={e => setForm({ ...form, roomId: e.target.value })}
-                  className="w-full bg-black border border-white/[0.08] p-2.5 text-xs text-white focus:outline-none focus:border-amber-400">
-                  <option value="">-- Chọn phòng --</option>
-                  {rooms.filter(r => r.status === 'ACTIVE').map(r => (
-                    <option key={r.id} value={r.id}>{r.name} ({r.roomType})</option>
-                  ))}
-                </select>
-                {errors.roomId && <p className="text-rose-400 text-[9px]">{errors.roomId}</p>}
-              </div>
-
-              {/* Start time */}
-              <DateTimePicker
-                label="Thời gian bắt đầu *"
-                value={form.startTime}
-                onChange={v => setForm({ ...form, startTime: v })}
-                error={errors.startTime}
-                minDate={formReleaseWindow.releaseDate}
-                maxDate={formReleaseWindow.endDate}
-                helpText={formMovie ? `Chỉ tạo trong thời gian phát hành: ${formatDateInput(formReleaseWindow.releaseDate)} - ${formatDateInput(formReleaseWindow.endDate)}` : 'Chọn phim để giới hạn ngày chiếu.'}
-              />
-
-              {/* Gợi ý khung giờ trống của phòng trong ngày đã chọn */}
-              {form.movieId && form.roomId && slotSuggestionDate && (
-                <div className="md:col-span-2 space-y-2 border border-emerald-500/20 bg-emerald-950/10 p-3">
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-emerald-400 font-black">
-                    Khung giờ còn trống ngày {formatDateInput(slotSuggestionDate)} — bấm để điền
-                  </p>
-                  {isLoadingSlots ? (
-                    <p className="text-[10px] text-neutral-300">Đang tính khung giờ trống…</p>
-                  ) : suggestedSlots.length === 0 ? (
-                    <p className="text-[10px] text-neutral-300">Không còn khung giờ trống phù hợp trong ngày này.</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {suggestedSlots.map((slot) => {
-                        const startLabel = String(slot.startTime).slice(11, 16);
-                        const endLabel = String(slot.endTime).slice(11, 16);
-                        const isSelected = String(form.startTime).slice(0, 16) === String(slot.startTime).slice(0, 16);
-                        return (
-                          <button
-                            key={slot.startTime}
-                            type="button"
-                            onClick={() => setForm({ ...form, startTime: String(slot.startTime).slice(0, 16) })}
-                            className={`border px-2.5 py-1.5 font-mono text-[10px] font-bold transition ${isSelected
-                              ? 'border-emerald-400 bg-emerald-400 text-black'
-                              : 'border-emerald-500/30 bg-black text-emerald-300 hover:border-emerald-400 hover:bg-emerald-500/15'
-                              }`}
-                            title={`Suất ${startLabel} – ${endLabel} (đã gồm thời gian dọn phòng)`}
-                          >
-                            {startLabel} – {endLabel}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Status */}
-              <div className="space-y-1.5">
-                <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-200 font-black">Trạng thái ban đầu</label>
-                <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}
-                  className="w-full bg-black border border-white/[0.08] p-2.5 text-xs text-white focus:outline-none focus:border-amber-400">
-                  <option value="SCHEDULED">SCHEDULED — lên lịch, chưa bán</option>
-                  <option value="OPEN">OPEN — mở bán ngay</option>
-                </select>
-              </div>
-
-              <PriceMatrix
-                value={form}
-                onChange={setForm}
-                errors={errors}
-                allowChildTickets={formAllowsChildTickets}
-                ageRatingLabel={formMovie?.ageRating}
-              />
-
-              <div className="md:col-span-2">
-                <button type="submit" disabled={saving}
-                  className="w-full py-3.5 bg-white text-black font-black uppercase text-[10.5px] tracking-widest hover:bg-amber-400 transition disabled:opacity-50">
-                  {saving ? 'Đang lưu...' : mode === 'edit' ? 'Cập nhật suất chiếu' : 'Tạo suất chiếu'}
-                </button>
-              </div>
-            </form>
-          </motion.div>
-        )}
-
-        {/* ── BULK FORM ── */}
-        {mode === 'bulk' && (
-          <motion.div key="form-bulk" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
-            className="border border-amber-500/30 bg-gradient-to-b from-[#0d0900] to-[#040404] p-6">
-            <div className="flex items-center gap-2 mb-4 pb-2 border-b border-white/[0.06]">
-              <Zap className="w-3.5 h-3.5 text-amber-400" />
-              <h3 className="text-xs font-black uppercase tracking-[0.18em] text-amber-300">Tạo hàng loạt suất chiếu</h3>
-
-            </div>
-            <form onSubmit={handleBulkSubmit} className="space-y-5 text-xs font-sans">
-
-              {/* Shared fields */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-200 font-black">Phim *</label>
-                  <select value={bulkForm.movieId} onChange={e => {
-                    const nextMovieId = e.target.value;
-                    const nextMovie = findUiMovie(nextMovieId);
-                    const nextState = {
-                      ...bulkForm,
-                      movieId: nextMovieId,
-                      slots: bulkForm.slots.map(slot => (
-                        slot.startTime && getShowtimeWindowError(nextMovie, slot.startTime)
-                          ? { ...slot, startTime: '' }
-                          : slot
-                      ))
-                    };
-                    setBulkForm(allowsChildTicketsForMovie(nextMovie) ? nextState : clearChildPrices(nextState));
-                  }}
-                    className="w-full bg-black border border-white/[0.08] p-2.5 text-xs text-white focus:outline-none focus:border-amber-400">
-                    <option value="">-- Chọn phim --</option>
-                    {activeMovies.map(m => (
-                      <option key={m.id} value={m.backendId ?? m.id}>{m.title}</option>
-                    ))}
-                  </select>
-                  {errors.movieId && <p className="text-rose-400 text-[9px]">{errors.movieId}</p>}
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-200 font-black">Trạng thái mặc định</label>
-                  <select value={bulkForm.defaultStatus} onChange={e => setBulkForm({ ...bulkForm, defaultStatus: e.target.value })}
-                    className="w-full bg-black border border-white/[0.08] p-2.5 text-xs text-white focus:outline-none focus:border-amber-400">
-                    <option value="SCHEDULED">SCHEDULED — lên lịch, chưa bán</option>
-                    <option value="OPEN">OPEN — mở bán ngay</option>
-                  </select>
-                </div>
-                <PriceMatrix
-                  value={bulkForm}
-                  onChange={setBulkForm}
-                  errors={errors}
-                  allowChildTickets={bulkAllowsChildTickets}
-                  ageRatingLabel={bulkMovie?.ageRating}
-                />
-              </div>
-
-              <div className="space-y-4 border border-white/[0.06] bg-white/[0.01] p-4">
-                <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
-                  <div>
-                    <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-300 font-black">
-                      Khung giờ có thể chiếu ({selectedBulkSlotsCount}/{bulkForm.slots.length} đã chọn)
-                    </label>
-                    <p className="text-[10px] text-neutral-200 mt-1">
-                      Chọn phim, phòng và giờ bắt đầu. Hệ thống cộng thời lượng phim + 15 phút dọn phòng để sinh các ca còn lại trong ngày.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button"
-                      onClick={generateBulkSlotsForDay}
-                      className="flex items-center gap-1.5 text-[9px] text-emerald-300 border border-emerald-500/30 px-3 py-2 hover:border-emerald-400/60 hover:bg-emerald-950/20 transition">
-                      <Clock className="w-3 h-3" /> Tự tạo trong ngày
-                    </button>
-                    <button type="button"
-                      onClick={addManualBulkSlot}
-                      className="flex items-center gap-1.5 text-[9px] text-amber-300 border border-amber-500/30 px-3 py-2 hover:border-amber-400/60 hover:bg-amber-950/20 transition">
-                      <Plus className="w-3 h-3" /> Thêm slot
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-                  <div className="space-y-3">
-                    <div className="space-y-2">
-                      <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-300 font-black">Phòng chiếu *</label>
-                      <select value={activeBulkSlot?.roomId || ''}
-                        onChange={e => updateBulkSlot(activeBulkSlotIndex, { roomId: e.target.value, selected: true })}
-                        className="w-full bg-black border border-white/[0.08] p-2.5 text-sm font-bold text-white focus:outline-none focus:border-amber-400 appearance-none">
-                        <option value="">-- Chọn phòng --</option>
-                        {rooms.filter(r => r.status === 'ACTIVE').map(r => (
-                          <option key={r.id} value={r.id}>{r.name}</option>
-                        ))}
-                      </select>
-                      {errors[`slot_room_${activeBulkSlotIndex}`] && <p className="text-rose-400 text-[8px]">{errors[`slot_room_${activeBulkSlotIndex}`]}</p>}
-                      <button type="button"
-                        onClick={() => setAllBulkSlotsRoom(activeBulkSlot?.roomId || '')}
-                        disabled={!activeBulkSlot?.roomId}
-                        className="text-[10px] uppercase tracking-wider text-amber-400 hover:text-amber-500 disabled:opacity-40">
-                        Áp dụng phòng này cho tất cả slot
-                      </button>
-                    </div>
-                    <div className="border border-amber-500/20 bg-amber-500/10 p-3 text-[9px] text-amber-100/80">
-                      <p className="uppercase tracking-widest text-amber-300 font-black">Bước nhảy</p>
-                      <p className="mt-1 font-mono text-white">{bulkMovieDuration || '--'} phút phim + 15 phút</p>
-                      <p className="mt-2 text-amber-200/70">Suất bắt đầu từ 23:00 đến trước 05:00 được cộng +{formatPriceInput(bulkForm.lateNightSurchargeAmount || 20000)}đ/vé.</p>
-                    </div>
-                  </div>
-                  <DateTimePicker
-                    label="Ngày"
-                    value={activeBulkSlot?.startTime || ''}
-                    onChange={v => updateBulkSlot(activeBulkSlotIndex, { startTime: v, selected: true })}
-                    error={errors[`slot_time_${activeBulkSlotIndex}`] || liveConflicts[activeBulkSlotIndex]}
-                    minDate={bulkReleaseWindow.releaseDate}
-                    maxDate={bulkReleaseWindow.endDate}
-                    helpText={bulkMovie ? `Chỉ tạo trong thời gian phát hành: ${formatDateInput(bulkReleaseWindow.releaseDate)} - ${formatDateInput(bulkReleaseWindow.endDate)}` : 'Chọn phim để giới hạn ngày chiếu.'}
-                  />
-                </div>
-
-                {errors.slot_selection && <p className="text-rose-400 text-[9px]">{errors.slot_selection}</p>}
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
-                  {bulkForm.slots.map((slot, i) => {
-                    const selected = slot.selected !== false;
-                    const endTime = getBulkSlotEnd(slot.startTime);
-                    const capacity = getBulkSlotCapacity(slot);
-                    const night = isNightSlot(slot.startTime);
-                    const slotError = errors[`slot_time_${i}`] || errors[`slot_room_${i}`] || liveConflicts[i];
-                    return (
-                      <div key={`${slot.startTime}-${i}`}
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => setEditingBulkSlotIndex(i)}
-                        onKeyDown={(e) => {
-                          if (e.key !== 'Enter' && e.key !== ' ') return;
-                          e.preventDefault();
-                          setEditingBulkSlotIndex(i);
-                        }}
-                        className={`relative min-h-[168px] overflow-hidden border text-left transition ${slotError ? 'border-rose-500 bg-rose-500/[0.04] ring-1 ring-rose-500/30' : activeBulkSlotIndex === i ? 'border-amber-400 bg-amber-500/[0.06] ring-1 ring-amber-400/30' : selected ? 'border-amber-500/60 bg-amber-500/[0.04]' : 'border-white/[0.08] bg-white/[0.03] opacity-55 hover:opacity-90'}`}>
-                        <div className="px-5 py-4 pt-10">
-                          {slot.startTime ? (
-                            <>
-                              <div className="flex items-end gap-1.5">
-                                <div className="flex flex-col items-start">
-                                  <span className="text-[9px] font-semibold text-neutral-200 uppercase tracking-wider mb-0.5">Giờ bắt đầu</span>
-                                  <span className="text-2xl font-black tracking-normal text-white font-mono">{formatTimeOnly(slot.startTime)}</span>
-                                </div>
-                                <span className="text-2xl font-black text-neutral-200 mb-0.5">→</span>
-                                <div className="flex flex-col items-start">
-                                  <span className="text-[9px] font-semibold text-neutral-200 uppercase tracking-wider mb-0.5">Giờ kết thúc</span>
-                                  <span className="text-2xl font-black tracking-normal text-white font-mono">{formatTimeOnly(endTime)}</span>
-                                </div>
-                              </div>
-                              {bulkStepMinutes > 0 && (
-                                <p className="mt-0.5 text-[9px] font-semibold text-neutral-200">
-                                  Phòng trống {formatTimeOnly(addMinutes(slot.startTime, bulkStepMinutes))} (+15p dọn)
-                                </p>
-                              )}
-                            </>
-                          ) : (
-                            <p className="text-xs font-black uppercase tracking-wider text-neutral-300 py-2">Chưa khởi tạo</p>
-                          )}
-                          <p className="mt-2 truncate text-[10px] font-bold uppercase tracking-wider text-neutral-200">
-                            {rooms.find(r => String(r.id) === String(slot.roomId))?.name || 'Chưa chọn phòng'}
-                          </p>
-                        </div>
-                        <div className={`border px-5 pt-0 pb-5 text-center text-sm font-bold ${night ? 'border-amber-500/30 bg-amber-500/[0.08] text-amber-300' : 'border-white/[0.10] bg-white/[0.04] text-neutral-300'}`}>
-                          {capacity ? `Sức chứa: ${capacity} ghế` : slot.roomId ? 'Chưa có dữ liệu ghế' : 'Chưa chọn phòng'}
-                        </div>
-                        <div className="absolute right-2 top-2 flex gap-1">
-                          {slotError && <span className="rounded bg-rose-600 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-white">Lỗi</span>}
-                          {activeBulkSlotIndex === i && <span className="bg-amber-400 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-black">Sửa</span>}
-                          {night && <span className="bg-amber-500/20 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-amber-300">Đêm +{formatPriceInput(bulkForm.lateNightSurchargeAmount || 20000)}đ</span>}
-                          {selected && <span className="rounded bg-amber-400 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-black">Chọn</span>}
-                        </div>
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleBulkSlot(i);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key !== 'Enter' && e.key !== ' ') return;
-                            e.preventDefault();
-                            e.stopPropagation();
-                            toggleBulkSlot(i);
-                          }}
-                          className={`absolute bottom-2 left-2 rounded px-2 py-1 text-[8px] font-black uppercase tracking-wider ${selected ? 'bg-white/[0.03] text-white hover:bg-rose-600' : 'bg-amber-400 text-black hover:bg-amber-300'}`}>
-                          {selected ? 'Bỏ chọn' : 'Chọn'}
-                        </span>
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (bulkForm.slots.length === 1) return;
-                            removeBulkSlot(i);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key !== 'Enter' && e.key !== ' ') return;
-                            e.preventDefault();
-                            e.stopPropagation();
-                            if (bulkForm.slots.length === 1) return;
-                            removeBulkSlot(i);
-                          }}
-                          className={`absolute bottom-2 right-2 p-1 text-neutral-200 hover:text-rose-500 ${bulkForm.slots.length === 1 ? 'pointer-events-none opacity-20' : ''}`}>
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Slots */}
-              <div className="hidden">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-300 font-black">
-                    Danh sách khung giờ ({bulkForm.slots.length} slot)
-                  </label>
-                  <div className="flex gap-2">
-                    <button type="button"
-                      onClick={generateBulkSlotsForDay}
-                      className="flex items-center gap-1 text-[9px] text-emerald-400 hover:text-emerald-300 border border-emerald-500/30 px-2 py-1 hover:border-emerald-400/50 transition">
-                      <Clock className="w-2.5 h-2.5" /> Tự tạo trong ngày
-                    </button>
-                    <button type="button"
-                      onClick={addManualBulkSlot}
-                      className="flex items-center gap-1 text-[9px] text-amber-400 hover:text-amber-300 border border-amber-500/30 px-2 py-1 hover:border-amber-400/50 transition">
-                      <Plus className="w-2.5 h-2.5" /> Thêm slot
-                    </button>
-                  </div>
-                </div>
-
-                {bulkForm.slots.map((slot, i) => (
-                  <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-4 items-start border border-white/[0.06] p-4 bg-black/30">
-                    <div className="space-y-2 mt-4">
-                      <label className="text-xs uppercase tracking-widest text-amber-500 font-black block text-center">Phòng chiếu {i + 1}</label>
-                      <select value={slot.roomId}
-                        onChange={e => {
-                          const s = [...bulkForm.slots]; s[i] = { ...s[i], roomId: e.target.value };
-                          setBulkForm({ ...bulkForm, slots: s });
-                        }}
-                        className="w-full bg-black border border-white/[0.08] p-2.5 text-sm text-center font-bold text-white focus:outline-none focus:border-amber-400 appearance-none">
-                        <option value="">-- Chọn phòng --</option>
-                        {rooms.filter(r => r.status === 'ACTIVE').map(r => (
-                          <option key={r.id} value={r.id}>{r.name}</option>
-                        ))}
-                      </select>
-                      {errors[`slot_room_${i}`] && <p className="text-rose-400 text-[8px]">{errors[`slot_room_${i}`]}</p>}
-                    </div>
-                    <div className="space-y-1">
-                      <DateTimePicker
-                        label="Giờ bắt đầu"
-                        value={slot.startTime}
-                        onChange={v => {
-                          const s = [...bulkForm.slots]; s[i] = { ...s[i], startTime: v };
-                          setBulkForm({ ...bulkForm, slots: s });
-                        }}
-                        error={errors[`slot_time_${i}`]}
-                        minDate={bulkReleaseWindow.releaseDate}
-                        maxDate={bulkReleaseWindow.endDate}
-                      />
-                    </div>
-                    <button type="button" disabled={bulkForm.slots.length === 1}
-                      onClick={() => {
-                        const s = bulkForm.slots.filter((_, j) => j !== i);
-                        setBulkForm({ ...bulkForm, slots: s });
-                      }}
-                      className="p-2 text-neutral-200 hover:text-rose-400 transition disabled:opacity-30">
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-
-              <button type="submit" disabled={saving}
-                className="w-full py-3.5 bg-amber-500 text-black font-black uppercase text-[10.5px] tracking-widest hover:bg-amber-400 transition disabled:opacity-50">
-                {saving ? 'Đang tạo...' : `Tạo ${selectedBulkSlotsCount} suất chiếu cùng lúc`}
-              </button>
-            </form>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ── FILTER BAR ── */}
-      {mode === 'list' && (
-        <div className="flex flex-wrap gap-2 items-end">
-          <div className="space-y-1">
-            <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-300 block">Phim</label>
-            <select
-              value={filters.movieId}
-              onChange={e => {
-                const nextFilters = { ...filters, movieId: e.target.value };
-                setFilters(nextFilters);
-                fetchShowtimes(0, nextFilters);
-              }}
-              className="bg-black border border-white/[0.08] text-xs text-neutral-200 px-2.5 py-2 focus:outline-none focus:border-amber-400 cursor-pointer"
-            >
-              <option value="">Tất cả phim</option>
-              {allMovies.map(m => <option key={m.id} value={m.backendId ?? m.id}>{m.title}</option>)}
-            </select>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-300 block">Trạng thái</label>
-            <select
-              value={filters.status}
-              onChange={e => {
-                const nextFilters = { ...filters, status: e.target.value };
-                setFilters(nextFilters);
-                fetchShowtimes(0, nextFilters);
-              }}
-              className="bg-black border border-white/[0.08] text-xs text-neutral-200 px-2.5 py-2 focus:outline-none focus:border-amber-400 cursor-pointer"
-            >
-              <option value="">Tất cả</option>
-              <option value="SCHEDULED">Đã lên lịch</option>
-              <option value="OPEN">Đang mở bán</option>
-              <option value="COMPLETED">Đã kết thúc</option>
-              <option value="CANCELLED">Đã hủy</option>
-            </select>
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-300 block">Ngày</label>
-            <div
-              onClick={() => {
-                try {
-                  dateFilterRef.current?.showPicker?.();
-                } catch {
-                  dateFilterRef.current?.focus?.();
-                }
-              }}
-              className="relative flex items-center bg-black border border-white/[0.08] px-2.5 py-2 cursor-pointer text-xs text-neutral-200 hover:border-amber-400 focus-within:border-amber-400 transition min-w-[130px]"
-            >
-              <Calendar className="w-3.5 h-3.5 text-amber-400 mr-2 shrink-0 pointer-events-none" />
-              <span className="font-mono text-xs select-none">
-                {filters.date ? filters.date.split('-').reverse().join('/') : 'dd/mm/yyyy'}
-              </span>
-              <input
-                ref={dateFilterRef}
-                type="date"
-                value={filters.date}
-                onKeyDown={(e) => e.preventDefault()}
-                onChange={e => {
-                  const nextFilters = { ...filters, date: e.target.value };
-                  setFilters(nextFilters);
-                  fetchShowtimes(0, nextFilters);
-                }}
-                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                aria-label="Chọn ngày chiếu"
-              />
-            </div>
-          </div>
-
-          <button onClick={() => { const emptyFilters = { movieId: '', roomId: '', status: '', date: '' }; setFilters(emptyFilters); fetchShowtimes(0, emptyFilters); }}
-            className="flex items-center gap-1.5 px-3 py-2 border border-white/[0.08] text-neutral-300 text-[10px] font-bold uppercase hover:border-white/[0.20] hover:text-white transition cursor-pointer">
-            <RefreshCw className="w-3 h-3" /> Reset
-          </button>
+      <div className="row2">
+        <div className="field">
+          <label>Phòng</label>
+          <select value={roomId} onChange={(e) => setRoomId(Number(e.target.value))}>
+            {rooms.filter(x => x.active).map(x => (
+              <option key={x.id} value={x.id}>{x.name} ({x.type})</option>
+            ))}
+          </select>
         </div>
-      )}
-
-      {/* ── TABLE ── */}
-      {mode === 'list' && (
-        <div className="border border-white/[0.06] overflow-hidden">
-          {loading ? (
-            <div className="flex items-center justify-center py-16 text-neutral-200">
-              <RefreshCw className="w-4 h-4 animate-spin mr-2" /> Đang tải...
-            </div>
-          ) : showtimes.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 text-neutral-200">
-              <Film className="w-8 h-8 mb-2 opacity-30" />
-              <p className="text-xs">Không có suất chiếu nào</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs font-sans">
-                <thead>
-                  <tr className="border-b border-white/[0.06] bg-white/[0.02]">
-                    {['Phim', 'Phòng', 'Bắt đầu', 'Kết thúc', 'Giá vé', 'Trạng thái', 'Thao tác'].map(h => (
-                      <th key={h} className="text-left px-3 py-3 text-[10px] uppercase tracking-[0.18em] text-neutral-200 font-black whitespace-nowrap">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {showtimes.map((st, idx) => {
-                    const meta = STATUS_META[st.status] || STATUS_META.SCHEDULED;
-                    const resolvedMovie = findUiMovie(st.movieId);
-                    const movieTitle = st.movieTitle ?? st.movie?.title ?? resolvedMovie?.title ?? '—';
-                    const roomName = st.roomName ?? st.room?.name ?? '—';
-                    return (
-                      <tr key={st.id ?? idx}
-                        className="border-b border-white/[0.04] hover:bg-white/[0.01] transition-colors">
-                        <td className="px-3 py-3 max-w-[160px]">
-                          <span className="font-bold text-white truncate block" title={movieTitle}>{movieTitle}</span>
-                        </td>
-                        <td className="px-3 py-3 text-neutral-200 whitespace-nowrap">{roomName}</td>
-                        <td className="px-3 py-3 font-mono text-neutral-200 whitespace-nowrap">{fmt(st.startTime)}</td>
-                        <td className="px-3 py-3 font-mono text-neutral-300 whitespace-nowrap">{fmt(st.endTime)}</td>
-                        <td className="px-3 py-3 text-neutral-200 whitespace-nowrap">
-                          <div className="font-mono">{fmtPrice(st.adultStandardPrice ?? st.basePrice)}</div>
-                          {Number(st.surchargeAmount || 0) > 0 && (
-                            <div className="text-[9px] text-amber-400">+{fmtPrice(st.surchargeAmount)} phụ thu</div>
-                          )}
-                        </td>
-                        <td className="px-3 py-3">
-                          <span className={`text-[8.5px] px-1.5 py-0.5 font-bold border ${meta.bg} ${meta.color}`}>
-                            {meta.label}
-                          </span>
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex items-center gap-1">
-                            {/* Status actions */}
-                            {st.status === 'SCHEDULED' && (
-                              <button onClick={() => handleStatusChange(st.id, 'OPEN')} title="Mở bán"
-                                className="p-1 text-emerald-500 hover:text-emerald-300 hover:bg-emerald-950/30 rounded transition">
-                                <Play className="w-3 h-3" />
-                              </button>
-                            )}
-                            {(st.status === 'SCHEDULED' || st.status === 'OPEN' || st.status === 'COMPLETED') && (
-                              <button onClick={() => setConfirmCancel(st)} title="Hủy suất chiếu"
-                                className="p-1 text-amber-500 hover:text-amber-300 hover:bg-amber-950/30 rounded transition">
-                                <Ban className="w-3 h-3" />
-                              </button>
-                            )}
-                            {/* Edit */}
-                            {(st.status === 'SCHEDULED' || st.status === 'OPEN') && (
-                              <button onClick={() => openEdit(st)} title="Chỉnh sửa"
-                                className="p-1 text-blue-400 hover:text-blue-300 hover:bg-blue-950/30 rounded transition">
-                                <Edit3 className="w-3 h-3" />
-                              </button>
-                            )}
-                            {/* Detail */}
-                            <button onClick={() => setDetailModal(st)} title="Chi tiết"
-                              className="p-1 text-neutral-200 hover:text-neutral-300 hover:bg-white/[0.03] rounded transition">
-                              <Eye className="w-3 h-3" />
-                            </button>
-                            {/* Delete */}
-                            <button onClick={() => setConfirmDelete(st.id)} title="Xóa"
-                              className="p-1 text-neutral-200 hover:text-rose-400 hover:bg-rose-950/30 rounded transition">
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between px-4 py-3 border-t border-white/[0.06] bg-white/[0.01]">
-              <span className="text-[9px] text-neutral-200 font-mono">Trang {page + 1} / {totalPages}</span>
-              <div className="flex gap-1">
-                <button disabled={page === 0} onClick={() => fetchShowtimes(page - 1)}
-                  className="p-1 text-neutral-200 hover:text-white disabled:opacity-30 transition">
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
-                <button disabled={page >= totalPages - 1} onClick={() => fetchShowtimes(page + 1)}
-                  className="p-1 text-neutral-200 hover:text-white disabled:opacity-30 transition">
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          )}
+        <div className="field">
+          <label>Ngày</label>
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </div>
-      )}
+      </div>
 
-      {/* ── CONFIRM DELETE MODAL ── */}
-      <AnimatePresence>
-        {confirmDelete && (
-          <motion.div key="delete-confirm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[250] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
-              className="bg-black border border-rose-500/30 p-6 max-w-sm w-full space-y-4">
-              <div className="flex items-center gap-2 text-rose-400">
-                <AlertCircle className="w-4 h-4" />
-                <h3 className="text-xs font-black uppercase tracking-[0.18em] text-white">Xác nhận xóa suất chiếu</h3>
-              </div>
-              <p className="text-[11px] text-neutral-200">
-                Suất chiếu sẽ bị xóa vĩnh viễn. Nếu còn booking đang hoạt động, thao tác sẽ bị từ chối (409).
-                Hãy hủy suất chiếu trước để tự động xử lý booking.
-              </p>
-              <div className="flex gap-2">
-                <button onClick={() => setConfirmDelete(null)}
-                  className="flex-1 py-2.5 border border-white/[0.10] text-neutral-200 text-[10px] font-bold uppercase hover:border-white/[0.20] transition">
-                  Hủy bỏ
-                </button>
-                <button onClick={() => handleDelete(confirmDelete)}
-                  className="flex-1 py-2.5 bg-rose-600 text-white text-[10px] font-black uppercase hover:bg-rose-500 transition">
-                  Xóa ngay
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <div className="field">
+        <label>Giờ bắt đầu (chọn nhiều)</label>
+        <div className="chips">
+          {allTimes.map(t => (
+            <button
+              key={t}
+              type="button"
+              className={`chip-btn ${times.has(t) ? 'on' : ''}`}
+              onClick={() => toggleTime(t)}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+          <input
+            type="time"
+            step="300"
+            value={customTime}
+            onChange={(e) => setCustomTime(e.target.value)}
+            style={{ flex: 1, padding: '7px 10px', border: '1px solid #30363d', borderRadius: '8px', background: '#161b22', color: '#fff' }}
+          />
+          <button className="btn sm" type="button" onClick={addCustom}>+ Thêm giờ</button>
+        </div>
+      </div>
 
-      {/* Cancel confirmation modal */}
-      <AnimatePresence>
-        {confirmCancel && (
-          <motion.div key="cancel-confirm" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[250] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
-              className="bg-black border border-amber-500/30 p-6 max-w-sm w-full space-y-4">
-              <div className="flex items-center gap-2 text-amber-400">
-                <AlertCircle className="w-4 h-4" />
-                <h3 className="text-xs font-black uppercase tracking-[0.18em] text-white">Xác nhận hủy suất chiếu</h3>
-              </div>
-              <p className="text-[11px] text-neutral-200">
-                Bạn có chắc muốn hủy suất chiếu
-                <span className="mx-1 font-bold text-neutral-300">#{confirmCancel.id}</span>
-                của phim <span className="font-bold text-white">{confirmCancel.movieTitle ?? confirmCancel.movie?.title ?? 'này'}</span>?
-                Thao tác này sẽ chặn khách đặt vé cho suất chiếu đó.
-              </p>
-              <label className="block space-y-1.5">
-                <span className="text-[10px] uppercase tracking-[0.18em] text-neutral-200 font-black">LÝ DO HỦY.
-                </span>
-                <textarea
-                  value={cancelReason}
-                  onChange={e => setCancelReason(e.target.value)}
-                  maxLength={500}
-                  rows={3}
-                  placeholder="VD: Cup dien, su co ky thuat phong chieu..."
-                  className="w-full resize-none bg-black border border-white/[0.08] p-2.5 text-xs text-white focus:outline-none focus:border-amber-400"
-                />
-              </label>
-              <div className="flex gap-2">
-                <button onClick={() => { setConfirmCancel(null); setCancelReason(''); }}
-                  className="flex-1 py-2.5 border border-white/[0.10] text-neutral-200 text-[10px] font-bold uppercase hover:border-white/[0.20] transition">
-                  Quay lại
-                </button>
-                <button onClick={handleConfirmCancel} disabled={saving}
-                  className="flex-1 py-2.5 bg-amber-500 text-black text-[10px] font-black uppercase hover:bg-amber-400 transition disabled:opacity-50">
-                  Xác nhận hủy
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-      {/* Refund Summary Result Modal */}
-      <AnimatePresence>
-        {refundSummary && (
-          <motion.div key="refund-summary-modal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[300] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
-            <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
-              className="bg-zinc-950 border border-emerald-500/40 p-6 max-w-md w-full space-y-4 shadow-2xl">
-              <div className="flex items-center gap-2 text-emerald-400">
-                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                <h3 className="text-sm font-black uppercase tracking-[0.18em] text-white">Đã Hoàn Tất Hủy Suất Chiếu &amp; Hoàn Tiền</h3>
-              </div>
-              <div className="border border-white/10 bg-black/60 p-4 text-xs space-y-2 text-neutral-300 font-sans">
-                <div className="flex justify-between">
-                  <span className="text-neutral-400">Mã suất chiếu:</span>
-                  <strong className="text-amber-400 font-mono">#{refundSummary.showtimeId}</strong>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-neutral-400">Tổng đơn vé bị ảnh hưởng:</span>
-                  <strong className="text-white font-mono">{refundSummary.totalBookings ?? 0} đơn</strong>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-neutral-400 font-bold">Hoàn tiền thành công:</span>
-                  <strong className="text-emerald-400 font-mono font-bold">{refundSummary.successCount ?? 0} đơn</strong>
-                </div>
-                {refundSummary.failedCount > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-red-400 font-bold">Lỗi hoàn tiền:</span>
-                    <strong className="text-red-400 font-mono font-bold">{refundSummary.failedCount} đơn</strong>
-                  </div>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setRefundSummary(null)}
-                  className="flex-1 py-2.5 border border-white/10 text-neutral-300 text-[10px] font-bold uppercase hover:bg-neutral-900 transition cursor-pointer"
-                >
-                  Đóng
-                </button>
-                <button
-                  onClick={() => {
-                    setRefundSummary(null);
-                    ctx?.changeAdminSection?.('showtime-incidents');
-                  }}
-                  className="flex-1 py-2.5 bg-amber-500 text-black text-[10px] font-black uppercase hover:bg-amber-400 transition cursor-pointer"
-                >
-                  Xem Báo Cáo Chi Tiết
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <div className="row2">
+        <div className="field">
+          <label>Định dạng</label>
+          <select value={fmt} onChange={(e) => setFmt(e.target.value)}>
+            {m.formats.map(f => (
+              <option key={f} value={f}>{f}</option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label>Ngôn ngữ</label>
+          <select value={lang} onChange={(e) => setLang(e.target.value)}>
+            {['Phụ đề', 'Lồng tiếng', 'Tiếng Việt'].map(f => (
+              <option key={f} value={f}>{f}</option>
+            ))}
+          </select>
+        </div>
+      </div>
 
+      {/* Preview */}
+      <div>
+        {candidates.map(s => {
+          const v = validate(s);
+          return (
+            <div key={s.start} className={`alert ${v.errs.length ? 'err' : v.warns.length ? 'warn' : 'ok'}`}>
+              <b>{s.start} → {toT(toMin(s.start) + m.dur + ADS)}</b> {v.errs[0] ? '⛔ ' + v.errs[0] : v.warns[0] ? '⚠️ ' + v.warns[0] : '✓ Hợp lệ'}
+            </div>
+          );
+        })}
+      </div>
 
-
-      {/* Detail modal */}
-      <AnimatePresence>
-        {detailModal && (
-          <motion.div key="detail-modal" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={() => setDetailModal(null)}
-            className="fixed inset-0 z-[250] flex items-start justify-center overflow-y-auto bg-black/80 p-4 pt-20 pb-24 backdrop-blur-sm">
-            <motion.div initial={{ scale: 0.95, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 10 }}
-              onClick={e => e.stopPropagation()}
-              className="max-h-[calc(100vh-8rem)] w-full max-w-md space-y-4 overflow-y-auto border border-white/[0.08] bg-black p-6 shadow-2xl">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-black uppercase tracking-[0.18em] text-white">Chi tiết suất chiếu #{detailModal.id}</h3>
-                <button onClick={() => setDetailModal(null)} className="text-neutral-300 hover:text-white"><X className="w-4 h-4" /></button>
-              </div>
-              <div className="space-y-2 text-[11px]">
-                {(() => {
-                  const roomId = getShowtimeRoomId(detailModal);
-                  const seatTypes = roomSeatTypesById[roomId] || [];
-                  const showChildPrices = allowsChildTicketsForShowtime(detailModal);
-                  const hasVipSeats = seatTypes.includes('VIP');
-                  const hasCoupleSeats = seatTypes.includes('COUPLE');
-                  const rows = [
-                    ['Phim', detailModal.movieTitle ?? detailModal.movie?.title],
-                    ['Phòng', detailModal.roomName ?? detailModal.room?.name],
-                    ['Bắt đầu', fmt(detailModal.startTime)],
-                    ['Kết thúc', fmt(detailModal.endTime)],
-                  ];
-                  const addPriceRow = (label, value) => {
-                    const formatted = fmtDetailPrice(value);
-                    if (formatted) rows.push([label, formatted]);
-                  };
-
-                  addPriceRow('Người lớn - thường', detailModal.adultStandardPrice ?? detailModal.basePrice);
-                  if (showChildPrices) addPriceRow('Trẻ em - thường', detailModal.childStandardPrice);
-                  addPriceRow('Sinh viên - thường', detailModal.studentStandardPrice);
-
-                  if (hasVipSeats) {
-                    addPriceRow('Người lớn - VIP', detailModal.adultVipPrice ?? detailModal.vipPrice);
-                    if (showChildPrices) addPriceRow('Trẻ em - VIP', detailModal.childVipPrice);
-                    addPriceRow('Sinh viên - VIP', detailModal.studentVipPrice);
-                  }
-
-                  if (hasCoupleSeats) {
-                    addPriceRow('Người lớn - ghế đôi', detailModal.adultCouplePrice ?? detailModal.couplePrice);
-                    if (showChildPrices) addPriceRow('Trẻ em - ghế đôi', detailModal.childCouplePrice);
-                    addPriceRow('Sinh viên - ghế đôi', detailModal.studentCouplePrice);
-                  }
-
-                  addPriceRow('Phụ thu áp dụng', detailModal.surchargeAmount);
-                  rows.push(['Trạng thái', STATUS_META[detailModal.status]?.label ?? detailModal.status]);
-                  return rows.map(([label, val]) => (
-                    <div key={label} className="flex justify-between border-b border-white/[0.06] pb-1.5">
-                      <span className="text-neutral-300 font-bold">{label}</span>
-                      <span className="text-neutral-300 font-mono">{val ?? '—'}</span>
-                    </div>
-                  ));
-                })()}
-              </div>
-              {/* Quick status actions in detail */}
-              {(detailModal.status === 'SCHEDULED' || detailModal.status === 'OPEN' || detailModal.status === 'COMPLETED') && (
-                <div className="flex gap-2 pt-2">
-                  {detailModal.status === 'SCHEDULED' && (
-                    <button onClick={() => { handleStatusChange(detailModal.id, 'OPEN'); setDetailModal(null); }}
-                      className="flex-1 py-2 bg-emerald-600 text-white text-[10px] font-black uppercase hover:bg-emerald-500 transition">
-                      Mở bán ngay
-                    </button>
-                  )}
-                  <button onClick={() => { setConfirmCancel(detailModal); setDetailModal(null); }}
-                    className="flex-1 py-2 bg-rose-900 text-rose-300 text-[10px] font-black uppercase hover:bg-rose-800 transition">
-                    Hủy suất chiếu
-                  </button>
-                </div>
-              )}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <div className="acts">
+        <button className="btn" onClick={onClose}>Huỷ</button>
+        <button className="btn primary" disabled={saving} onClick={handleSubmit}>
+          {saving ? 'Đang gửi API...' : 'Tạo suất chiếu'}
+        </button>
+      </div>
     </div>
   );
 }
 
+function CopyModalContent({ date, shows, onClose, onSuccess, getAdminToken, validate }) {
+  const [from, setFrom] = useState(date);
+  const [to, setTo] = useState(addDays(date, 1));
+  const [rep, setRep] = useState(1);
+  const [over, setOver] = useState(false);
+  const [saving, setSaving] = useState(false);
 
+  const doCopy = async () => {
+    const src = shows.filter(s => s.date === from && s.status !== 'cancel');
+    if (!src.length) return alert('Ngày nguồn không có suất');
+
+    setSaving(true);
+    const token = getAdminToken?.();
+
+    for (let i = 0; i < rep; i++) {
+      const d = addDays(to, i);
+      for (const s of src) {
+        const c = { ...s, id: Math.random().toString(36).slice(2, 9), date: d, sold: 0, status: 'plan' };
+        if (validate(c).errs.length === 0 && token) {
+          try {
+            const payload = {
+              movieId: Number(c.movieId),
+              roomId: Number(c.roomId),
+              startTime: `${c.date}T${c.start}:00`,
+              basePrice: c.price?.std || DEFAULT_PRICES[c.fmt]?.std || 60000,
+              vipPrice: c.price?.vip || DEFAULT_PRICES[c.fmt]?.vip || 90000,
+              couplePrice: c.price?.couple || DEFAULT_PRICES[c.fmt]?.couple || 150000,
+              status: 'SCHEDULED'
+            };
+            await adminService.createAdminShowtime(token, payload);
+          } catch (err) {
+            console.warn('Lỗi copy showtime:', err);
+          }
+        }
+      }
+    }
+
+    setSaving(false);
+    onSuccess(to);
+  };
+
+  return (
+    <div className="modal">
+      <h3>Sao chép lịch chiếu</h3>
+      <p>Sao chép toàn bộ suất của một ngày sang ngày khác (không sao chép vé đã bán). Suất xung đột sẽ bị bỏ qua.</p>
+
+      <div className="row2">
+        <div className="field">
+          <label>Từ ngày</label>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>Đến ngày</label>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="field">
+        <label>Lặp lại</label>
+        <select value={rep} onChange={(e) => setRep(Number(e.target.value))}>
+          <option value={1}>Chỉ 1 ngày</option>
+          <option value={7}>7 ngày liên tiếp</option>
+          <option value={14}>14 ngày liên tiếp</option>
+        </select>
+      </div>
+
+      <label style={{ display: 'flex', gap: '8px', fontSize: '13px', marginBottom: '12px', cursor: 'pointer' }}>
+        <input type="checkbox" checked={over} onChange={(e) => setOver(e.target.checked)} />
+        Ghi đè (bỏ qua suất nếu gặp xung đột)
+      </label>
+
+      <div className="acts">
+        <button className="btn" onClick={onClose}>Huỷ</button>
+        <button className="btn primary" disabled={saving} onClick={doCopy}>
+          {saving ? 'Đang sao chép...' : 'Sao chép'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AutoModalContent({ date, rooms, movies, onClose, onSuccess, getAdminToken, validate, M, R }) {
+  const [roomId, setRoomId] = useState(rooms.filter(r => r.active)[0]?.id || 1);
+  const [start, setStart] = useState('09:00');
+  const [selectedMovieIds, setSelectedMovieIds] = useState(new Set(movies.slice(0, 3).map(m => m.id)));
+  const [round, setRound] = useState(15);
+  const [saving, setSaving] = useState(false);
+
+  const toggle = (id) => {
+    setSelectedMovieIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const doAuto = async () => {
+    const ids = Array.from(selectedMovieIds);
+    if (!ids.length) return alert('Chọn ít nhất 1 phim');
+    const r = R(roomId);
+    let t = toMin(start);
+    let i = 0, guard = 0;
+    const final = [];
+
+    while (guard++ < 40) {
+      const m = M(ids[i % ids.length]);
+      const fmt = m.formats.includes(r.type) ? r.type : (m.formats.includes('2D') ? '2D' : null);
+      if (!fmt) { i++; continue; }
+
+      const c = {
+        id: Math.random().toString(36).slice(2, 9),
+        date,
+        roomId,
+        movieId: m.id,
+        start: toT(t),
+        fmt,
+        lang: m.lang,
+        sold: 0,
+        status: 'plan',
+        note: 'Tự động'
+      };
+
+      if (t + m.dur + ADS > CLOSE * 60) break;
+
+      if (!validate(c).errs.length) {
+        final.push(c);
+        t = Math.ceil((t + m.dur + ADS + CLEAN) / round) * round;
+      } else {
+        t += round;
+      }
+      i++;
+    }
+
+    setSaving(true);
+    const token = getAdminToken?.();
+    for (const c of final) {
+      if (token) {
+        try {
+          const payload = {
+            movieId: Number(c.movieId),
+            roomId: Number(c.roomId),
+            startTime: `${c.date}T${c.start}:00`,
+            basePrice: DEFAULT_PRICES[c.fmt]?.std || 60000,
+            vipPrice: DEFAULT_PRICES[c.fmt]?.vip || 90000,
+            couplePrice: DEFAULT_PRICES[c.fmt]?.couple || 150000,
+            status: 'SCHEDULED'
+          };
+          await adminService.createAdminShowtime(token, payload);
+        } catch (err) {
+          console.warn('Lỗi auto create showtime:', err);
+        }
+      }
+    }
+
+    setSaving(false);
+    onSuccess();
+  };
+
+  return (
+    <div className="modal">
+      <h3>Xếp lịch tự động</h3>
+      <p>Lấp đầy một phòng bằng cách chiếu lặp lại các phim được chọn từ giờ bắt đầu đến giờ đóng cửa, tự chèn {ADS}′ quảng cáo + {CLEAN}′ dọn phòng.</p>
+
+      <div className="row2">
+        <div className="field">
+          <label>Phòng</label>
+          <select value={roomId} onChange={(e) => setRoomId(Number(e.target.value))}>
+            {rooms.filter(r => r.active).map(x => (
+              <option key={x.id} value={x.id}>{x.name} ({x.type})</option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label>Bắt đầu từ</label>
+          <input type="time" step="300" value={start} onChange={(e) => setStart(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="field">
+        <label>Phim luân phiên (theo thứ tự)</label>
+        <div className="chips">
+          {movies.filter(m => m.release <= date && m.end >= date).map(m => (
+            <button
+              key={m.id}
+              type="button"
+              className={`chip-btn ${selectedMovieIds.has(m.id) ? 'on' : ''}`}
+              onClick={() => toggle(m.id)}
+            >
+              {m.title} ({m.dur}′)
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="field">
+        <label>Làm tròn giờ bắt đầu</label>
+        <select value={round} onChange={(e) => setRound(Number(e.target.value))}>
+          <option value={5}>5 phút</option>
+          <option value={15}>15 phút</option>
+          <option value={30}>30 phút</option>
+        </select>
+      </div>
+
+      <div className="acts">
+        <button className="btn" onClick={onClose}>Huỷ</button>
+        <button className="btn primary" disabled={saving} onClick={doAuto}>
+          {saving ? 'Đang xếp lịch...' : 'Xếp lịch'}
+        </button>
+      </div>
+    </div>
+  );
+}

@@ -35,12 +35,11 @@ import AdminShowtimeIncidentsPanel from './cinema/AdminShowtimeIncidentsPanel';
 function NavItem({ icon: Icon, label, active, onClick, indent = false, badge = null }) {
   return (
     <button type="button" onClick={onClick}
-      className={`w-full flex items-center gap-2 py-[7px] text-[11.5px] font-medium transition-all duration-100 border-l-2 ${
-        indent ? 'pl-6 pr-3' : 'pl-3 pr-3'
-      } ${active
-        ? 'text-amber-400 bg-gradient-to-r from-amber-500/[0.09] to-transparent border-amber-500'
-        : 'text-neutral-100 hover:text-white hover:bg-white/[0.02] border-transparent'
-      }`}
+      className={`w-full flex items-center gap-2 py-[7px] text-[11.5px] font-medium transition-all duration-100 border-l-2 ${indent ? 'pl-6 pr-3' : 'pl-3 pr-3'
+        } ${active
+          ? 'text-amber-400 bg-gradient-to-r from-amber-500/[0.09] to-transparent border-amber-500'
+          : 'text-neutral-100 hover:text-white hover:bg-white/[0.02] border-transparent'
+        }`}
     >
       <Icon className={`h-[13px] w-[13px] shrink-0 ${active ? 'text-amber-400' : 'text-neutral-300'}`} />
       <span className="truncate leading-snug">{label}</span>
@@ -1659,9 +1658,8 @@ export default function AdminDashboard({
 
       {/* LEFT: SIDEBAR (full height) */}
       <div
-        className={`shrink-0 h-full flex flex-col border-r border-white/[0.15] bg-[#181818] transition-[width] duration-300 ${
-          sidebarCollapsed ? 'w-[52px]' : 'w-[240px] overflow-hidden'
-        }`}
+        className={`shrink-0 h-full flex flex-col border-r border-white/[0.15] bg-[#181818] transition-[width] duration-300 ${sidebarCollapsed ? 'w-[52px]' : 'w-[240px] overflow-hidden'
+          }`}
         id="admin-sidebar-bar"
       >
         {/* Logo */}
@@ -1722,9 +1720,8 @@ export default function AdminDashboard({
                     onClick={() => { playPulseSound(item.sound, 'sine', 0.05); changeAdminSection(item.tab); }}
                     onMouseEnter={(e) => setCollapsedTooltip({ key: item.tab, y: e.currentTarget.getBoundingClientRect().top + 18 })}
                     onMouseLeave={() => setCollapsedTooltip(null)}
-                    className={`h-9 w-9 flex items-center justify-center border-l-2 transition-all duration-100 ${
-                      activeTab === item.tab ? 'bg-amber-500/[0.09] text-amber-400 border-amber-500' : 'text-neutral-500 hover:text-neutral-200 hover:bg-white/[0.02] border-transparent'
-                    }`}
+                    className={`h-9 w-9 flex items-center justify-center border-l-2 transition-all duration-100 ${activeTab === item.tab ? 'bg-amber-500/[0.09] text-amber-400 border-amber-500' : 'text-neutral-500 hover:text-neutral-200 hover:bg-white/[0.02] border-transparent'
+                      }`}
                   >
                     <item.icon className="h-[13px] w-[13px]" />
                   </button>
@@ -1865,7 +1862,7 @@ export default function AdminDashboard({
 
         {/* Scrollable content */}
         <div className="flex-1 min-w-0 overflow-y-auto bg-[#020202]">
-          <div className="px-5 xl:px-7 py-6 space-y-5">
+          <div className={activeTab === 'showtimes' ? "px-0 xl:px-0 py-6 space-y-5" : "px-5 xl:px-7 py-6 space-y-5"}>
 
             {/* METRIC CARDS */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" id="corporate-bento-metrics">
@@ -1906,378 +1903,378 @@ export default function AdminDashboard({
       <div className="hidden">
         <div className="grid grid-cols-1 lg:grid-cols-[250px_minmax(0,1fr)] gap-5 items-start">
 
-        {/* LEFT COMPONENT: THE DASHBOARD SELECTOR BAR (Cols 3) */}
-        <div className="space-y-4 lg:sticky lg:top-20" id="admin-sidebar-bar">
+          {/* LEFT COMPONENT: THE DASHBOARD SELECTOR BAR (Cols 3) */}
+          <div className="space-y-4 lg:sticky lg:top-20" id="admin-sidebar-bar">
 
-          {/* Active Admin Profile */}
-          <div className="bg-gradient-to-b from-[#0a0a0a] to-[#040404] border border-white/[0.05] p-3 space-y-2.5">
-            <div className="flex items-center space-x-2.5">
-              <div className="h-8 w-8 overflow-hidden rounded-sm border border-amber-500 bg-neutral-900 flex items-center justify-center text-amber-400 font-serif italic text-base font-black">
-                A
+            {/* Active Admin Profile */}
+            <div className="bg-gradient-to-b from-[#0a0a0a] to-[#040404] border border-white/[0.05] p-3 space-y-2.5">
+              <div className="flex items-center space-x-2.5">
+                <div className="h-8 w-8 overflow-hidden rounded-sm border border-amber-500 bg-neutral-900 flex items-center justify-center text-amber-400 font-serif italic text-base font-black">
+                  A
+                </div>
+                <div className="min-w-0">
+                  <h4 className="truncate text-[11px] font-black uppercase text-white tracking-wide">QUẢN TRỊ VIÊN</h4>
+                  <p className="text-[9px] text-neutral-300 font-mono">ID: CP-99210-ADMIN</p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <h4 className="truncate text-[11px] font-black uppercase text-white tracking-wide">QUẢN TRỊ VIÊN</h4>
-                <p className="text-[9px] text-neutral-300 font-mono">ID: CP-99210-ADMIN</p>
+              <div className="h-[1px] bg-white/[0.04]"></div>
+              <div className="flex items-center justify-between text-[10px] font-sans">
+                <span className="text-neutral-300">Môi trường</span>
+                <span className="text-emerald-400 font-mono font-bold flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span> PRODUCTION
+                </span>
               </div>
             </div>
-            <div className="h-[1px] bg-white/[0.04]"></div>
-            <div className="flex items-center justify-between text-[10px] font-sans">
-              <span className="text-neutral-300">Môi trường</span>
-              <span className="text-emerald-400 font-mono font-bold flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span> PRODUCTION
+
+            {/* Navigation Sidebar List (like image layout) */}
+            <div className="bg-[#070707] border border-white/[0.05] p-3 space-y-1.5 [&_button]:px-2.5 [&_button]:py-2.5 [&_button]:text-[9.5px] [&_svg]:h-3.5 [&_svg]:w-3.5" id="nav-sidebar-items">
+              <span className="text-[7.5px] font-mono uppercase tracking-[0.18em] text-neutral-300 block px-2 pb-1.5 font-black">
+                TỔNG QUAN
               </span>
-            </div>
-          </div>
 
-          {/* Navigation Sidebar List (like image layout) */}
-          <div className="bg-[#070707] border border-white/[0.05] p-3 space-y-1.5 [&_button]:px-2.5 [&_button]:py-2.5 [&_button]:text-[9.5px] [&_svg]:h-3.5 [&_svg]:w-3.5" id="nav-sidebar-items">
-            <span className="text-[7.5px] font-mono uppercase tracking-[0.18em] text-neutral-300 block px-2 pb-1.5 font-black">
-              TỔNG QUAN
-            </span>
+              <button
+                onClick={() => { playPulseSound(440, 'sine', 0.05); changeAdminSection('overview'); }}
+                className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-widest transition-all duration-300 border ${activeTab === 'overview'
+                  ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                  : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                  }`}
+              >
+                <span className="flex items-center space-x-2.5">
+                  <Activity className="h-4 w-4 shrink-0 text-amber-500" />
+                  <span>TỔNG QUAN HỆ THỐNG</span>
+                </span>
+                {activeTab === 'overview' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+              </button>
 
-            <button
-              onClick={() => { playPulseSound(440, 'sine', 0.05); changeAdminSection('overview'); }}
-              className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-widest transition-all duration-300 border ${activeTab === 'overview'
-                ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                }`}
-            >
-              <span className="flex items-center space-x-2.5">
-                <Activity className="h-4 w-4 shrink-0 text-amber-500" />
-                <span>TỔNG QUAN HỆ THỐNG</span>
-              </span>
-              {activeTab === 'overview' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-            </button>
+              <button
+                type="button"
+                onClick={() => setOpenNavGroup(openNavGroup === 'movies' ? null : 'movies')}
+                className={`mt-3 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'movies' ? 'border-amber-500/60 bg-amber-500/[0.14] text-amber-300 shadow-[inset_3px_0_0_rgba(245,158,11,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-amber-500/40 hover:text-white'}`}
+              >
+                <span className="text-xs font-sans font-black uppercase tracking-[0.16em] drop-shadow-sm">Quản lý phim</span>
+                <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'movies' ? 'rotate-180' : ''}`} />
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setOpenNavGroup(openNavGroup === 'movies' ? null : 'movies')}
-              className={`mt-3 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'movies' ? 'border-amber-500/60 bg-amber-500/[0.14] text-amber-300 shadow-[inset_3px_0_0_rgba(245,158,11,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-amber-500/40 hover:text-white'}`}
-            >
-              <span className="text-xs font-sans font-black uppercase tracking-[0.16em] drop-shadow-sm">Quản lý phim</span>
-              <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'movies' ? 'rotate-180' : ''}`} />
-            </button>
-
-            <AnimatePresence initial={false}>
-              {openNavGroup === 'movies' && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="space-y-1.5 overflow-hidden"
-                >
-                  <button
-                    onClick={() => { playPulseSound(470, 'sine', 0.05); changeAdminSection('genres'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'genres'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
+              <AnimatePresence initial={false}>
+                {openNavGroup === 'movies' && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="space-y-1.5 overflow-hidden"
                   >
-                    <span className="flex items-center space-x-2.5">
-                      <Tags className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">THỂ LOẠI PHIM</span>
-                    </span>
-                    {activeTab === 'genres' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
+                    <button
+                      onClick={() => { playPulseSound(470, 'sine', 0.05); changeAdminSection('genres'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'genres'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <Tags className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">THỂ LOẠI PHIM</span>
+                      </span>
+                      {activeTab === 'genres' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
 
-                  <button
-                    onClick={() => { playPulseSound(465, 'sine', 0.05); changeAdminSection('actors'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'actors'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
+                    <button
+                      onClick={() => { playPulseSound(465, 'sine', 0.05); changeAdminSection('actors'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'actors'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <Users className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">DIỄN VIÊN</span>
+                      </span>
+                      {activeTab === 'actors' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
+
+                    <button
+                      onClick={() => { playPulseSound(460, 'sine', 0.05); changeAdminSection('movies'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'movies'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <Film className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">THƯ VIỆN PHIM</span>
+                      </span>
+                      {activeTab === 'movies' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
+
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Bắp nước tách khỏi nhóm phim thành nhóm F&B riêng */}
+              <button
+                type="button"
+                onClick={() => setOpenNavGroup(openNavGroup === 'fnb' ? null : 'fnb')}
+                className={`mt-2 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'fnb' ? 'border-amber-500/60 bg-amber-500/[0.14] text-amber-300 shadow-[inset_3px_0_0_rgba(245,158,11,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-amber-500/40 hover:text-white'}`}
+              >
+                <span className="text-xs font-sans font-black uppercase tracking-[0.16em] drop-shadow-sm">Bắp nước / F&B</span>
+                <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'fnb' ? 'rotate-180' : ''}`} />
+              </button>
+
+              <AnimatePresence initial={false}>
+                {openNavGroup === 'fnb' && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="space-y-1.5 overflow-hidden"
                   >
-                    <span className="flex items-center space-x-2.5">
-                      <Users className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">DIỄN VIÊN</span>
-                    </span>
-                    {activeTab === 'actors' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
+                    <button
+                      onClick={() => { playPulseSound(478, 'sine', 0.05); changeAdminSection('foods'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'foods'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <ShoppingBag className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">QUẢN LÝ BẮP NƯỚC</span>
+                      </span>
+                      {activeTab === 'foods' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
+                    <button
+                      onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('fnb-report'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'fnb-report'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <BarChart2 className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">BÁO CÁO F&amp;B</span>
+                      </span>
+                      {activeTab === 'fnb-report' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-                  <button
-                    onClick={() => { playPulseSound(460, 'sine', 0.05); changeAdminSection('movies'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'movies'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
+              <button
+                type="button"
+                onClick={() => setOpenNavGroup(openNavGroup === 'cinema' ? null : 'cinema')}
+                className={`mt-2 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'cinema' ? 'border-amber-500/60 bg-amber-500/[0.14] text-amber-300 shadow-[inset_3px_0_0_rgba(245,158,11,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-amber-500/40 hover:text-white'}`}
+              >
+                <span className="text-xs font-sans font-black uppercase tracking-[0.16em] drop-shadow-sm">Quản lý rạp</span>
+                <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'cinema' ? 'rotate-180' : ''}`} />
+              </button>
+
+              <AnimatePresence initial={false}>
+                {openNavGroup === 'cinema' && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="space-y-1.5 overflow-hidden"
                   >
-                    <span className="flex items-center space-x-2.5">
-                      <Film className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">THƯ VIỆN PHIM</span>
-                    </span>
-                    {activeTab === 'movies' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
+                    <button
+                      onClick={() => { playPulseSound(470, 'sine', 0.05); changeAdminSection('rooms'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'rooms'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <Layers className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">PHÒNG CHIẾU & GHẾ</span>
+                      </span>
+                      {activeTab === 'rooms' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
 
-                </motion.div>
-              )}
-            </AnimatePresence>
 
-            {/* Bắp nước tách khỏi nhóm phim thành nhóm F&B riêng */}
-            <button
-              type="button"
-              onClick={() => setOpenNavGroup(openNavGroup === 'fnb' ? null : 'fnb')}
-              className={`mt-2 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'fnb' ? 'border-amber-500/60 bg-amber-500/[0.14] text-amber-300 shadow-[inset_3px_0_0_rgba(245,158,11,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-amber-500/40 hover:text-white'}`}
-            >
-              <span className="text-xs font-sans font-black uppercase tracking-[0.16em] drop-shadow-sm">Bắp nước / F&B</span>
-              <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'fnb' ? 'rotate-180' : ''}`} />
-            </button>
+                    <button
+                      onClick={() => { playPulseSound(480, 'sine', 0.05); changeAdminSection('showtimes'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'showtimes'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <Calendar className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">ĐIỀU PHỐI LỊCH CHIẾU</span>
+                      </span>
+                      {activeTab === 'showtimes' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
 
-            <AnimatePresence initial={false}>
-              {openNavGroup === 'fnb' && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="space-y-1.5 overflow-hidden"
-                >
-                  <button
-                    onClick={() => { playPulseSound(478, 'sine', 0.05); changeAdminSection('foods'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'foods'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
+                    <button
+                      onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('showtime-incidents'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'showtime-incidents'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">BÁO CÁO SỰ CỐ &amp; HOÀN TIỀN</span>
+                      </span>
+                      {activeTab === 'showtime-incidents' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
+                    <button
+                      onClick={() => { playPulseSound(492, 'sine', 0.05); changeAdminSection('tickets'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'tickets'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <FileText className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">QUẢN LÝ VÉ</span>
+                      </span>
+                      {activeTab === 'tickets' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
+                    <button
+                      onClick={() => { playPulseSound(500, 'sine', 0.05); changeAdminSection('transactions'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'transactions'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <FileText className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">GIAO DỊCH</span>
+                      </span>
+                      {activeTab === 'transactions' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Nhóm phân tích: thống kê định giá + audit log */}
+              <button
+                type="button"
+                onClick={() => setOpenNavGroup(openNavGroup === 'insights' ? null : 'insights')}
+                className={`mt-2 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'insights' ? 'border-amber-500/60 bg-amber-500/[0.14] text-amber-300 shadow-[inset_3px_0_0_rgba(245,158,11,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-amber-500/40 hover:text-white'}`}
+              >
+                <span className="text-xs font-sans font-black uppercase tracking-[0.15em] drop-shadow-sm">Thống kê/Giám sát</span>
+                <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'insights' ? 'rotate-180' : ''}`} />
+              </button>
+
+              <AnimatePresence initial={false}>
+                {openNavGroup === 'insights' && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="space-y-1.5 overflow-hidden"
                   >
-                    <span className="flex items-center space-x-2.5">
-                      <ShoppingBag className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">QUẢN LÝ BẮP NƯỚC</span>
-                    </span>
-                    {activeTab === 'foods' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-                  <button
-                    onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('fnb-report'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'fnb-report'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
+                    <button
+                      onClick={() => { playPulseSound(505, 'sine', 0.05); changeAdminSection('statistics'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'statistics'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <BarChart2 className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">THỐNG KÊ MUA BÁN</span>
+                      </span>
+                      {activeTab === 'statistics' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
+                    <button
+                      onClick={() => { playPulseSound(508, 'sine', 0.05); changeAdminSection('audit'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'audit'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <ShieldAlert className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">AUDIT LOG</span>
+                      </span>
+                      {activeTab === 'audit' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <button
+                type="button"
+                onClick={() => setOpenNavGroup(openNavGroup === 'system' ? null : 'system')}
+                className={`mt-2 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'system' ? 'border-purple-500/60 bg-purple-500/[0.14] text-purple-300 shadow-[inset_3px_0_0_rgba(168,85,247,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-purple-500/40 hover:text-white'}`}
+              >
+                <span className="text-xs font-sans font-black uppercase tracking-[0.16em] drop-shadow-sm">Khách hàng</span>
+                <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'system' ? 'rotate-180' : ''}`} />
+              </button>
+
+              <AnimatePresence initial={false}>
+                {openNavGroup === 'system' && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="space-y-1.5 overflow-hidden"
                   >
-                    <span className="flex items-center space-x-2.5">
-                      <BarChart2 className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">BÁO CÁO F&amp;B</span>
-                    </span>
-                    {activeTab === 'fnb-report' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                    <button
+                      onClick={() => { playPulseSound(510, 'sine', 0.05); changeAdminSection('users'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'users'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <Users className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">QUẢN LÝ NGƯỜI DÙNG</span>
+                      </span>
+                      {activeTab === 'users' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
 
-            <button
-              type="button"
-              onClick={() => setOpenNavGroup(openNavGroup === 'cinema' ? null : 'cinema')}
-              className={`mt-2 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'cinema' ? 'border-amber-500/60 bg-amber-500/[0.14] text-amber-300 shadow-[inset_3px_0_0_rgba(245,158,11,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-amber-500/40 hover:text-white'}`}
-            >
-              <span className="text-xs font-sans font-black uppercase tracking-[0.16em] drop-shadow-sm">Quản lý rạp</span>
-              <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'cinema' ? 'rotate-180' : ''}`} />
-            </button>
+                    <button
+                      onClick={() => { playPulseSound(515, 'sine', 0.05); changeAdminSection('reviews'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'reviews'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <MessageSquare className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">ĐÁNH GIÁ</span>
+                      </span>
+                      {activeTab === 'reviews' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
 
-            <AnimatePresence initial={false}>
-              {openNavGroup === 'cinema' && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="space-y-1.5 overflow-hidden"
-                >
-                  <button
-                    onClick={() => { playPulseSound(470, 'sine', 0.05); changeAdminSection('rooms'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'rooms'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <Layers className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">PHÒNG CHIẾU & GHẾ</span>
-                    </span>
-                    {activeTab === 'rooms' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
+                    <button
+                      onClick={() => { playPulseSound(520, 'sine', 0.05); changeAdminSection('loyalty'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'loyalty'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <DollarSign className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">QUẢN LÝ ĐIỂM</span>
+                      </span>
+                      {activeTab === 'loyalty' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
 
+                    <button
+                      onClick={() => { playPulseSound(525, 'sine', 0.05); changeAdminSection('cinewallet'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'cinewallet'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <Wallet className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">CINEWALLET</span>
+                      </span>
+                      {activeTab === 'cinewallet' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
 
-                  <button
-                    onClick={() => { playPulseSound(480, 'sine', 0.05); changeAdminSection('showtimes'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'showtimes'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <Calendar className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">ĐIỀU PHỐI LỊCH CHIẾU</span>
-                    </span>
-                    {activeTab === 'showtimes' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-                  <button
-                    onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('showtime-incidents'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'showtime-incidents'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">BÁO CÁO SỰ CỐ &amp; HOÀN TIỀN</span>
-                    </span>
-                    {activeTab === 'showtime-incidents' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-                  <button
-                    onClick={() => { playPulseSound(492, 'sine', 0.05); changeAdminSection('tickets'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'tickets'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <FileText className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">QUẢN LÝ VÉ</span>
-                    </span>
-                    {activeTab === 'tickets' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-                  <button
-                    onClick={() => { playPulseSound(500, 'sine', 0.05); changeAdminSection('transactions'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'transactions'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <FileText className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">GIAO DỊCH</span>
-                    </span>
-                    {activeTab === 'transactions' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
+              <div className="h-[1px] bg-neutral-900 my-3"></div>
 
-            {/* Nhóm phân tích: thống kê định giá + audit log */}
-            <button
-              type="button"
-              onClick={() => setOpenNavGroup(openNavGroup === 'insights' ? null : 'insights')}
-              className={`mt-2 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'insights' ? 'border-amber-500/60 bg-amber-500/[0.14] text-amber-300 shadow-[inset_3px_0_0_rgba(245,158,11,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-amber-500/40 hover:text-white'}`}
-            >
-              <span className="text-xs font-sans font-black uppercase tracking-[0.15em] drop-shadow-sm">Thống kê/Giám sát</span>
-              <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'insights' ? 'rotate-180' : ''}`} />
-            </button>
-
-            <AnimatePresence initial={false}>
-              {openNavGroup === 'insights' && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="space-y-1.5 overflow-hidden"
-                >
-                  <button
-                    onClick={() => { playPulseSound(505, 'sine', 0.05); changeAdminSection('statistics'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'statistics'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <BarChart2 className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">THỐNG KÊ MUA BÁN</span>
-                    </span>
-                    {activeTab === 'statistics' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-                  <button
-                    onClick={() => { playPulseSound(508, 'sine', 0.05); changeAdminSection('audit'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'audit'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <ShieldAlert className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">AUDIT LOG</span>
-                    </span>
-                    {activeTab === 'audit' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <button
-              type="button"
-              onClick={() => setOpenNavGroup(openNavGroup === 'system' ? null : 'system')}
-              className={`mt-2 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'system' ? 'border-purple-500/60 bg-purple-500/[0.14] text-purple-300 shadow-[inset_3px_0_0_rgba(168,85,247,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-purple-500/40 hover:text-white'}`}
-            >
-              <span className="text-xs font-sans font-black uppercase tracking-[0.16em] drop-shadow-sm">Khách hàng</span>
-              <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'system' ? 'rotate-180' : ''}`} />
-            </button>
-
-            <AnimatePresence initial={false}>
-              {openNavGroup === 'system' && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="space-y-1.5 overflow-hidden"
-                >
-                  <button
-                    onClick={() => { playPulseSound(510, 'sine', 0.05); changeAdminSection('users'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'users'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <Users className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">QUẢN LÝ NGƯỜI DÙNG</span>
-                    </span>
-                    {activeTab === 'users' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-
-                  <button
-                    onClick={() => { playPulseSound(515, 'sine', 0.05); changeAdminSection('reviews'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'reviews'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <MessageSquare className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">ĐÁNH GIÁ</span>
-                    </span>
-                    {activeTab === 'reviews' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-
-                  <button
-                    onClick={() => { playPulseSound(520, 'sine', 0.05); changeAdminSection('loyalty'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'loyalty'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <DollarSign className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">QUẢN LÝ ĐIỂM</span>
-                    </span>
-                    {activeTab === 'loyalty' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-
-                  <button
-                    onClick={() => { playPulseSound(525, 'sine', 0.05); changeAdminSection('cinewallet'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'cinewallet'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <Wallet className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">CINEWALLET</span>
-                    </span>
-                    {activeTab === 'cinewallet' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <div className="h-[1px] bg-neutral-900 my-3"></div>
-
-            {/* Quick action: Làm mới trang */}
-            {/* <button
+              {/* Quick action: Làm mới trang */}
+              {/* <button
               onClick={() => {
                 playPulseSound(300, 'sine', 0.15);
                 showToast("Hệ thống: Rời khỏi phiên làm việc Quản trị viên.");
@@ -2288,73 +2285,73 @@ export default function AdminDashboard({
               <RefreshCw className="h-3.5 w-3.5 text-rose-500 animate-spin-slow" />
               <span>LÀM MỚI TRANG</span>
             </button> */}
+            </div>
+
+
           </div>
 
+          {/* RIGHT COMPONENT: MAIN VIEW DETAILS (Cols 9) */}
+          <div className="min-w-0 space-y-6">
 
+            {/* 2. CORPORATE CORE BENTO METRICS */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" id="corporate-bento-metrics">
+
+              {/* Metric Card 1 */}
+              <div className="bg-gradient-to-b from-[#0c0c0c] to-[#040404] border border-white/[0.05] p-5 space-y-2.5 relative overflow-hidden shadow-md">
+                <div className="flex justify-between items-start">
+                  <span className="text-[9px] tracking-wider font-extrabold text-neutral-300 uppercase font-sans">Tổng doanh thu liên kết</span>
+                  <div className="p-1 bg-amber-500/10 text-amber-500"><DollarSign className="h-4 w-4" /></div>
+                </div>
+                <div>
+                  <h2 className="text-lg sm:text-xl font-mono font-black text-white">{calculatedRevenue.toLocaleString()}đ</h2>
+                </div>
+              </div>
+
+              {/* Metric Card 2 */}
+              <div className="bg-gradient-to-b from-[#0c0c0c] to-[#040404] border border-white/[0.05] p-5 space-y-2.5 relative overflow-hidden shadow-md">
+                <div className="flex justify-between items-start">
+                  <span className="text-[9px] tracking-wider font-extrabold text-neutral-300 uppercase font-sans">Sản lượng vé xuất xưởng</span>
+                  <div className="p-1 bg-emerald-500/10 text-emerald-400"><FileText className="h-4 w-4" /></div>
+                </div>
+                <div>
+                  <h2 className="text-lg sm:text-xl font-mono font-black text-white">{totalBookingsCount} vé</h2>
+                </div>
+              </div>
+
+              {/* Metric Card 3 */}
+              <div className="bg-gradient-to-b from-[#0c0c0c] to-[#040404] border border-white/[0.05] p-5 space-y-2.5 relative overflow-hidden shadow-md">
+                <div className="flex justify-between items-start">
+                  <span className="text-[9px] tracking-wider font-extrabold text-neutral-300 uppercase font-sans">Hệ số lấp đầy rạp</span>
+                  <div className="p-1 bg-blue-500/10 text-blue-400"><Activity className="h-4 w-4" /></div>
+                </div>
+                <div>
+                  <h2 className="text-lg sm:text-xl font-mono font-black text-white">{averageFillRate}%</h2>
+                </div>
+              </div>
+
+              {/* Metric Card 4 */}
+              <div className="bg-gradient-to-b from-[#0c0c0c] to-[#040404] border border-white/[0.05] p-5 space-y-2.5 relative overflow-hidden shadow-md">
+                <div className="flex justify-between items-start">
+                  <span className="text-[9px] tracking-wider font-extrabold text-neutral-300 uppercase font-sans">Thư viện phát hành</span>
+                  <div className="p-1 bg-purple-500/10 text-purple-400"><Film className="h-4 w-4" /></div>
+                </div>
+                <div>
+                  <h2 className="text-lg sm:text-xl font-mono font-black text-white">{moviesList.length} phim</h2>
+                </div>
+              </div>
+
+            </div>
+
+
+
+            {/* TAB SCREENS EXECUTOR */}
+            <div>
+              <AnimatePresence mode="wait">
+                <ActiveAdminPanel key={activeTab} ctx={adminCtx} />
+              </AnimatePresence>
+            </div>
+          </div>
         </div>
-
-        {/* RIGHT COMPONENT: MAIN VIEW DETAILS (Cols 9) */}
-        <div className="min-w-0 space-y-6">
-
-          {/* 2. CORPORATE CORE BENTO METRICS */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" id="corporate-bento-metrics">
-
-            {/* Metric Card 1 */}
-            <div className="bg-gradient-to-b from-[#0c0c0c] to-[#040404] border border-white/[0.05] p-5 space-y-2.5 relative overflow-hidden shadow-md">
-              <div className="flex justify-between items-start">
-                <span className="text-[9px] tracking-wider font-extrabold text-neutral-300 uppercase font-sans">Tổng doanh thu liên kết</span>
-                <div className="p-1 bg-amber-500/10 text-amber-500"><DollarSign className="h-4 w-4" /></div>
-              </div>
-              <div>
-                <h2 className="text-lg sm:text-xl font-mono font-black text-white">{calculatedRevenue.toLocaleString()}đ</h2>
-              </div>
-            </div>
-
-            {/* Metric Card 2 */}
-            <div className="bg-gradient-to-b from-[#0c0c0c] to-[#040404] border border-white/[0.05] p-5 space-y-2.5 relative overflow-hidden shadow-md">
-              <div className="flex justify-between items-start">
-                <span className="text-[9px] tracking-wider font-extrabold text-neutral-300 uppercase font-sans">Sản lượng vé xuất xưởng</span>
-                <div className="p-1 bg-emerald-500/10 text-emerald-400"><FileText className="h-4 w-4" /></div>
-              </div>
-              <div>
-                <h2 className="text-lg sm:text-xl font-mono font-black text-white">{totalBookingsCount} vé</h2>
-              </div>
-            </div>
-
-            {/* Metric Card 3 */}
-            <div className="bg-gradient-to-b from-[#0c0c0c] to-[#040404] border border-white/[0.05] p-5 space-y-2.5 relative overflow-hidden shadow-md">
-              <div className="flex justify-between items-start">
-                <span className="text-[9px] tracking-wider font-extrabold text-neutral-300 uppercase font-sans">Hệ số lấp đầy rạp</span>
-                <div className="p-1 bg-blue-500/10 text-blue-400"><Activity className="h-4 w-4" /></div>
-              </div>
-              <div>
-                <h2 className="text-lg sm:text-xl font-mono font-black text-white">{averageFillRate}%</h2>
-              </div>
-            </div>
-
-            {/* Metric Card 4 */}
-            <div className="bg-gradient-to-b from-[#0c0c0c] to-[#040404] border border-white/[0.05] p-5 space-y-2.5 relative overflow-hidden shadow-md">
-              <div className="flex justify-between items-start">
-                <span className="text-[9px] tracking-wider font-extrabold text-neutral-300 uppercase font-sans">Thư viện phát hành</span>
-                <div className="p-1 bg-purple-500/10 text-purple-400"><Film className="h-4 w-4" /></div>
-              </div>
-              <div>
-                <h2 className="text-lg sm:text-xl font-mono font-black text-white">{moviesList.length} phim</h2>
-              </div>
-            </div>
-
-          </div>
-
-
-
-          {/* TAB SCREENS EXECUTOR */}
-          <div>
-            <AnimatePresence mode="wait">
-              <ActiveAdminPanel key={activeTab} ctx={adminCtx} />
-            </AnimatePresence>
-          </div>
-        </div>
-      </div>
       </div>
     </div>
   );
