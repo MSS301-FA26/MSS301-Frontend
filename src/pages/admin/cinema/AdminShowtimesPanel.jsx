@@ -61,6 +61,8 @@ export default function AdminShowtimesPanel({ ctx }) {
   const [adminMovies, setAdminMovies] = useState([]);
   const [shows, setShows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [cinemas, setCinemas] = useState([]);
+  const [selectedCinemaId, setSelectedCinemaId] = useState('ALL');
   const [selId, setSelId] = useState(null);
   const [selMovie, setSelMovie] = useState(null);
   const [tabIdx, setTabIdx] = useState(0); // 0: detail, 1: overview, 2: warnings
@@ -116,14 +118,31 @@ export default function AdminShowtimesPanel({ ctx }) {
     }
   }, []);
 
+  /* ================= LOAD CINEMAS TỪ BE ================= */
+  const loadCinemas = useCallback(async () => {
+    try {
+      const token = getTokenRef.current?.();
+      if (!token) return;
+      const res = await adminService.getAdminCinemas(token);
+      const list = Array.isArray(res) ? res : (res?.items || res?.content || []);
+      setCinemas(list);
+      if (list.length > 0) {
+        setSelectedCinemaId((prev) => (prev === 'ALL' || !prev) ? String(list[0].id) : prev);
+      }
+    } catch (e) {
+      console.warn('Lỗi lấy danh sách rạp:', e);
+    }
+  }, []);
+
   /* ================= FETCH ROOMS TỪ BE ================= */
-  const fetchRooms = useCallback(async () => {
+  const fetchRooms = useCallback(async (filterCinemaId = selectedCinemaId) => {
     try {
       const token = getTokenRef.current?.();
       let list = [];
       if (token) {
         try {
-          const res = await adminService.getAdminRooms(token);
+          const cId = filterCinemaId !== 'ALL' && filterCinemaId ? Number(filterCinemaId) : null;
+          const res = await adminService.getAdminRooms(token, cId);
           list = Array.isArray(res) ? res : (res?.content || res?.items || []);
         } catch (e) {
           console.warn('Lỗi getAdminRooms:', e);
@@ -143,12 +162,22 @@ export default function AdminShowtimesPanel({ ctx }) {
     } catch (err) {
       console.warn('Lỗi lấy danh sách phòng:', err);
     }
-  }, []);
+  }, [selectedCinemaId]);
 
   useEffect(() => {
-    fetchMovies();
-    fetchRooms();
-  }, [fetchMovies, fetchRooms]);
+    let cancelled = false;
+    const initShowtimesData = async () => {
+      // Step 1: Load cinemas & rooms sequentially
+      await loadCinemas();
+      if (cancelled) return;
+      await fetchRooms();
+      if (cancelled) return;
+      // Step 2: Load movies
+      await fetchMovies();
+    };
+    initShowtimesData();
+    return () => { cancelled = true; };
+  }, [loadCinemas, fetchRooms, fetchMovies]);
 
   /* Merged Movies List từ Backend */
   const movies = useMemo(() => {
@@ -179,22 +208,22 @@ export default function AdminShowtimesPanel({ ctx }) {
   }, [adminMovies, moviesList]);
 
   /* ================= CALL API LOAD SHOWTIMES ================= */
-  const fetchShowtimes = useCallback(async (targetDate = date) => {
+  const fetchShowtimes = useCallback(async (targetDate = date, filterCinemaId = selectedCinemaId) => {
     const token = getTokenRef.current?.();
     if (!token) return;
 
     setLoading(true);
     try {
-      // Gọi API lấy danh sách suất chiếu (hỗ trợ phân trang và filter)
-      // Gọi 2 query: lấy tất cả suất chiếu gần đây (size: 100) và lấy suất chiếu ngày đang chọn (nếu có)
-      const resAll = await adminService.getAdminShowtimes(token, { page: 0, size: 100 });
+      const cId = filterCinemaId !== 'ALL' && filterCinemaId ? Number(filterCinemaId) : undefined;
+      // Gọi API lấy danh sách suất chiếu (hỗ trợ phân trang và filter cinemaId)
+      const resAll = await adminService.getAdminShowtimes(token, { ...(cId ? { cinemaId: cId } : {}), page: 0, size: 100 });
       let itemsAll = Array.isArray(resAll) ? resAll : (resAll?.content || resAll?.items || resAll?.data?.content || []);
 
       // Nếu targetDate được chỉ định, gọi thêm query theo date để đảm bảo không bị miss
       let itemsDate = [];
       if (targetDate) {
         try {
-          const resDate = await adminService.getAdminShowtimes(token, { date: targetDate, page: 0, size: 100 });
+          const resDate = await adminService.getAdminShowtimes(token, { ...(cId ? { cinemaId: cId } : {}), date: targetDate, page: 0, size: 100 });
           itemsDate = Array.isArray(resDate) ? resDate : (resDate?.content || resDate?.items || resDate?.data?.content || []);
         } catch { /* ignore */ }
       }
@@ -1027,6 +1056,30 @@ export default function AdminShowtimesPanel({ ctx }) {
             / Lịch chiếu
           </span>
         </div>
+
+        {/* Cinema Selector */}
+        {cinemas.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#161b22', padding: '4px 10px', borderRadius: '8px', border: '1px solid var(--line)', marginLeft: '8px' }}>
+            <span style={{ fontSize: '13px' }}>🏢</span>
+            <select
+              value={selectedCinemaId}
+              onChange={(e) => {
+                const cId = e.target.value;
+                setSelectedCinemaId(cId);
+                fetchRooms(cId);
+                fetchShowtimes(date, cId);
+              }}
+              style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '12px', fontWeight: 700, outline: 'none', cursor: 'pointer' }}
+            >
+              <option value="ALL" style={{ background: '#0d1117' }}>Tất cả cụm rạp ({cinemas.length})</option>
+              {cinemas.map(c => (
+                <option key={c.id} value={c.id} style={{ background: '#0d1117' }}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="nav">
           <button className="btn" onClick={() => shiftDay(-1)}>‹</button>

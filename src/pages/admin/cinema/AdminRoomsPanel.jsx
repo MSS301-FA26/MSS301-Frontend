@@ -1,5 +1,6 @@
 ﻿import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
+  Building2,
   Film, Plus, Save, Undo2, RotateCcw, Download,
   Search, Trash2, AlertTriangle, X, Eraser,
   Sparkles, AlertCircle, CheckCircle2, Loader2
@@ -28,10 +29,22 @@ const ROOM_TYPE_OPTIONS = [
 ];
 
 const DEFAULT_PRICES = {
-  std: 90000,
-  vip: 110000,
-  couple: 160000
+  std: 60000,
+  vip: 90000,
+  couple: 150000
 };
+
+// Panel Resize Constants
+const DEFAULT_LEFT_WIDTH = 260;
+const MIN_LEFT_WIDTH = 200;
+const MAX_LEFT_WIDTH = 420;
+
+const DEFAULT_RIGHT_WIDTH = 320;
+const MIN_RIGHT_WIDTH = 260;
+const MAX_RIGHT_WIDTH = 480;
+
+const MIN_CENTER_WIDTH = 420;
+const SPLITTER_WIDTH = 10;
 
 // Generates row layout matrix from row count and column count
 function generateDefaultRows(rowCount, colCount, defaultType = 'std') {
@@ -129,9 +142,80 @@ export default function AdminRoomsPanel({ ctx }) {
   // Data states
   const [rooms, setRooms] = useState([]);
   const [selectedRoomId, setSelectedRoomId] = useState(null);
+
+  // Resizable Splitters State
+  const [leftWidth, setLeftWidth] = useState(DEFAULT_LEFT_WIDTH);
+  const [rightWidth, setRightWidth] = useState(DEFAULT_RIGHT_WIDTH);
+  const [draggingSplitter, setDraggingSplitter] = useState(null); // 'left' | 'right' | null
+  const mainContainerRef = useRef(null);
+  const dragStartRef = useRef({ startX: 0, startLeftWidth: 0, startRightWidth: 0, containerWidth: 0 });
+  const leftWidthRef = useRef(DEFAULT_LEFT_WIDTH);
+  const rightWidthRef = useRef(DEFAULT_RIGHT_WIDTH);
+
+  leftWidthRef.current = leftWidth;
+  rightWidthRef.current = rightWidth;
+
+  const handleStartDrag = (e, splitterType) => {
+    e.preventDefault();
+    const container = mainContainerRef.current;
+    if (!container) return;
+    const containerRect = container.getBoundingClientRect();
+    dragStartRef.current = {
+      startX: e.clientX,
+      startLeftWidth: leftWidthRef.current,
+      startRightWidth: rightWidthRef.current,
+      containerWidth: containerRect.width,
+    };
+    setDraggingSplitter(splitterType);
+  };
+
+  useEffect(() => {
+    if (!draggingSplitter) return;
+
+    const handleMouseMove = (e) => {
+      const { startX, startLeftWidth, startRightWidth, containerWidth } = dragStartRef.current;
+      const deltaX = e.clientX - startX;
+
+      if (draggingSplitter === 'left') {
+        let newLeft = startLeftWidth + deltaX;
+        const currentRight = rightWidthRef.current;
+        newLeft = Math.max(MIN_LEFT_WIDTH, Math.min(MAX_LEFT_WIDTH, newLeft));
+        const availableForCenter = containerWidth - newLeft - currentRight - SPLITTER_WIDTH;
+        if (availableForCenter < MIN_CENTER_WIDTH) {
+          newLeft = Math.max(MIN_LEFT_WIDTH, containerWidth - currentRight - SPLITTER_WIDTH - MIN_CENTER_WIDTH);
+        }
+        setLeftWidth(Math.round(newLeft));
+      } else if (draggingSplitter === 'right') {
+        let newRight = startRightWidth - deltaX;
+        const currentLeft = leftWidthRef.current;
+        newRight = Math.max(MIN_RIGHT_WIDTH, Math.min(MAX_RIGHT_WIDTH, newRight));
+        const availableForCenter = containerWidth - currentLeft - newRight - SPLITTER_WIDTH;
+        if (availableForCenter < MIN_CENTER_WIDTH) {
+          newRight = Math.max(MIN_RIGHT_WIDTH, containerWidth - currentLeft - SPLITTER_WIDTH - MIN_CENTER_WIDTH);
+        }
+        setRightWidth(Math.round(newRight));
+      }
+    };
+
+    const handleMouseUp = () => {
+      setDraggingSplitter(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [draggingSplitter]);
+
+  const handleResetLeftWidth = () => setLeftWidth(DEFAULT_LEFT_WIDTH);
+  const handleResetRightWidth = () => setRightWidth(DEFAULT_RIGHT_WIDTH);
   const [isLoadingRooms, setIsLoadingRooms] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [cinemas, setCinemas] = useState([]);
+  const [selectedCinemaFilter, setSelectedCinemaFilter] = useState('ALL');
 
   // Editor states
   const [roomName, setRoomName] = useState('');
@@ -159,10 +243,15 @@ export default function AdminRoomsPanel({ ctx }) {
     roomType: 'STANDARD',
     floor: 1,
     rowCount: 8,
-    colCount: 10
+    colCount: 10,
+    aislePosition: 0,
+    standardPrice: 60000,
+    vipPrice: 90000,
+    couplePrice: 150000
   });
   const [confirmDialog, setConfirmDialog] = useState(null);
   const [localToast, setLocalToast] = useState(null);
+  const [addModalError, setAddModalError] = useState('');
 
   const showToast = useCallback((message, type = 'success') => {
     setLocalToast({ type, message });
@@ -220,8 +309,13 @@ export default function AdminRoomsPanel({ ctx }) {
     setRoomType(room.roomType || 'STANDARD');
     setFloorNumber(1);
     setRoomActive(room.status === 'ACTIVE');
-    setAisleIndex(0);
+    setAisleIndex(room.aislePosition != null ? Number(room.aislePosition) : 0);
     setDefaultCols(room.columnCount || 10);
+    setPrices({
+      std: room.standardPrice != null ? Number(room.standardPrice) : DEFAULT_PRICES.std,
+      vip: room.vipPrice != null ? Number(room.vipPrice) : DEFAULT_PRICES.vip,
+      couple: room.couplePrice != null ? Number(room.couplePrice) : DEFAULT_PRICES.couple,
+    });
     setHistory([]);
     setSelectedRowIndex(null);
     setSelectedSeatCoord(null);
@@ -241,13 +335,32 @@ export default function AdminRoomsPanel({ ctx }) {
     }
   }, []);
 
-  // Fetch all rooms from API
-  const fetchRooms = useCallback(async (preferredId = null) => {
+  // Fetch all cinemas for dropdown
+  const loadCinemas = useCallback(async () => {
+    const token = getTokenRef.current?.();
+    if (!token) return;
+    try {
+      const res = await adminService.getAdminCinemas(token);
+      const list = Array.isArray(res) ? res : (res?.items || res?.content || []);
+      setCinemas(list);
+      if (list.length > 0) {
+        setSelectedCinemaFilter((prev) => (prev === 'ALL' || !prev) ? String(list[0].id) : prev);
+      }
+    } catch (e) {
+      console.warn('Lỗi tải danh sách rạp:', e);
+    }
+  }, []);
+
+  // Fetch rooms optionally filtered by cinema
+  const fetchRooms = useCallback(async (preferredId = null, filterCinemaId = null) => {
     const token = getTokenRef.current?.();
     if (!token) return;
     setIsLoadingRooms(true);
     try {
-      const data = await adminService.getAdminRooms(token);
+      const activeCId = filterCinemaId !== null
+        ? (filterCinemaId === 'ALL' ? null : Number(filterCinemaId))
+        : (selectedCinemaFilter !== 'ALL' ? Number(selectedCinemaFilter) : null);
+      const data = await adminService.getAdminRooms(token, activeCId);
       const list = Array.isArray(data) ? data : (data?.items || data?.content || []);
       setRooms(list);
 
@@ -258,17 +371,37 @@ export default function AdminRoomsPanel({ ctx }) {
         if (targetRoom) {
           await loadRoomIntoEditor(targetRoom);
         }
+      } else {
+        setSelectedRoomId(null);
       }
     } catch (err) {
       showToast(err.message || 'Không thể tải danh sách phòng chiếu.', 'error');
     } finally {
       setIsLoadingRooms(false);
     }
-  }, [loadRoomIntoEditor, selectedRoomId, showToast]);
+  }, [loadRoomIntoEditor, selectedRoomId, selectedCinemaFilter, showToast]);
 
   useEffect(() => {
-    fetchRooms();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    let cancelled = false;
+    const initData = async () => {
+      const token = getTokenRef.current?.();
+      if (!token) return;
+      try {
+        const res = await adminService.getAdminCinemas(token);
+        if (cancelled) return;
+        const list = Array.isArray(res) ? res : (res?.items || res?.content || []);
+        setCinemas(list);
+        const defaultCId = list.length > 0 ? String(list[0].id) : 'ALL';
+        setSelectedCinemaFilter(defaultCId);
+        // Sequential call: load rooms only after cinema is resolved
+        await fetchRooms(null, defaultCId);
+      } catch (e) {
+        console.warn('Lỗi tải rạp & phòng:', e);
+      }
+    };
+    initData();
+    return () => { cancelled = true; };
+  }, [fetchRooms]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Warn on page unload if changes are unsaved
   useEffect(() => {
@@ -522,23 +655,7 @@ export default function AdminRoomsPanel({ ctx }) {
   // ==========================================
   // SAVE, CREATE & DELETE ACTIONS
   // ==========================================
-  const handleExportJSON = () => {
-    if (!currentRoom) return;
-    const dataToExport = {
-      room: currentRoom,
-      rows,
-      stats,
-      exportedAt: new Date().toISOString()
-    };
-    const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `phong-chieu-${currentRoom.name.replace(/\s+/g, '-').toLowerCase()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showToast('Đã xuất file JSON cấu hình phòng chiếu.');
-  };
+
 
   const handleSaveAll = async () => {
     if (!currentRoom) return;
@@ -550,6 +667,18 @@ export default function AdminRoomsPanel({ ctx }) {
     const token = getTokenRef.current?.();
     if (!token) {
       showToast('Phiên làm việc hết hạn. Vui lòng đăng nhập lại.', 'error');
+      return;
+    }
+
+    // Kiểm tra trùng tên phòng với các phòng khác trong cùng rạp
+    const currentCinemaId = currentRoom.cinemaId;
+    const isDuplicate = rooms.some(
+      r => r.id !== currentRoom.id &&
+           (!currentCinemaId || !r.cinemaId || r.cinemaId === currentCinemaId) &&
+           r.name?.trim().toLowerCase() === cleanName.toLowerCase()
+    );
+    if (isDuplicate) {
+      showToast(`Tên phòng chiếu "${cleanName}" đã được sử dụng trong cụm rạp này. Vui lòng đổi tên khác!`, 'error');
       return;
     }
 
@@ -565,7 +694,11 @@ export default function AdminRoomsPanel({ ctx }) {
         roomType: roomType,
         rowCount: rows.length,
         columnCount: maxCols,
-        status: roomActive ? 'ACTIVE' : 'INACTIVE'
+        status: roomActive ? 'ACTIVE' : 'INACTIVE',
+        standardPrice: prices.std,
+        vipPrice: prices.vip,
+        couplePrice: prices.couple,
+        aislePosition: aisleIndex
       };
       await adminService.updateAdminRoom(token, currentRoom.id, roomPayload);
 
@@ -643,7 +776,10 @@ export default function AdminRoomsPanel({ ctx }) {
       await fetchRooms(currentRoom.id);
     } catch (err) {
       console.error('Save room error:', err);
-      showToast(err.message || 'Không thể lưu thay đổi phòng chiếu.', 'error');
+      const errMsg = (err.status === 409 || String(err.message).toLowerCase().includes('already exists') || String(err.message).toLowerCase().includes('tồn tại'))
+        ? `Tên phòng chiếu "${cleanName}" đã tồn tại trong rạp này. Vui lòng chọn tên khác!`
+        : (err.message || 'Không thể lưu thay đổi phòng chiếu.');
+      showToast(errMsg, 'error');
     } finally {
       setIsSaving(false);
     }
@@ -704,12 +840,17 @@ export default function AdminRoomsPanel({ ctx }) {
   };
 
   const handleOpenAddModal = () => {
+    setAddModalError('');
     setAddModalForm({
       name: `Phòng ${String(rooms.length + 1).padStart(2, '0')}`,
       roomType: 'STANDARD',
       floor: 1,
       rowCount: 8,
-      colCount: 10
+      colCount: 10,
+      aislePosition: 0,
+      standardPrice: 60000,
+      vipPrice: 90000,
+      couplePrice: 150000
     });
     setIsAddModalOpen(true);
   };
@@ -717,20 +858,44 @@ export default function AdminRoomsPanel({ ctx }) {
   const handleCreateRoom = async () => {
     const cleanName = addModalForm.name.trim();
     if (!cleanName) {
-      showToast('Vui lòng nhập tên phòng.', 'warning');
+      setAddModalError('Vui lòng nhập tên phòng chiếu.');
       return;
     }
+
+    const targetCinemaId = addModalForm.cinemaId
+      ? Number(addModalForm.cinemaId)
+      : (selectedCinemaFilter !== 'ALL' ? Number(selectedCinemaFilter) : (cinemas[0]?.id || null));
+
+    // Kiểm tra trùng tên phòng ngay tại Client theo cụm rạp
+    const isDuplicate = rooms.some(
+      r => (!targetCinemaId || !r.cinemaId || r.cinemaId === targetCinemaId) &&
+           r.name?.trim().toLowerCase() === cleanName.toLowerCase()
+    );
+    if (isDuplicate) {
+      setAddModalError(`Tên phòng chiếu "${cleanName}" đã tồn tại trong cụm rạp này. Vui lòng chọn tên khác!`);
+      return;
+    }
+
     const token = getTokenRef.current?.();
-    if (!token) return;
+    if (!token) {
+      setAddModalError('Phiên làm việc hết hạn. Vui lòng đăng nhập lại.');
+      return;
+    }
 
     setIsSaving(true);
+    setAddModalError('');
     try {
       const payload = {
+        cinemaId: addModalForm.cinemaId ? Number(addModalForm.cinemaId) : (selectedCinemaFilter !== 'ALL' ? Number(selectedCinemaFilter) : (cinemas[0]?.id || undefined)),
         name: cleanName,
         roomType: addModalForm.roomType,
         rowCount: Number(addModalForm.rowCount) || 8,
         columnCount: Number(addModalForm.colCount) || 10,
-        status: 'ACTIVE'
+        status: 'ACTIVE',
+        standardPrice: Number(addModalForm.standardPrice) || 60000,
+        vipPrice: Number(addModalForm.vipPrice) || 90000,
+        couplePrice: Number(addModalForm.couplePrice) || 150000,
+        aislePosition: Number(addModalForm.aislePosition) || 0
       };
 
       const newRoom = await adminService.createAdminRoom(token, payload);
@@ -752,11 +917,16 @@ export default function AdminRoomsPanel({ ctx }) {
       }
 
       setIsAddModalOpen(false);
+      setAddModalError('');
       addAuditLog?.('Tạo phòng chiếu mới', newRoom.name);
       showToast(`Đã tạo thành công "${newRoom.name}"!`, 'success');
       await fetchRooms(newRoom.id);
     } catch (err) {
-      showToast(err.message || 'Không thể tạo phòng chiếu mới.', 'error');
+      console.error('Lỗi khi tạo phòng chiếu:', err);
+      const errMsg = (err.status === 409 || String(err.message).toLowerCase().includes('already exists') || String(err.message).toLowerCase().includes('tồn tại'))
+        ? `Tên phòng chiếu "${cleanName}" đã tồn tại trong rạp này. Vui lòng chọn tên khác!`
+        : (err.message || 'Không thể tạo phòng chiếu mới.');
+      setAddModalError(errMsg);
     } finally {
       setIsSaving(false);
     }
@@ -790,15 +960,7 @@ export default function AdminRoomsPanel({ ctx }) {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-          <button
-            type="button"
-            onClick={handleExportJSON}
-            title="Xuất cấu hình phòng và sơ đồ ghế ra file JSON"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-none border border-[#2e3540] bg-[#101318] hover:bg-[#1a2028] hover:border-[#3d4654] text-[#c3c7cd] hover:text-white text-xs font-bold uppercase tracking-wider transition"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>Xuất JSON</span>
-          </button>
+
 
           <button
             type="button"
@@ -839,13 +1001,30 @@ export default function AdminRoomsPanel({ ctx }) {
       </header>
 
       {/* =========================================================================
-          MAIN 3-COLUMN WORKSPACE: 250px | 1fr | 300px (SQUARE CORNERS)
+          MAIN 3-COLUMN WORKSPACE WITH RESIZABLE SPLITTERS
+          Panel 1 (Danh sách phòng) | Splitter 1 | Panel 2 (Sơ đồ ghế) | Splitter 2 | Panel 3 (Thông tin)
           ========================================================================= */}
-      <main className="flex-1 grid grid-cols-1 lg:grid-cols-[250px_1fr] xl:grid-cols-[250px_1fr_300px] gap-3.5 p-3.5 min-h-0 overflow-hidden">
+      <main
+        ref={mainContainerRef}
+        style={{
+          cursor: draggingSplitter ? 'col-resize' : 'default',
+          userSelect: draggingSplitter ? 'none' : 'auto'
+        }}
+        className="flex-1 flex flex-row p-3 gap-0 min-h-0 overflow-x-auto lg:overflow-hidden relative select-none w-full"
+      >
         {/* =========================================================================
-            LEFT COLUMN: ROOM SIDEBAR (Danh sách phòng)
+            PANEL 1: ROOM SIDEBAR (Danh sách phòng)
             ========================================================================= */}
-        <section className="bg-[#101318] border border-[#24282f] rounded-none flex flex-col min-h-0 shadow-[0_8px_24px_rgba(0,0,0,0.25)] overflow-hidden">
+        <section
+          style={{
+            width: `${leftWidth}px`,
+            minWidth: `${MIN_LEFT_WIDTH}px`,
+            maxWidth: `${MAX_LEFT_WIDTH}px`,
+            flexShrink: 0,
+            pointerEvents: draggingSplitter ? 'none' : 'auto'
+          }}
+          className="bg-[#101318] border border-[#24282f] rounded-none flex flex-col min-h-0 shadow-[0_8px_24px_rgba(0,0,0,0.25)] overflow-hidden"
+        >
           <div className="p-3.5 border-b border-[#24282f] flex items-center justify-between shrink-0">
             <div>
               <h3 className="text-xs font-bold uppercase tracking-wider text-[#f5f5f5]">
@@ -866,6 +1045,31 @@ export default function AdminRoomsPanel({ ctx }) {
           </div>
 
           <div className="p-3 flex-1 flex flex-col min-h-0">
+            {/* Cinema Selector Dropdown */}
+            {cinemas.length > 0 && (
+              <div className="relative mb-2.5 shrink-0">
+                <div className="flex items-center gap-1.5 border border-[#252a31] bg-[#080a0d] px-2.5 py-1.5 text-xs text-neutral-300">
+                  <Building2 className="w-3.5 h-3.5 text-[#f5b800] shrink-0" />
+                  <select
+                    value={selectedCinemaFilter}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSelectedCinemaFilter(val);
+                      fetchRooms(null, val);
+                    }}
+                    className="w-full bg-transparent text-[11px] font-bold text-white outline-none cursor-pointer truncate"
+                  >
+                    <option value="ALL" className="bg-[#101318] text-white">Tất cả cụm rạp ({cinemas.length})</option>
+                    {cinemas.map((c) => (
+                      <option key={c.id} value={c.id} className="bg-[#101318] text-white">
+                        {c.name} ({c.city})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
             {/* Search Input */}
             <div className="relative mb-2.5 shrink-0">
               <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#555b64]" />
@@ -902,15 +1106,15 @@ export default function AdminRoomsPanel({ ctx }) {
                     key={r.id}
                     onClick={() => handleSelectRoom(r)}
                     className={`group relative p-2.5 rounded-none cursor-pointer transition-all duration-150 flex items-center gap-2.5 border ${isSelected
-                        ? 'bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent border-[#a87900] border-l-[3px] border-l-[#f5b800] shadow-sm'
-                        : 'bg-transparent border-transparent hover:bg-[#11151a] hover:border-[#24282f]'
+                      ? 'bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-transparent border-[#a87900] border-l-[3px] border-l-[#f5b800] shadow-sm'
+                      : 'bg-transparent border-transparent hover:bg-[#11151a] hover:border-[#24282f]'
                       }`}
                   >
                     {/* Room Avatar */}
                     <div
                       className={`w-9 h-9 rounded-none flex items-center justify-center font-mono font-bold text-xs shrink-0 transition ${isSelected
-                          ? 'bg-[#f5b800]/20 text-[#f5b800] border border-[#f5b800]/40 shadow-inner'
-                          : 'bg-[#15181d] text-[#8b9098] border border-[#24282f] group-hover:text-white'
+                        ? 'bg-[#f5b800]/20 text-[#f5b800] border border-[#f5b800]/40 shadow-inner'
+                        : 'bg-[#15181d] text-[#8b9098] border border-[#24282f] group-hover:text-white'
                         }`}
                     >
                       {avatarCode}
@@ -928,6 +1132,11 @@ export default function AdminRoomsPanel({ ctx }) {
                       <div className="text-[11px] text-[#8b9098] mt-0.5 flex items-center gap-1.5 truncate">
                         <span className={`w-1.5 h-1.5 rounded-none shrink-0 ${isActive ? 'bg-[#00d68f]' : 'bg-[#555b64]'}`} />
                         <span>{r.rowCount} hàng • {r.rowCount * r.columnCount} ghế</span>
+                        {r.cinemaName && (
+                          <span className="ml-auto text-[9px] px-1.5 py-0.2 rounded-none bg-[#f5b800]/10 border border-[#f5b800]/25 text-[#f5b800] truncate max-w-[110px]" title={r.cinemaName}>
+                            {r.cinemaName}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -938,9 +1147,33 @@ export default function AdminRoomsPanel({ ctx }) {
         </section>
 
         {/* =========================================================================
-            CENTER COLUMN: SEAT EDITOR (Stage & Interactive Seat Grid)
+            SPLITTER 1: RESIZABLE DIVIDER (Danh sách phòng <-> Sơ đồ ghế)
             ========================================================================= */}
-        <section className="bg-[#101318] border border-[#24282f] rounded-none flex flex-col min-h-0 shadow-[0_8px_24px_rgba(0,0,0,0.25)] overflow-hidden relative">
+        <div
+          role="separator"
+          tabIndex={0}
+          title="Kéo chuột sang trái/phải để chỉnh độ rộng • Nhấp đúp để đặt lại mặc định (260px)"
+          onMouseDown={(e) => handleStartDrag(e, 'left')}
+          onDoubleClick={handleResetLeftWidth}
+          className={`w-[6px] shrink-0 cursor-col-resize relative group select-none transition-colors duration-150 flex items-center justify-center mx-[2px] my-0.5 z-20 ${
+            draggingSplitter === 'left'
+              ? 'bg-[#f5b800] shadow-[0_0_10px_rgba(245,184,0,0.7)]'
+              : 'bg-[#181c22] hover:bg-[#f5b800]'
+          }`}
+        >
+          <div className="w-[1.5px] h-8 bg-white/20 group-hover:bg-black/70 rounded-full transition-colors pointer-events-none" />
+        </div>
+
+        {/* =========================================================================
+            PANEL 2: CENTER COLUMN - SEAT EDITOR (Stage & Interactive Seat Grid)
+            ========================================================================= */}
+        <section
+          style={{
+            minWidth: `${MIN_CENTER_WIDTH}px`,
+            pointerEvents: draggingSplitter ? 'none' : 'auto'
+          }}
+          className="flex-1 bg-[#101318] border border-[#24282f] rounded-none flex flex-col min-h-0 shadow-[0_8px_24px_rgba(0,0,0,0.25)] overflow-hidden relative"
+        >
           {/* TOOLBAR */}
           <div className="min-h-[44px] bg-[#0c0f13] border-b border-[#24282f] px-3.5 py-1.5 flex items-center gap-2 shrink-0 flex-wrap">
             <span className="text-[11px] font-bold text-[#8b9098] uppercase tracking-wider mr-1">
@@ -958,12 +1191,12 @@ export default function AdminRoomsPanel({ ctx }) {
                   onClick={() => setBrush(b.id)}
                   title={isDelete ? 'Bút xóa ghế: click ghế để xóa và dồn hàng (Phím 5)' : `Bút ${b.name}`}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-none text-xs font-semibold border transition-all ${isActive
-                      ? isDelete
-                        ? 'border-rose-500 bg-rose-500/15 text-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.25)] ring-1 ring-rose-500/40'
-                        : 'border-[#f5b800] bg-[#f5b800]/10 text-[#f5b800] shadow-[0_0_8px_rgba(245,184,0,0.15)] ring-1 ring-[#f5b800]/40'
-                      : isDelete
-                        ? 'border-rose-500/40 bg-rose-950/20 text-rose-300 hover:border-rose-500 hover:bg-rose-500/20'
-                        : 'border-[#2a2f36] bg-[#11151a] text-[#c3c7cd] hover:border-[#3a3f47] hover:text-white'
+                    ? isDelete
+                      ? 'border-rose-500 bg-rose-500/15 text-rose-400 shadow-[0_0_8px_rgba(244,63,94,0.25)] ring-1 ring-rose-500/40'
+                      : 'border-[#f5b800] bg-[#f5b800]/10 text-[#f5b800] shadow-[0_0_8px_rgba(245,184,0,0.15)] ring-1 ring-[#f5b800]/40'
+                    : isDelete
+                      ? 'border-rose-500/40 bg-rose-950/20 text-rose-300 hover:border-rose-500 hover:bg-rose-500/20'
+                      : 'border-[#2a2f36] bg-[#11151a] text-[#c3c7cd] hover:border-[#3a3f47] hover:text-white'
                     }`}
                 >
                   {isDelete ? (
@@ -1073,8 +1306,8 @@ export default function AdminRoomsPanel({ ctx }) {
                       onClick={() => handlePaintRow(rIdx)}
                       style={{ width: 'var(--seat-w)', height: 'var(--seat-h)' }}
                       className={`rounded-none font-mono text-xs font-bold border transition flex items-center justify-center shrink-0 ${isRowSelected
-                          ? 'bg-[#f5b800] text-[#090909] border-[#f5b800] shadow-[0_0_8px_rgba(245,184,0,0.4)]'
-                          : 'bg-[#101318] text-[#d5d8dc] border-[#30353d] hover:border-[#f5b800] hover:text-[#f5b800]'
+                        ? 'bg-[#f5b800] text-[#090909] border-[#f5b800] shadow-[0_0_8px_rgba(245,184,0,0.4)]'
+                        : 'bg-[#101318] text-[#d5d8dc] border-[#30353d] hover:border-[#f5b800] hover:text-[#f5b800]'
                         }`}
                     >
                       {row.label}
@@ -1108,8 +1341,8 @@ export default function AdminRoomsPanel({ ctx }) {
                                 onPointerDown={() => handlePointerDownSeat(rIdx, sIdx)}
                                 onPointerEnter={() => handlePointerEnterSeat(rIdx, sIdx)}
                                 className={`rounded-none text-[10.5px] font-mono font-bold flex items-center justify-center cursor-pointer transition-transform duration-75 relative shrink-0 ${isSeatSelected
-                                    ? 'ring-2 ring-[#f5b800] shadow-[0_0_10px_rgba(245,184,0,0.5)] z-10 scale-105'
-                                    : 'hover:-translate-y-0.5'
+                                  ? 'ring-2 ring-[#f5b800] shadow-[0_0_10px_rgba(245,184,0,0.5)] z-10 scale-105'
+                                  : 'hover:-translate-y-0.5'
                                   }`}
                                 style={{
                                   width: isCouple ? 'var(--couple-w)' : 'var(--seat-w)',
@@ -1181,12 +1414,39 @@ export default function AdminRoomsPanel({ ctx }) {
         </section>
 
         {/* =========================================================================
-            RIGHT COLUMN: PROPERTIES PANEL (3 Tabs: Thông tin, Hàng ghế, Giá vé)
+            SPLITTER 2: RESIZABLE DIVIDER (Sơ đồ ghế <-> Thông tin phòng)
             ========================================================================= */}
-        <section className="bg-[#101318] border border-[#24282f] rounded-none flex flex-col min-h-0 shadow-[0_8px_24px_rgba(0,0,0,0.25)] overflow-hidden lg:col-span-2 xl:col-span-1">
+        <div
+          role="separator"
+          tabIndex={0}
+          title="Kéo chuột sang trái/phải để chỉnh độ rộng • Nhấp đúp để đặt lại mặc định (320px)"
+          onMouseDown={(e) => handleStartDrag(e, 'right')}
+          onDoubleClick={handleResetRightWidth}
+          className={`w-[6px] shrink-0 cursor-col-resize relative group select-none transition-colors duration-150 flex items-center justify-center mx-[2px] my-0.5 z-20 ${
+            draggingSplitter === 'right'
+              ? 'bg-[#f5b800] shadow-[0_0_10px_rgba(245,184,0,0.7)]'
+              : 'bg-[#181c22] hover:bg-[#f5b800]'
+          }`}
+        >
+          <div className="w-[1.5px] h-8 bg-white/20 group-hover:bg-black/70 rounded-full transition-colors pointer-events-none" />
+        </div>
+
+        {/* =========================================================================
+            PANEL 3: RIGHT COLUMN - PROPERTIES PANEL (3 Tabs: Thông tin, Hàng ghế, Giá vé)
+            ========================================================================= */}
+        <section
+          style={{
+            width: `${rightWidth}px`,
+            minWidth: `${MIN_RIGHT_WIDTH}px`,
+            maxWidth: `${MAX_RIGHT_WIDTH}px`,
+            flexShrink: 0,
+            pointerEvents: draggingSplitter ? 'none' : 'auto'
+          }}
+          className="bg-[#101318] border border-[#24282f] rounded-none flex flex-col min-h-0 shadow-[0_8px_24px_rgba(0,0,0,0.25)] overflow-hidden"
+        >
           {/* TABS HEADER */}
           <div className="flex border-b border-[#24282f] bg-[#0c0f13] shrink-0">
-            {['Thông tin', 'Hàng ghế'].map((tabLabel, idx) => {
+            {['Thông tin', 'Hàng ghế', 'Giá vé'].map((tabLabel, idx) => {
               const isActive = activeTab === idx;
               return (
                 <button
@@ -1407,6 +1667,87 @@ export default function AdminRoomsPanel({ ctx }) {
               </div>
             )}
 
+            {/* ---------------- TAB 2: GIÁ VÉ ---------------- */}
+            {activeTab === 2 && (
+              <div className="space-y-3.5">
+                <p className="text-xs text-[#8b9098] leading-relaxed">
+                  Thiết lập giá tham chiếu cơ bản theo từng loại ghế để tính toán doanh thu suất chiếu:
+                </p>
+
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2.5 p-2 rounded-none bg-[#0c0f13] border border-[#272c33]">
+                    <span className="w-3.5 h-3.5 rounded-none bg-[#161b20] border border-[#697078] shrink-0" />
+                    <span className="flex-1 text-xs text-white font-medium">Ghế thường</span>
+                    <input
+                      type="number"
+                      step={5000}
+                      value={prices.std}
+                      onChange={e => {
+                        const val = Math.max(0, Number(e.target.value) || 0);
+                        setPrices(p => ({ ...p, std: val }));
+                        markDirty();
+                      }}
+                      className="w-24 h-7 text-right px-2 rounded-none border border-[#24282f] bg-[#080a0d] text-xs font-mono text-white outline-none"
+                    />
+                    <small className="text-[#8b9098] text-xs font-mono">đ</small>
+                  </div>
+
+                  <div className="flex items-center gap-2.5 p-2 rounded-none bg-[#0c0f13] border border-[#272c33]">
+                    <span className="w-3.5 h-3.5 rounded-none bg-amber-500/15 border border-[#f5b800] shrink-0" />
+                    <span className="flex-1 text-xs text-white font-medium">Ghế VIP</span>
+                    <input
+                      type="number"
+                      step={5000}
+                      value={prices.vip}
+                      onChange={e => {
+                        const val = Math.max(0, Number(e.target.value) || 0);
+                        setPrices(p => ({ ...p, vip: val }));
+                        markDirty();
+                      }}
+                      className="w-24 h-7 text-right px-2 rounded-none border border-[#24282f] bg-[#080a0d] text-xs font-mono text-white outline-none"
+                    />
+                    <small className="text-[#8b9098] text-xs font-mono">đ</small>
+                  </div>
+
+                  <div className="flex items-center gap-2.5 p-2 rounded-none bg-[#0c0f13] border border-[#272c33]">
+                    <span className="w-4 h-3 rounded-none bg-[#831843] border border-[#ec4899] shrink-0" />
+                    <span className="flex-1 text-xs text-white font-medium">Ghế đôi</span>
+                    <input
+                      type="number"
+                      step={5000}
+                      value={prices.couple}
+                      onChange={e => {
+                        const val = Math.max(0, Number(e.target.value) || 0);
+                        setPrices(p => ({ ...p, couple: val }));
+                        markDirty();
+                      }}
+                      className="w-24 h-7 text-right px-2 rounded-none border border-[#24282f] bg-[#080a0d] text-xs font-mono text-white outline-none"
+                    />
+                    <small className="text-[#8b9098] text-xs font-mono">đ</small>
+                  </div>
+                </div>
+
+                {/* Revenue Box */}
+                <div
+                  className="rounded-none border p-3.5 space-y-1 mt-4"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(245,184,0,0.10), rgba(245,184,0,0.02))',
+                    borderColor: 'rgba(245,184,0,0.30)'
+                  }}
+                >
+                  <span className="block text-[10px] font-black uppercase tracking-wider text-[#8b9098]">
+                    DOANH THU TỐI ĐA / SUẤT (KÍN RẠP)
+                  </span>
+                  <div className="text-xl sm:text-2xl font-mono font-black text-[#f5b800] tracking-tight">
+                    {formatVnd(stats.maxRev)}
+                  </div>
+                  <p className="text-[10px] text-[#8b9098] pt-1 border-t border-white/5">
+                    Dựa trên {stats.std} thường + {stats.vip} VIP + {stats.couple} đôi.
+                  </p>
+                </div>
+              </div>
+            )}
+
           </div>
         </section>
       </main>
@@ -1431,6 +1772,32 @@ export default function AdminRoomsPanel({ ctx }) {
             </div>
 
             <div className="space-y-3">
+              {addModalError && (
+                <div className="flex items-start gap-2 p-2.5 bg-rose-500/10 border border-rose-500/40 text-rose-400 text-xs font-medium">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                  <span>{addModalError}</span>
+                </div>
+              )}
+
+              {cinemas.length > 0 && (
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-[#8b9098] mb-1">
+                    Thuộc cụm rạp
+                  </label>
+                  <select
+                    value={addModalForm.cinemaId || (selectedCinemaFilter !== 'ALL' ? selectedCinemaFilter : (cinemas[0]?.id || ''))}
+                    onChange={e => setAddModalForm({ ...addModalForm, cinemaId: e.target.value })}
+                    className="w-full h-9 bg-[#080a0d] border border-[#292e35] focus:border-[#f5b800] rounded-none px-3 text-xs text-white outline-none cursor-pointer"
+                  >
+                    {cinemas.map(c => (
+                      <option key={c.id} value={c.id} className="bg-[#101318] text-white">
+                        {c.name} - {c.city}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               <div>
                 <label className="block text-[11px] font-bold uppercase tracking-wider text-[#8b9098] mb-1">
                   Tên phòng
@@ -1438,9 +1805,12 @@ export default function AdminRoomsPanel({ ctx }) {
                 <input
                   type="text"
                   value={addModalForm.name}
-                  onChange={e => setAddModalForm({ ...addModalForm, name: e.target.value })}
+                  onChange={e => {
+                    setAddModalForm({ ...addModalForm, name: e.target.value });
+                    setAddModalError('');
+                  }}
                   placeholder="VD: Phòng 05"
-                  className="w-full h-9 bg-[#080a0d] border border-[#292e35] focus:border-[#f5b800] rounded-none px-3 text-xs text-white outline-none"
+                  className={`w-full h-9 bg-[#080a0d] border ${addModalError ? 'border-rose-500' : 'border-[#292e35] focus:border-[#f5b800]'} rounded-none px-3 text-xs text-white outline-none`}
                 />
               </div>
 
@@ -1501,6 +1871,63 @@ export default function AdminRoomsPanel({ ctx }) {
                     onChange={e => setAddModalForm({ ...addModalForm, colCount: Number(e.target.value) || 10 })}
                     className="w-full h-9 bg-[#080a0d] border border-[#292e35] focus:border-[#f5b800] rounded-none px-2 text-xs text-white text-center font-mono outline-none"
                   />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[#8b9098] mb-1">
+                  Lối đi giữa (sau ghế số)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={addModalForm.colCount || 30}
+                  value={addModalForm.aislePosition}
+                  onChange={e => setAddModalForm({ ...addModalForm, aislePosition: Number(e.target.value) || 0 })}
+                  placeholder="0 = không có"
+                  className="w-full h-8 bg-[#080a0d] border border-[#292e35] focus:border-[#f5b800] rounded-none px-3 text-xs text-white font-mono outline-none"
+                />
+              </div>
+
+              {/* Giá vé mặc định của phòng */}
+              <div className="pt-2.5 border-t border-[#24282f] space-y-2">
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-[#8b9098]">
+                  Giá vé theo loại ghế (VNĐ)
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <span className="block text-[10px] text-[#8b9098] mb-1">Thường</span>
+                    <input
+                      type="number"
+                      step={5000}
+                      min={0}
+                      value={addModalForm.standardPrice}
+                      onChange={e => setAddModalForm({ ...addModalForm, standardPrice: Math.max(0, Number(e.target.value) || 0) })}
+                      className="w-full h-8 bg-[#080a0d] border border-[#292e35] focus:border-[#f5b800] rounded-none px-2 text-xs text-white text-right font-mono outline-none"
+                    />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-[#f5b800] mb-1">VIP</span>
+                    <input
+                      type="number"
+                      step={5000}
+                      min={0}
+                      value={addModalForm.vipPrice}
+                      onChange={e => setAddModalForm({ ...addModalForm, vipPrice: Math.max(0, Number(e.target.value) || 0) })}
+                      className="w-full h-8 bg-[#080a0d] border border-[#292e35] focus:border-[#f5b800] rounded-none px-2 text-xs text-white text-right font-mono outline-none"
+                    />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-[#ec4899] mb-1">Ghế đôi</span>
+                    <input
+                      type="number"
+                      step={5000}
+                      min={0}
+                      value={addModalForm.couplePrice}
+                      onChange={e => setAddModalForm({ ...addModalForm, couplePrice: Math.max(0, Number(e.target.value) || 0) })}
+                      className="w-full h-8 bg-[#080a0d] border border-[#292e35] focus:border-[#f5b800] rounded-none px-2 text-xs text-white text-right font-mono outline-none"
+                    />
+                  </div>
                 </div>
               </div>
             </div>

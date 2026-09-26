@@ -85,6 +85,9 @@ function AdminRouteView() {
   const showToast = useUiStore((state) => state.showToast);
   const currentRole = useAuthStore((state) => state.currentRole);
   const currentUser = useAuthStore((state) => state.currentUser);
+  const { accessToken, user } = getStoredAuth();
+  const isAdmin = currentRole === 'admin' || currentUser?.role === 'admin' || hasBackendAdminAccess(accessToken, user);
+  const isManager = currentRole === 'manager' || currentUser?.role === 'manager' || hasBackendManagerAccess(accessToken, user);
   const {
     moviesList,
     setMoviesList,
@@ -109,7 +112,8 @@ function AdminRouteView() {
         initialSection={section}
         onSectionChange={(nextSection) => navigate(`/admin/${nextSection}`)}
         onFoodCatalogChanged={() => fetchPublicFoodCatalog({ force: true })}
-        isAdmin={currentRole === 'admin'}
+        isAdmin={isAdmin}
+        isManager={isManager}
         currentUser={currentUser}
       />
     </AdminRoute>
@@ -132,25 +136,24 @@ export default function AppRoutes() {
       <Route path="/payment-callback" element={<PaymentCallbackPage />} />
       <Route path="/staff" element={<AppShell><StaffRoute><StaffCheckInPage /></StaffRoute></AppShell>} />
       
-      {/* Manager Scoped Portal Routes */}
-      <Route path="/manager" element={<Navigate to="/manager/overview" replace />} />
-      <Route path="/manager/overview" element={<ManagerRouteView component={ManagerOverviewPage} />} />
-      <Route path="/manager/movies" element={<ManagerRouteView component={ManagerMoviesPage} />} />
-      <Route path="/manager/showtimes" element={<ManagerRouteView component={ManagerShowtimesPage} />} />
-      <Route path="/manager/rooms" element={<ManagerRouteView component={ManagerRoomsPage} />} />
-      <Route path="/manager/inventory" element={<ManagerRouteView component={ManagerInventoryPage} />} />
-      <Route path="/manager/bookings" element={<ManagerRouteView component={ManagerBookingsPage} />} />
-      <Route path="/manager/staff" element={<ManagerRouteView component={ManagerStaffPage} />} />
-      <Route path="/manager/reports" element={<ManagerRouteView component={ManagerReportsPage} />} />
-      <Route path="/manager/audit-logs" element={<ManagerRouteView component={ManagerAuditLogsPage} />} />
+      {/* Manager Scoped Portal Routes - Redirected to unified Admin/Manager Dashboard */}
+      <Route path="/manager" element={<Navigate to="/admin/overview" replace />} />
+      <Route path="/manager/overview" element={<Navigate to="/admin/overview" replace />} />
+      <Route path="/manager/movies" element={<Navigate to="/admin/movies" replace />} />
+      <Route path="/manager/showtimes" element={<Navigate to="/admin/showtimes" replace />} />
+      <Route path="/manager/rooms" element={<Navigate to="/admin/rooms" replace />} />
+      <Route path="/manager/inventory" element={<Navigate to="/admin/foods" replace />} />
+      <Route path="/manager/bookings" element={<Navigate to="/admin/tickets" replace />} />
+      <Route path="/manager/staff" element={<Navigate to="/admin/users" replace />} />
+      <Route path="/manager/reports" element={<Navigate to="/admin/statistics" replace />} />
+      <Route path="/manager/audit-logs" element={<Navigate to="/admin/audit" replace />} />
+      <Route path="/manager/*" element={<Navigate to="/admin/overview" replace />} />
 
       <Route
         path="/"
         element={
-          isAdmin ? (
+          isAdmin || isManager ? (
             <Navigate to="/admin/overview" replace />
-          ) : isManager ? (
-            <Navigate to="/manager/overview" replace />
           ) : isStaff ? (
             <Navigate to="/staff" replace />
           ) : (
@@ -164,7 +167,7 @@ export default function AppRoutes() {
       <Route path="/movies/:id/book" element={<AppShell><ProtectedRoute><BookingView /></ProtectedRoute></AppShell>} />
       <Route path="/concessions" element={<AppShell><ProtectedRoute><ConcessionsPage /></ProtectedRoute></AppShell>} />
       <Route path="/tickets" element={<AppShell><ProtectedRoute><MyOrdersPage /></ProtectedRoute></AppShell>} />
-      <Route path="/watchlist" element={isAdmin ? <Navigate to="/admin/overview" replace /> : isManager ? <Navigate to="/manager/overview" replace /> : isStaff ? <Navigate to="/staff" replace /> : <AppShell><ProtectedRoute><WishlistView /></ProtectedRoute></AppShell>} />
+      <Route path="/watchlist" element={isAdmin || isManager ? <Navigate to="/admin/overview" replace /> : isStaff ? <Navigate to="/staff" replace /> : <AppShell><ProtectedRoute><WishlistView /></ProtectedRoute></AppShell>} />
       <Route path="/profile" element={<AppShell><ProtectedRoute><ProfileView /></ProtectedRoute></AppShell>} />
       <Route path="/policies" element={<AppShell><PoliciesPage /></AppShell>} />
       <Route path="/admin" element={<Navigate to="/admin/overview" replace />} />

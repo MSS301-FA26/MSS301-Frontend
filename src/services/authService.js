@@ -41,8 +41,8 @@ export const hasBackendStaffAccess = (accessToken, user = null) => {
 
 const resolveRole = (roles = []) => {
   const normalized = roles.map((role) => String(role).toUpperCase());
-  if (ADMIN_ACCESS_OVERRIDE || normalized.includes('ADMIN') || normalized.includes('ROLE_ADMIN')) return 'admin';
   if (normalized.includes('MANAGER') || normalized.includes('ROLE_MANAGER')) return 'manager';
+  if (ADMIN_ACCESS_OVERRIDE || normalized.includes('ADMIN') || normalized.includes('ROLE_ADMIN')) return 'admin';
   if (normalized.includes('STAFF') || normalized.includes('ROLE_STAFF')) return 'staff';
   return 'user';
 };
@@ -135,11 +135,27 @@ const isAccessTokenExpired = (accessToken, accessTokenExpiresAt) => {
 const createApiError = (payload, status) => {
   const fieldErrors = payload?.fieldErrors
     ? Object.values(payload.fieldErrors).flat().join(', ')
-    : Array.isArray(payload?.errors)
+    : Array.isArray(payload?.errors) && payload.errors.length > 0
       ? payload.errors.map((error) => error.message || `${error.field}: invalid`).join(', ')
       : '';
-  const error = new Error(fieldErrors || payload?.message || `Request failed (${status || 'unknown'})`);
+  let rawMsg = fieldErrors || payload?.message || `Request failed (${status || 'unknown'})`;
+
+  // Chuyển đổi thông báo lỗi thân thiện cho các lỗi xung đột (409 Conflict)
+  if (status === 409 || String(rawMsg).toLowerCase().includes('already exists')) {
+    if (String(rawMsg).toLowerCase().includes('room name already exists')) {
+      rawMsg = 'Tên phòng chiếu đã tồn tại trong rạp này. Vui lòng chọn tên khác.';
+    } else if (String(rawMsg).toLowerCase().includes('room already has seats')) {
+      rawMsg = 'Phòng chiếu này đã có sơ đồ ghế.';
+    } else if (String(rawMsg).toLowerCase().includes('overlapping showtime')) {
+      rawMsg = 'Phòng chiếu đã có suất chiếu trùng thời gian.';
+    } else if (String(rawMsg).toLowerCase().includes('already exists')) {
+      rawMsg = 'Dữ liệu đã tồn tại trong hệ thống (409 Xung đột dữ liệu).';
+    }
+  }
+
+  const error = new Error(rawMsg);
   error.status = status;
+  error.response = { data: payload, status };
   return error;
 };
 

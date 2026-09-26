@@ -142,10 +142,10 @@ export const useAuthStore = create((set, get) => ({
       navigate?.('/setup-password');
       return;
     }
-    if (userData.role === 'admin') {
+    if (userData.role === 'admin' || userData.role === 'manager') {
       navigate?.('/admin/overview');
     } else if (userData.role === 'manager') {
-      navigate?.('/manager');
+      navigate?.('/admin/overview');
     } else if (userData.role === 'staff') {
       navigate?.('/staff');
     } else {

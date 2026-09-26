@@ -5,6 +5,7 @@ import { createCrudApi, uploadFile } from './apiFactory';
 const enc = encodeURIComponent;
 
 // ─── Resource CRUD APIs ─────────────────────────────────────────────────────
+const cinemasApi     = createCrudApi('/api/v1/admin/cinemas');
 const moviesApi      = createCrudApi('/api/v1/admin/movies');
 const actorsApi      = createCrudApi('/api/v1/admin/actors');
 const genresApi      = createCrudApi('/api/v1/admin/genres');
@@ -82,13 +83,20 @@ export const adminService = {
   updateAdminGenre: (token, id, payload) => genresApi.update(token, id, payload),
   deleteAdminGenre: (token, id)          => genresApi.remove(token, id),
 
-  // ── Cinema (single resource, không có ID) ──────────────────────────────────
+  // ── Cinemas (Multi-Cinema Management) ───────────────────────────────────────
+  getAdminCinemas:         (token, params = {}) => cinemasApi.getAll(token, params),
+  getAdminCinemaById:     (token, id)          => cinemasApi.getOne(token, id),
+  createAdminCinema:      (token, payload)     => cinemasApi.create(token, payload),
+  updateAdminCinemaById:  (token, id, payload) => cinemasApi.update(token, id, payload),
+  updateAdminCinemaByIdStatus: (token, id, status) => cinemasApi.patchQuery(token, id, status),
+  deleteAdminCinema:      (token, id)          => cinemasApi.remove(token, id),
+  // Backward compatibility:
   getAdminCinema:         (token)          => request('/api/v1/admin/cinema', { token }),
   updateAdminCinema:      (token, payload) => request('/api/v1/admin/cinema', { method: 'PUT', token, body: payload }),
   updateAdminCinemaStatus: (token, status) => request(`/api/v1/admin/cinema/status?status=${enc(status)}`, { method: 'PATCH', token }),
 
   // ── Rooms ──────────────────────────────────────────────────────────────────
-  getAdminRooms:         (token)              => roomsApi.getAll(token),
+  getAdminRooms:         (token, cinemaId)    => roomsApi.getAll(token, cinemaId ? { cinemaId } : {}),
   getAdminRoom:          (token, id)          => roomsApi.getOne(token, id),
   createAdminRoom:       (token, payload)     => roomsApi.create(token, payload),
   updateAdminRoom:       (token, id, payload) => roomsApi.update(token, id, payload),
@@ -97,6 +105,10 @@ export const adminService = {
   getAdminRoomSeats:     (token, roomId)          => request(`/api/v1/admin/rooms/${enc(roomId)}/seats`, { token }),
   createAdminRoomSeats:  (token, roomId, payload) => request(`/api/v1/admin/rooms/${enc(roomId)}/seats/generate`, { method: 'POST', token, body: payload }),
   replaceAdminRoomSeats: (token, roomId, payload) => request(`/api/v1/admin/rooms/${enc(roomId)}/seats`, { method: 'PUT', token, body: payload }),
+  getAdminRoomPricing:    (token, roomId)          => request(`/api/v1/admin/rooms/${enc(roomId)}/pricing`, { token }),
+  updateAdminRoomPricing: (token, roomId, payload) => request(`/api/v1/admin/rooms/${enc(roomId)}/pricing`, { method: 'PUT', token, body: payload }),
+  getAdminRoomLayoutConfig:    (token, roomId)          => request(`/api/v1/admin/rooms/${enc(roomId)}/layout-config`, { token }),
+  updateAdminRoomLayoutConfig: (token, roomId, payload) => request(`/api/v1/admin/rooms/${enc(roomId)}/layout-config`, { method: 'PUT', token, body: payload }),
   updateAdminSeat:       (token, seatId, payload) => request(`/api/v1/admin/rooms/seats/${enc(seatId)}`, { method: 'PUT', token, body: payload }),
   deactivateAdminSeat:   (token, seatId)          => request(`/api/v1/admin/rooms/seats/${enc(seatId)}`, { method: 'DELETE', token }),
 

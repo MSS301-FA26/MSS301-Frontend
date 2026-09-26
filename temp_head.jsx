@@ -6,9 +6,9 @@ import {
   Calendar, Users, DollarSign, Activity, AlertCircle, CheckCircle2,
   Search, Sliders, ChevronDown, Check, RefreshCw, Layers, ShoppingBag,
   BarChart2, Clock, Film, Play, Eye, EyeOff, TrendingUp, Info, Tags, Tag, LogOut, MessageSquare, Wallet,
-  Menu, MapPin, User, Building2
+  Menu, MapPin, User
 } from 'lucide-react';
-import { expireAuthSession, getStoredAuth, hasBackendAdminAccess, hasBackendManagerAccess } from '../../services/authService';
+import { expireAuthSession, getStoredAuth, hasBackendAdminAccess } from '../../services/authService';
 import { adminService } from '../../services/adminService';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useUiStore } from '../../stores/useUiStore';
@@ -68,13 +68,13 @@ const SECTION_TITLE = {
   showtimes: 'Điều phối lịch chiếu', tickets: 'Quản lý vé', transactions: 'Giao dịch',
   'showtime-incidents': 'Báo cáo sự cố & hoàn tiền', 'fnb-report': 'Báo cáo F&B',
   statistics: 'Thống kê mua bán', audit: 'Audit log', users: 'Quản lý người dùng',
-  reviews: 'Đánh giá', loyalty: 'Quản lý điểm', cinewallet: 'CineWallet', cinema: 'Hệ thống cụm rạp',
+  reviews: 'Đánh giá', loyalty: 'Quản lý điểm', cinewallet: 'CineWallet', cinema: 'Thông tin rạp',
 };
 
 const getNavGroup = (section) => {
   if (['genres', 'actors', 'movies'].includes(section)) return 'movies';
   if (['foods', 'fnb-report'].includes(section)) return 'fnb';
-  if (['cinema', 'rooms', 'showtimes', 'tickets', 'transactions', 'showtime-incidents'].includes(section)) return 'cinema';
+  if (['rooms', 'showtimes', 'tickets', 'transactions', 'showtime-incidents'].includes(section)) return 'cinema';
   if (['statistics', 'audit'].includes(section)) return 'insights';
   if (['users', 'loyalty', 'reviews', 'cinewallet'].includes(section)) return 'system';
   return null;
@@ -117,7 +117,6 @@ export default function AdminDashboard({
   onSectionChange = () => { },
   onFoodCatalogChanged = () => { },
   isAdmin = false,
-  isManager = true,
   currentUser = null
 }) {
   const navigate = useNavigate();
@@ -230,7 +229,7 @@ export default function AdminDashboard({
   const [isStaffCreating, setIsStaffCreating] = useState(false);
 
   React.useEffect(() => {
-    if ((!isAdmin && !isManager) || activeTab !== 'movies') return undefined;
+    if (!isAdmin || activeTab !== 'movies') return undefined;
 
     const token = getAdminToken(false);
     if (!token) {
@@ -499,8 +498,8 @@ export default function AdminDashboard({
       return null;
     }
 
-    if (!hasBackendAdminAccess(accessToken, user) && !hasBackendManagerAccess(accessToken, user)) {
-      if (notify) showToast('Tài khoản hiện tại không có quyền quản trị. Vui lòng đăng nhập lại.', 5500, null, 'sad');
+    if (!hasBackendAdminAccess(accessToken, user)) {
+      if (notify) showToast('Tài khoản hiện tại không có quyền ADMIN. Vui lòng đăng nhập bằng tài khoản admin để dùng trang quản trị.', 5500, null, 'sad');
       return null;
     }
 
@@ -711,34 +710,29 @@ export default function AdminDashboard({
   };
 
   React.useEffect(() => {
-    let nextSection = normalizeAdminSection(initialSection);
-    if (!isAdmin && nextSection === 'cinema') {
-      nextSection = 'overview';
-    }
+    const nextSection = normalizeAdminSection(initialSection);
     setActiveTab(nextSection);
     setOpenNavGroup(getNavGroup(nextSection));
     if (nextSection !== initialSection) {
       onSectionChange(nextSection);
       window.history.replaceState(null, '', `/admin/${nextSection}`);
     }
-  }, [initialSection, isAdmin]);
+  }, [initialSection]);
 
   React.useEffect(() => {
-    if (activeTab === 'genres') {
+    if (activeTab === 'genres' || activeTab === 'movies') {
       fetchGenres();
-    } else if (activeTab === 'foods') {
+    }
+    if (activeTab === 'movies') {
+      fetchActors('', 0, 100, false);
+    }
+    if (activeTab === 'foods') {
       fetchFoods();
-    } else if (activeTab === 'users') {
+    }
+    if (activeTab === 'users') {
       fetchAdminUsers();
     }
   }, [activeTab]);
-
-  React.useEffect(() => {
-    if (showMovieForm) {
-      if (genres.length === 0) fetchGenres();
-      if (actors.length === 0) fetchActors('', 0, 100, false);
-    }
-  }, [showMovieForm]);
 
   React.useEffect(() => {
     if (activeTab !== 'actors') return undefined;
@@ -917,7 +911,6 @@ export default function AdminDashboard({
   // Real headline metrics from /api/v1/admin/reports (last 30 days) — replaces the old simulated numbers.
   const [overviewMetrics, setOverviewMetrics] = useState({ revenue: 0, tickets: 0, fillRate: 0 });
   useEffect(() => {
-    if (activeTab !== 'overview') return undefined;
     const token = getAdminToken(false);
     if (!token) return undefined;
     let cancelled = false;
@@ -941,11 +934,12 @@ export default function AdminDashboard({
           fillRate: Math.round(avgFill * 10) / 10
         });
       })
-      .catch(() => { /* keep zeros */ });
+      .catch(() => { /* keep zeros — cards render real (empty) data, never fake numbers */ });
     return () => {
       cancelled = true;
     };
-  }, [activeTab]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const totalBookingsCount = overviewMetrics.tickets;
   const calculatedRevenue = overviewMetrics.revenue;
   const averageFillRate = overviewMetrics.fillRate;
@@ -1632,7 +1626,6 @@ export default function AdminDashboard({
     onSectionChange,
     onFoodCatalogChanged,
     isAdmin,
-    isManager,
     currentUser
   };
 
@@ -1766,9 +1759,6 @@ export default function AdminDashboard({
                 <NavItem indent icon={BarChart2} label="Báo cáo F&B" active={activeTab === 'fnb-report'} onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('fnb-report'); }} />
 
                 <NavSectionLabel>Quản lý rạp</NavSectionLabel>
-              {isAdmin && (
-                <NavItem indent icon={Building2} label="Hệ thống cụm rạp" active={activeTab === 'cinema'} onClick={() => { playPulseSound(465, 'sine', 0.05); changeAdminSection('cinema'); }} />
-              )}
                 <NavItem indent icon={Layers} label="Phòng chiếu & ghế" active={activeTab === 'rooms'} onClick={() => { playPulseSound(470, 'sine', 0.05); changeAdminSection('rooms'); }} />
                 <NavItem indent icon={Calendar} label="Điều phối lịch chiếu" active={activeTab === 'showtimes'} onClick={() => { playPulseSound(480, 'sine', 0.05); changeAdminSection('showtimes'); }} />
                 <NavItem indent icon={AlertCircle} label="Báo cáo sự cố & hoàn tiền" active={activeTab === 'showtime-incidents'} onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('showtime-incidents'); }} />
@@ -2084,22 +2074,6 @@ export default function AdminDashboard({
                     exit={{ height: 0, opacity: 0 }}
                     className="space-y-1.5 overflow-hidden"
                   >
-                    {isAdmin && (
-                      <button
-                        onClick={() => { playPulseSound(465, 'sine', 0.05); changeAdminSection('cinema'); }}
-                        className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'cinema'
-                          ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                          : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                          }`}
-                      >
-                        <span className="flex items-center space-x-2.5">
-                          <Building2 className="h-4 w-4 shrink-0 text-amber-500" />
-                          <span className="whitespace-nowrap">HỆ THỐNG CỤM RẠP</span>
-                        </span>
-                        {activeTab === 'cinema' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                      </button>
-                    )}
-
                     <button
                       onClick={() => { playPulseSound(470, 'sine', 0.05); changeAdminSection('rooms'); }}
                       className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'rooms'
