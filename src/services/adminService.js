@@ -67,9 +67,11 @@ export const adminService = {
 
   // ── Users ──────────────────────────────────────────────────────────────────
   getAdminUsers:          (token)          => usersApi.getAll(token),
-  getAdminUserDetail:     (token, userId)  => usersApi.getOne(token, userId),
+  getAdminUserDetail:     (token, userId)  => usersApi.getOne(token, typeof userId === "object" && userId !== null ? (userId.id ?? userId.userId) : userId),
   createAdminStaff:       (token, payload) => request('/api/v1/admin/users/staff', { method: 'POST', token, body: payload }),
-  updateAdminUserStatus:  (token, userId, status) => usersApi.patchBody(token, userId, { status }),
+  createAdminManager:     (token, payload) => request('/api/v1/admin/users/manager', { method: 'POST', token, body: payload }),
+  assignAdminUserCinema:  (token, userId, cinemaId) => request(`/api/v1/admin/users/${enc(typeof userId === "object" && userId !== null ? (userId.id ?? userId.userId) : userId)}/cinema`, { method: 'PUT', token, body: { cinemaId } }),
+  updateAdminUserStatus:  (token, userId, status) => usersApi.patchBody(token, typeof userId === "object" && userId !== null ? (userId.id ?? userId.userId) : userId, { status }),
 
   // ── Staff Profiles ─────────────────────────────────────────────────────────
   getAdminStaffProfiles:          (token, params = {}) => staffProfiles.getAll(token, params),
@@ -207,12 +209,12 @@ export const adminService = {
 
   // ── Showtime slots ─────────────────────────────────────────────────────────
   getAvailableShowtimeSlots: (token, params = {}) => request(`/api/v1/admin/showtimes/available-slots${buildQueryString(params)}`, { token }),
-
-  // ── Bookings / Giao dịch ───────────────────────────────────────────────────
-  getAdminBookings:     (token, params = {}) => bookingsApi.getAll(token, params),
   getAdminBooking:      (token, id)          => bookingsApi.getOne(token, id),
   // Hủy vé; nếu vé đã thanh toán (PAID) backend tự hoàn tiền về CineWallet của khách.
-  cancelBookingAdmin:   (token, id, reason)  => request(`/api/v1/admin/bookings/${enc(id)}${reason ? `?reason=${enc(reason)}` : ''}`, { method: 'DELETE', token }),
+  cancelBookingAdmin:   (token, id, reason)  => request(`/api/v1/admin/bookings/${enc(id)}/cancel`, { method: 'POST', token, body: { reason: reason || 'Hủy vé theo yêu cầu' } }),
+  refundBookingAdmin:   (token, id, reason)  => request(`/api/v1/admin/bookings/${enc(id)}/refund`, { method: 'POST', token, body: { reason: reason || 'Hoàn tiền cho khách hàng' } }),
+  getTicketAuditLogs:   (token, params = {}) => request(`/api/v1/admin/bookings/audit-logs${buildQueryString(params)}`, { token }),
+  getAdminDashboardMetrics: (token, params = {}) => request(`/api/v1/admin/reports/dashboard${buildQueryString(params)}`, { token }),
 
 
   // ── Ticket Pricing ──────────────────────────────────────────────────────────

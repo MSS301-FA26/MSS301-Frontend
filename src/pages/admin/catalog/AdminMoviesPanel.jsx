@@ -2898,12 +2898,7 @@ export default function AdminMoviesPanel({ ctx }) {
                     title="Bấm để xem chi tiết phim"
                   >
                     {mv.posterUrl && mv.posterUrl !== 'https://res.cloudinary.com/dmcodhbcc/image/upload/v1784275470/cinemams/posters/placeholder.jpg' ? (
-                      <img
-                        src={mv.posterUrl}
-                        alt={mv.title}
-                        className="w-10 h-14 object-cover border border-white/[0.08] rounded-none hover:border-amber-400 transition"
-                        referrerPolicy="no-referrer"
-                      />
+                      <img src={mv.posterUrl} alt={mv.title} className="w-10 h-14 object-cover border border-white/[0.08] rounded-none hover:border-amber-400 transition" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80'; }} />
                     ) : (
                       <div className="w-10 h-14 bg-neutral-900 border border-white/10 flex items-center justify-center text-neutral-500 rounded-none hover:border-amber-400 transition">
                         <Film className="w-5 h-5" />

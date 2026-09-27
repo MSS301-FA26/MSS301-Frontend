@@ -24,8 +24,13 @@ export default function AdminCinemaPanel({ ctx = {} }) {
     addAuditLog = () => {},
     onCinemaChanged = () => {},
     isAdmin = false,
-    isManager = false
-  } = ctx;
+    isManager = false,
+    currentUser = null
+  } = ctx || {};
+
+  const userRole = (currentUser?.role || currentUser?.roles?.[0] || '').toUpperCase();
+  const isEffectiveAdmin = isAdmin || userRole.includes('ADMIN');
+  const isEffectiveManager = !isEffectiveAdmin && (isManager || userRole.includes('MANAGER'));
 
   const [cinemas, setCinemas] = useState([]);
   const [rooms, setRooms] = useState([]);
@@ -85,6 +90,9 @@ export default function AdminCinemaPanel({ ctx = {} }) {
   // Filtered cinemas
   const filteredCinemas = useMemo(() => {
     return cinemas.filter((c) => {
+      if (isEffectiveManager && currentUser?.cinemaId && String(c.id) !== String(currentUser.cinemaId)) {
+        return false;
+      }
       const matchSearch =
         !searchQuery ||
         c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -97,7 +105,7 @@ export default function AdminCinemaPanel({ ctx = {} }) {
 
       return matchSearch && matchCity && matchStatus;
     });
-  }, [cinemas, searchQuery, selectedCity, statusFilter]);
+  }, [cinemas, searchQuery, selectedCity, statusFilter, isEffectiveManager, currentUser?.cinemaId]);
 
   // Unique cities list
   const availableCities = useMemo(() => {
@@ -267,7 +275,7 @@ export default function AdminCinemaPanel({ ctx = {} }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {isAdmin && (
+            {isEffectiveAdmin && (
               <button
                 type="button"
                 onClick={handleOpenCreate}
@@ -291,19 +299,25 @@ export default function AdminCinemaPanel({ ctx = {} }) {
         {/* Quick Stats bar */}
         <div className="mt-7 grid grid-cols-2 gap-3 border-t border-white/10 pt-5 sm:grid-cols-4">
           <div className="border border-white/5 bg-black/40 p-3.5">
-            <span className="text-[9px] font-black uppercase tracking-wider text-neutral-500">Tổng cụm rạp</span>
-            <div className="mt-1 text-2xl font-black text-white">{cinemas.length}</div>
-          </div>
-          <div className="border border-white/5 bg-black/40 p-3.5">
-            <span className="text-[9px] font-black uppercase tracking-wider text-emerald-400">Đang hoạt động</span>
-            <div className="mt-1 text-2xl font-black text-emerald-400">
-              {cinemas.filter((c) => c.status === 'ACTIVE').length}
+            <span className="text-[9px] font-black uppercase tracking-wider text-neutral-500">
+              {isEffectiveAdmin ? 'Tổng cụm rạp' : 'Phạm vi quản lý'}
+            </span>
+            <div className="mt-1 text-2xl font-black text-white truncate">
+              {isEffectiveAdmin ? cinemas.length : (cinemas[0]?.name || 'Chi nhánh')}
             </div>
           </div>
           <div className="border border-white/5 bg-black/40 p-3.5">
-            <span className="text-[9px] font-black uppercase tracking-wider text-amber-400">Tỉnh / Thành phố</span>
-            <div className="mt-1 text-2xl font-black text-amber-400">
-              {availableCities.length || 1}
+            <span className="text-[9px] font-black uppercase tracking-wider text-emerald-400">Trạng thái</span>
+            <div className="mt-1 text-2xl font-black text-emerald-400">
+              {isEffectiveAdmin ? cinemas.filter((c) => c.status === 'ACTIVE').length : (cinemas[0]?.status || 'ACTIVE')}
+            </div>
+          </div>
+          <div className="border border-white/5 bg-black/40 p-3.5">
+            <span className="text-[9px] font-black uppercase tracking-wider text-amber-400">
+              {isEffectiveAdmin ? 'Tỉnh / Thành phố' : 'Địa bàn'}
+            </span>
+            <div className="mt-1 text-2xl font-black text-amber-400 truncate">
+              {isEffectiveAdmin ? (availableCities.length || 1) : (cinemas[0]?.city || 'Hồ Chí Minh')}
             </div>
           </div>
           <div className="border border-white/5 bg-black/40 p-3.5">
@@ -327,22 +341,24 @@ export default function AdminCinemaPanel({ ctx = {} }) {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* City Filter */}
-          <div className="flex items-center gap-1.5 border border-white/10 bg-black px-3 py-1.5 text-xs text-neutral-300">
-            <Globe2 className="h-3.5 w-3.5 text-amber-400" />
-            <select
-              value={selectedCity}
-              onChange={(e) => setSelectedCity(e.target.value)}
-              className="bg-transparent text-xs font-bold text-white outline-none cursor-pointer"
-            >
-              <option value="ALL" className="bg-neutral-900 text-white">Tất cả thành phố</option>
-              {availableCities.map((city) => (
-                <option key={city} value={city} className="bg-neutral-900 text-white">
-                  {city}
-                </option>
-              ))}
-            </select>
-          </div>
+          {/* City Filter (Admin Only) */}
+          {isEffectiveAdmin && (
+            <div className="flex items-center gap-1.5 border border-white/10 bg-black px-3 py-1.5 text-xs text-neutral-300">
+              <Globe2 className="h-3.5 w-3.5 text-amber-400" />
+              <select
+                value={selectedCity}
+                onChange={(e) => setSelectedCity(e.target.value)}
+                className="bg-transparent text-xs font-bold text-white outline-none cursor-pointer"
+              >
+                <option value="ALL" className="bg-neutral-900 text-white">Tất cả thành phố</option>
+                {availableCities.map((city) => (
+                  <option key={city} value={city} className="bg-neutral-900 text-white">
+                    {city}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Status Filter */}
           <div className="flex items-center border border-white/10 bg-black p-0.5 text-[9px] font-black uppercase tracking-wider">
@@ -386,7 +402,7 @@ export default function AdminCinemaPanel({ ctx = {} }) {
             <p className="mt-1 text-xs text-neutral-500">
               Thử thay đổi từ khóa tìm kiếm hoặc bấm nút "Thêm chi nhánh rạp mới".
             </p>
-            {isAdmin && (
+            {isEffectiveAdmin && (
               <button
                 onClick={handleOpenCreate}
                 className="mt-5 inline-flex items-center gap-2 border border-amber-500/40 bg-amber-500/10 px-5 py-2.5 text-[9px] font-black uppercase tracking-[0.2em] text-amber-400 hover:bg-amber-500 hover:text-black transition cursor-pointer"
@@ -462,7 +478,7 @@ export default function AdminCinemaPanel({ ctx = {} }) {
 
                   {/* Action buttons (Admin only) */}
                   <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-4">
-                    {isAdmin ? (
+                    {isEffectiveAdmin ? (
                       <>
                         <div className="flex items-center gap-2">
                           <button

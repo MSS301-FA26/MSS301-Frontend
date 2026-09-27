@@ -135,7 +135,11 @@ function formatVnd(val) {
 }
 
 export default function AdminRoomsPanel({ ctx }) {
-  const { getAdminToken, showToast: ctxToast, addAuditLog } = ctx;
+  const { getAdminToken, showToast: ctxToast, addAuditLog, isManager = false, isAdmin = false, currentUser = null } = ctx || {};
+  const userRole = (currentUser?.role || currentUser?.roles?.[0] || '').toUpperCase();
+  const isEffectiveAdmin = isAdmin || userRole.includes('ADMIN');
+  const isEffectiveManager = !isEffectiveAdmin && (isManager || userRole.includes('MANAGER'));
+  const managerCinemaId = isEffectiveManager && currentUser?.cinemaId ? String(currentUser.cinemaId) : null;
   const getTokenRef = useRef(getAdminToken);
   useEffect(() => { getTokenRef.current = getAdminToken; }, [getAdminToken]);
 
@@ -215,7 +219,7 @@ export default function AdminRoomsPanel({ ctx }) {
   const [isSaving, setIsSaving] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [cinemas, setCinemas] = useState([]);
-  const [selectedCinemaFilter, setSelectedCinemaFilter] = useState('ALL');
+  const [selectedCinemaFilter, setSelectedCinemaFilter] = useState(managerCinemaId || ctx?.assignedCinema?.id ? String(managerCinemaId || ctx?.assignedCinema?.id) : 'ALL');
 
   // Editor states
   const [roomName, setRoomName] = useState('');
@@ -344,7 +348,7 @@ export default function AdminRoomsPanel({ ctx }) {
       const list = Array.isArray(res) ? res : (res?.items || res?.content || []);
       setCinemas(list);
       if (list.length > 0) {
-        setSelectedCinemaFilter((prev) => (prev === 'ALL' || !prev) ? String(list[0].id) : prev);
+        setSelectedCinemaFilter((prev) => (isEffectiveManager || prev === 'ALL' || !prev) ? String(list[0].id) : prev);
       }
     } catch (e) {
       console.warn('Lỗi tải danh sách rạp:', e);
@@ -391,7 +395,7 @@ export default function AdminRoomsPanel({ ctx }) {
         if (cancelled) return;
         const list = Array.isArray(res) ? res : (res?.items || res?.content || []);
         setCinemas(list);
-        const defaultCId = list.length > 0 ? String(list[0].id) : 'ALL';
+        const defaultCId = managerCinemaId || (list.length > 0 ? String(list[0].id) : 'ALL');
         setSelectedCinemaFilter(defaultCId);
         // Sequential call: load rooms only after cinema is resolved
         await fetchRooms(null, defaultCId);
@@ -401,7 +405,7 @@ export default function AdminRoomsPanel({ ctx }) {
     };
     initData();
     return () => { cancelled = true; };
-  }, [fetchRooms]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fetchRooms, managerCinemaId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Warn on page unload if changes are unsaved
   useEffect(() => {
@@ -670,11 +674,11 @@ export default function AdminRoomsPanel({ ctx }) {
       return;
     }
 
-    // Kiểm tra trùng tên phòng với các phòng khác trong cùng rạp
-    const currentCinemaId = currentRoom.cinemaId;
-    const isDuplicate = rooms.some(
+    // Kiểm tra trùng tên phòng CHỈ với các phòng khác TRONG CÙNG RẠP (loại trừ chính nó)
+    const currentCinemaId = currentRoom.cinemaId || (selectedCinemaFilter !== 'ALL' ? Number(selectedCinemaFilter) : null);
+    const isDuplicate = currentCinemaId && rooms.some(
       r => r.id !== currentRoom.id &&
-           (!currentCinemaId || !r.cinemaId || r.cinemaId === currentCinemaId) &&
+           String(r.cinemaId) === String(currentCinemaId) &&
            r.name?.trim().toLowerCase() === cleanName.toLowerCase()
     );
     if (isDuplicate) {
@@ -690,6 +694,7 @@ export default function AdminRoomsPanel({ ctx }) {
         ...rows.map(r => r.seats.reduce((sum, s) => sum + (s === 'couple' ? 2 : 1), 0))
       );
       const roomPayload = {
+        cinemaId: currentCinemaId ? Number(currentCinemaId) : undefined,
         name: cleanName,
         roomType: roomType,
         rowCount: rows.length,
@@ -776,7 +781,9 @@ export default function AdminRoomsPanel({ ctx }) {
       await fetchRooms(currentRoom.id);
     } catch (err) {
       console.error('Save room error:', err);
-      const errMsg = (err.status === 409 || String(err.message).toLowerCase().includes('already exists') || String(err.message).toLowerCase().includes('tồn tại'))
+      const isNameConflict = (err.status === 409 || String(err.message).toLowerCase().includes('already exists') || String(err.message).toLowerCase().includes('tồn tại') || String(err.message).toLowerCase().includes('t?n t?i')) &&
+        (String(err.message).toLowerCase().includes('room') || String(err.message).toLowerCase().includes('phòng') || String(err.message).toLowerCase().includes('phng'));
+      const errMsg = isNameConflict
         ? `Tên phòng chiếu "${cleanName}" đã tồn tại trong rạp này. Vui lòng chọn tên khác!`
         : (err.message || 'Không thể lưu thay đổi phòng chiếu.');
       showToast(errMsg, 'error');
@@ -841,8 +848,11 @@ export default function AdminRoomsPanel({ ctx }) {
 
   const handleOpenAddModal = () => {
     setAddModalError('');
+    const defaultCinemaId = managerCinemaId || (selectedCinemaFilter !== 'ALL' ? String(selectedCinemaFilter) : (cinemas[0]?.id ? String(cinemas[0].id) : ''));
+    const currentCinemaRooms = rooms.filter(r => !defaultCinemaId || String(r.cinemaId) === String(defaultCinemaId));
     setAddModalForm({
-      name: `Phòng ${String(rooms.length + 1).padStart(2, '0')}`,
+      cinemaId: defaultCinemaId,
+      name: `Phòng ${String(currentCinemaRooms.length + 1).padStart(2, '0')}`,
       roomType: 'STANDARD',
       floor: 1,
       rowCount: 8,
@@ -866,9 +876,14 @@ export default function AdminRoomsPanel({ ctx }) {
       ? Number(addModalForm.cinemaId)
       : (selectedCinemaFilter !== 'ALL' ? Number(selectedCinemaFilter) : (cinemas[0]?.id || null));
 
-    // Kiểm tra trùng tên phòng ngay tại Client theo cụm rạp
+    if (!targetCinemaId) {
+      setAddModalError('Vui lòng chọn cụm rạp cho phòng chiếu.');
+      return;
+    }
+
+    // Kiểm tra trùng tên phòng ngay tại Client CHỈ trong cùng cụm rạp targetCinemaId
     const isDuplicate = rooms.some(
-      r => (!targetCinemaId || !r.cinemaId || r.cinemaId === targetCinemaId) &&
+      r => String(r.cinemaId) === String(targetCinemaId) &&
            r.name?.trim().toLowerCase() === cleanName.toLowerCase()
     );
     if (isDuplicate) {
@@ -923,7 +938,9 @@ export default function AdminRoomsPanel({ ctx }) {
       await fetchRooms(newRoom.id);
     } catch (err) {
       console.error('Lỗi khi tạo phòng chiếu:', err);
-      const errMsg = (err.status === 409 || String(err.message).toLowerCase().includes('already exists') || String(err.message).toLowerCase().includes('tồn tại'))
+      const isNameConflict = (err.status === 409 || String(err.message).toLowerCase().includes('already exists') || String(err.message).toLowerCase().includes('tồn tại') || String(err.message).toLowerCase().includes('t?n t?i')) &&
+        (String(err.message).toLowerCase().includes('room') || String(err.message).toLowerCase().includes('phòng') || String(err.message).toLowerCase().includes('phng'));
+      const errMsg = isNameConflict
         ? `Tên phòng chiếu "${cleanName}" đã tồn tại trong rạp này. Vui lòng chọn tên khác!`
         : (err.message || 'Không thể tạo phòng chiếu mới.');
       setAddModalError(errMsg);
@@ -1046,26 +1063,37 @@ export default function AdminRoomsPanel({ ctx }) {
 
           <div className="p-3 flex-1 flex flex-col min-h-0">
             {/* Cinema Selector Dropdown */}
-            {cinemas.length > 0 && (
+            {isEffectiveAdmin ? (
+              cinemas.length > 0 && (
+                <div className="relative mb-2.5 shrink-0">
+                  <div className="flex items-center gap-1.5 border border-[#252a31] bg-[#080a0d] px-2.5 py-1.5 text-xs text-neutral-300">
+                    <Building2 className="w-3.5 h-3.5 text-[#f5b800] shrink-0" />
+                    <select
+                      value={selectedCinemaFilter}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSelectedCinemaFilter(val);
+                        fetchRooms(null, val);
+                      }}
+                      className="w-full bg-transparent text-[11px] font-bold text-white outline-none cursor-pointer truncate"
+                    >
+                      <option value="ALL" className="bg-[#101318] text-white">Tất cả cụm rạp ({cinemas.length})</option>
+                      {cinemas.map((c) => (
+                        <option key={c.id} value={c.id} className="bg-[#101318] text-white">
+                          {c.name} ({c.city})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )
+            ) : (
               <div className="relative mb-2.5 shrink-0">
-                <div className="flex items-center gap-1.5 border border-[#252a31] bg-[#080a0d] px-2.5 py-1.5 text-xs text-neutral-300">
-                  <Building2 className="w-3.5 h-3.5 text-[#f5b800] shrink-0" />
-                  <select
-                    value={selectedCinemaFilter}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setSelectedCinemaFilter(val);
-                      fetchRooms(null, val);
-                    }}
-                    className="w-full bg-transparent text-[11px] font-bold text-white outline-none cursor-pointer truncate"
-                  >
-                    <option value="ALL" className="bg-[#101318] text-white">Tất cả cụm rạp ({cinemas.length})</option>
-                    {cinemas.map((c) => (
-                      <option key={c.id} value={c.id} className="bg-[#101318] text-white">
-                        {c.name} ({c.city})
-                      </option>
-                    ))}
-                  </select>
+                <div className="flex items-center gap-1.5 border border-cyan-500/30 bg-cyan-950/20 px-2.5 py-1.5 text-xs text-cyan-300">
+                  <Building2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                  <span className="text-[11px] font-bold truncate">
+                    {cinemas.find(c => String(c.id) === String(selectedCinemaFilter))?.name || (cinemas.length > 0 ? cinemas[0].name : ctx?.assignedCinema?.name || 'Chi nhánh của bạn')}
+                  </span>
                 </div>
               </div>
             )}
@@ -1785,9 +1813,10 @@ export default function AdminRoomsPanel({ ctx }) {
                     Thuộc cụm rạp
                   </label>
                   <select
+                    disabled={!isEffectiveAdmin}
                     value={addModalForm.cinemaId || (selectedCinemaFilter !== 'ALL' ? selectedCinemaFilter : (cinemas[0]?.id || ''))}
                     onChange={e => setAddModalForm({ ...addModalForm, cinemaId: e.target.value })}
-                    className="w-full h-9 bg-[#080a0d] border border-[#292e35] focus:border-[#f5b800] rounded-none px-3 text-xs text-white outline-none cursor-pointer"
+                    className={`w-full h-9 bg-[#080a0d] border border-[#292e35] ${!isEffectiveAdmin ? 'opacity-80 cursor-not-allowed text-neutral-400' : 'focus:border-[#f5b800] cursor-pointer'} rounded-none px-3 text-xs text-white outline-none`}
                   >
                     {cinemas.map(c => (
                       <option key={c.id} value={c.id} className="bg-[#101318] text-white">

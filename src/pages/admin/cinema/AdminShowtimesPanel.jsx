@@ -50,7 +50,11 @@ const DEFAULT_PRICES = {
 };
 
 export default function AdminShowtimesPanel({ ctx }) {
-  const { getAdminToken, showToast, moviesList } = ctx || {};
+  const { getAdminToken, showToast, moviesList, isManager = false, isAdmin = false, currentUser = null } = ctx || {};
+  const userRole = (currentUser?.role || currentUser?.roles?.[0] || '').toUpperCase();
+  const isEffectiveAdmin = isAdmin || userRole.includes('ADMIN');
+  const isEffectiveManager = !isEffectiveAdmin && (isManager || userRole.includes('MANAGER'));
+  const managerCinemaId = isEffectiveManager && currentUser?.cinemaId ? String(currentUser.cinemaId) : null;
   const getTokenRef = useRef(getAdminToken);
   useEffect(() => { getTokenRef.current = getAdminToken; }, [getAdminToken]);
 
@@ -62,7 +66,7 @@ export default function AdminShowtimesPanel({ ctx }) {
   const [shows, setShows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [cinemas, setCinemas] = useState([]);
-  const [selectedCinemaId, setSelectedCinemaId] = useState('ALL');
+  const [selectedCinemaId, setSelectedCinemaId] = useState(managerCinemaId || ctx?.assignedCinema?.id ? String(managerCinemaId || ctx?.assignedCinema?.id) : 'ALL');
   const [selId, setSelId] = useState(null);
   const [selMovie, setSelMovie] = useState(null);
   const [tabIdx, setTabIdx] = useState(0); // 0: detail, 1: overview, 2: warnings
@@ -127,7 +131,7 @@ export default function AdminShowtimesPanel({ ctx }) {
       const list = Array.isArray(res) ? res : (res?.items || res?.content || []);
       setCinemas(list);
       if (list.length > 0) {
-        setSelectedCinemaId((prev) => (prev === 'ALL' || !prev) ? String(list[0].id) : prev);
+        setSelectedCinemaId((prev) => (isEffectiveManager || prev === 'ALL' || !prev) ? String(list[0].id) : prev);
       }
     } catch (e) {
       console.warn('Lỗi lấy danh sách rạp:', e);
@@ -1058,26 +1062,35 @@ export default function AdminShowtimesPanel({ ctx }) {
         </div>
 
         {/* Cinema Selector */}
-        {cinemas.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#161b22', padding: '4px 10px', borderRadius: '8px', border: '1px solid var(--line)', marginLeft: '8px' }}>
+        {isEffectiveAdmin ? (
+          cinemas.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#161b22', padding: '4px 10px', borderRadius: '8px', border: '1px solid var(--line)', marginLeft: '8px' }}>
+              <span style={{ fontSize: '13px' }}>🏢</span>
+              <select
+                value={selectedCinemaId}
+                onChange={(e) => {
+                  const cId = e.target.value;
+                  setSelectedCinemaId(cId);
+                  fetchRooms(cId);
+                  fetchShowtimes(date, cId);
+                }}
+                style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '12px', fontWeight: 700, outline: 'none', cursor: 'pointer' }}
+              >
+                <option value="ALL" style={{ background: '#0d1117' }}>Tất cả cụm rạp ({cinemas.length})</option>
+                {cinemas.map(c => (
+                  <option key={c.id} value={c.id} style={{ background: '#0d1117' }}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(6,182,212,0.1)', padding: '4px 10px', borderRadius: '8px', border: '1px solid rgba(6,182,212,0.3)', marginLeft: '8px' }}>
             <span style={{ fontSize: '13px' }}>🏢</span>
-            <select
-              value={selectedCinemaId}
-              onChange={(e) => {
-                const cId = e.target.value;
-                setSelectedCinemaId(cId);
-                fetchRooms(cId);
-                fetchShowtimes(date, cId);
-              }}
-              style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '12px', fontWeight: 700, outline: 'none', cursor: 'pointer' }}
-            >
-              <option value="ALL" style={{ background: '#0d1117' }}>Tất cả cụm rạp ({cinemas.length})</option>
-              {cinemas.map(c => (
-                <option key={c.id} value={c.id} style={{ background: '#0d1117' }}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+            <span style={{ color: '#06b6d4', fontSize: '11px', fontWeight: 700 }}>
+              {cinemas.find(c => String(c.id) === String(selectedCinemaId))?.name || (cinemas.length > 0 ? cinemas[0].name : ctx?.assignedCinema?.name || 'Chi nhánh của bạn')}
+            </span>
           </div>
         )}
 

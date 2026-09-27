@@ -144,7 +144,7 @@ export default function AppRoutes() {
       <Route path="/manager/rooms" element={<Navigate to="/admin/rooms" replace />} />
       <Route path="/manager/inventory" element={<Navigate to="/admin/foods" replace />} />
       <Route path="/manager/bookings" element={<Navigate to="/admin/tickets" replace />} />
-      <Route path="/manager/staff" element={<Navigate to="/admin/users" replace />} />
+      <Route path="/manager/staff" element={<Navigate to="/admin/staff" replace />} />
       <Route path="/manager/reports" element={<Navigate to="/admin/statistics" replace />} />
       <Route path="/manager/audit-logs" element={<Navigate to="/admin/audit" replace />} />
       <Route path="/manager/*" element={<Navigate to="/admin/overview" replace />} />

@@ -17,8 +17,18 @@ export function ManagerCinemaProvider({ children }) {
     try {
       const { accessToken } = getStoredAuth();
       if (!accessToken) throw new Error('Chưa đăng nhập');
-      const data = await request('/api/v1/manager/cinemas', { token: accessToken });
-      const items = Array.isArray(data) ? data : [];
+      let items = [];
+      try {
+        const data = await request('/api/v1/admin/cinemas', { token: accessToken });
+        items = Array.isArray(data) ? data : (data?.items || data?.content || []);
+      } catch (e) {
+        try {
+          const data = await request('/api/v1/manager/cinemas', { token: accessToken });
+          items = Array.isArray(data) ? data : (data?.items || data?.content || []);
+        } catch (err2) {
+          console.warn('Lỗi lấy danh sách rạp manager:', err2);
+        }
+      }
       setCinemas(items);
 
       if (items.length > 0) {

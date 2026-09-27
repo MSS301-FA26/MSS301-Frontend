@@ -41,8 +41,8 @@ export const hasBackendStaffAccess = (accessToken, user = null) => {
 
 const resolveRole = (roles = []) => {
   const normalized = roles.map((role) => String(role).toUpperCase());
-  if (normalized.includes('MANAGER') || normalized.includes('ROLE_MANAGER')) return 'manager';
   if (ADMIN_ACCESS_OVERRIDE || normalized.includes('ADMIN') || normalized.includes('ROLE_ADMIN')) return 'admin';
+  if (normalized.includes('MANAGER') || normalized.includes('ROLE_MANAGER')) return 'manager';
   if (normalized.includes('STAFF') || normalized.includes('ROLE_STAFF')) return 'staff';
   return 'user';
 };
@@ -74,6 +74,7 @@ export const normalizeUser = (user, roles = user?.roles || [], accessToken = nul
 
   return {
     ...user,
+    cinemaId: user?.cinemaId ?? tokenPayload?.cinemaId ?? null,
     roles: resolvedRoles,
     name: user.fullName || user.name || user.email,
     role: resolveRole(resolvedRoles),

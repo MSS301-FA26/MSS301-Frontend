@@ -1683,7 +1683,7 @@ export default function BookingPage() {
               <span className="text-xs font-bold tracking-wider text-amber-500 uppercase block">CHI TIẾT HÓA ĐƠN</span>
 
               <div className="flex items-start gap-4 border-b border-white/10 pb-4">
-                <img src={movie.posterUrl} alt={movie.title} className="h-20 w-14 object-cover rounded-lg border border-white/10 shrink-0" />
+                <img src={movie.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80'} alt={movie.title} className="h-20 w-14 object-cover rounded-lg border border-white/10 shrink-0" onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80'; }} />
                 <div>
                   <h4 className="text-sm font-bold text-white uppercase">{movie.title}</h4>
                   <p className="text-xs text-neutral-400">{[selectedShowtime?.format, selectedShowtime?.startTime?.slice(11, 16)].filter(Boolean).join(' • ')}</p>
@@ -2946,11 +2946,7 @@ export default function BookingPage() {
         <div className={`${bookingStep !== 'combos' ? 'lg:col-span-3' : 'lg:col-span-4'} border border-white/10 bg-neutral-950 p-4 sm:p-5 rounded-2xl space-y-4 shadow-xl sticky top-20`}>
           {/* Movie Overview Header */}
           <div className="flex items-start gap-3 border-b border-white/10 pb-3.5">
-            <img
-              src={movie.posterUrl}
-              alt={movie.title}
-              className="h-20 w-14 object-cover rounded-lg border border-white/10 shrink-0 shadow"
-            />
+            <img src={movie.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80'} alt={movie.title} className="h-20 w-14 object-cover rounded-lg border border-white/10 shrink-0 shadow" onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80'; }} />
             <div className="min-w-0 flex-1 space-y-1">
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded border uppercase ${ageBadgeMeta.bg}`}>

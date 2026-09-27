@@ -743,10 +743,11 @@ export default function DetailView() {
             <div className="md:col-span-4 lg:col-span-4 flex flex-col items-center md:items-start space-y-4">
               <div className="relative w-64 sm:w-72 aspect-[2/3] overflow-hidden rounded-xl border border-white/15 shadow-2xl shadow-black/80 bg-neutral-950 group">
                 <img
-                  src={movie.posterUrl}
+                  src={movie.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80'}
                   alt={movie.title}
                   className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                   referrerPolicy="no-referrer"
+                  onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80'; }}
                 />
 
                 {/* Age Rating Badge */}
@@ -1204,10 +1205,11 @@ export default function DetailView() {
                     <div className="aspect-[2/3] w-full overflow-hidden bg-black relative">
                       {rec.posterUrl ? (
                         <img
-                          src={rec.posterUrl}
+                          src={rec.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80'}
                           alt={rec.title}
                           loading="lazy"
                           className="h-full w-full object-cover opacity-85 group-hover:opacity-100 group-hover:scale-105 transition duration-500"
+                          onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80'; }}
                         />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center text-[10px] uppercase tracking-widest text-neutral-600">

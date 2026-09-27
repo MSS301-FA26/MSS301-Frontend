@@ -76,7 +76,7 @@ const getNavGroup = (section) => {
   if (['foods', 'fnb-report'].includes(section)) return 'fnb';
   if (['cinema', 'rooms', 'showtimes', 'tickets', 'transactions', 'showtime-incidents'].includes(section)) return 'cinema';
   if (['statistics', 'audit'].includes(section)) return 'insights';
-  if (['users', 'loyalty', 'reviews', 'cinewallet'].includes(section)) return 'system';
+  if (['users', 'staff', 'loyalty', 'reviews', 'cinewallet'].includes(section)) return 'system';
   return null;
 };
 
@@ -646,16 +646,29 @@ export default function AdminDashboard({
     }
   };
 
-  const handleSelectAdminUser = async (userId) => {
+  const handleSelectAdminUser = async (userOrId) => {
+    if (!userOrId) {
+      setSelectedAdminUser(null);
+      return;
+    }
+
+    const userId = typeof userOrId === 'object' ? (userOrId.id ?? userOrId.userId) : userOrId;
+
+    if (typeof userOrId === 'object' && userOrId.id) {
+      setSelectedAdminUser(userOrId);
+    }
+
     const token = getAdminToken();
-    if (!token) return;
+    if (!token || !userId) return;
 
     setIsUserDetailLoading(true);
     try {
       const user = await adminService.getAdminUserDetail(token, userId);
-      setSelectedAdminUser(user);
+      if (user) {
+        setSelectedAdminUser(user);
+      }
     } catch (error) {
-      showToast(error.message || 'Không thể tải chi tiết người dùng.');
+      showToast(error.message || 'Kh�ng th? t?i chi ti?t ngu?i d�ng.');
     } finally {
       setIsUserDetailLoading(false);
     }
@@ -914,38 +927,76 @@ export default function AdminDashboard({
     });
   };
 
-  // Real headline metrics from /api/v1/admin/reports (last 30 days) — replaces the old simulated numbers.
+  // Quản lý thông tin rạp phân công cho Manager / Hệ thống rạp cho Admin
+  const [assignedCinema, setAssignedCinema] = useState(null);
+
+  useEffect(() => {
+    const token = getAdminToken(false);
+    if (!token) return;
+    let cancelled = false;
+    adminService.getAdminCinemas(token)
+      .then((res) => {
+        if (cancelled) return;
+        const list = Array.isArray(res) ? res : (res?.items || res?.content || []);
+        if (list && list.length > 0) {
+          const target = currentUser?.cinemaId
+            ? (list.find((c) => String(c.id) === String(currentUser.cinemaId)) || list[0])
+            : list[0];
+          setAssignedCinema(target);
+        }
+      })
+      .catch((e) => {
+        console.warn('Lỗi lấy thông tin cụm rạp phân công:', e);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.cinemaId]);
+
+  // Real headline metrics from /api/v1/admin/reports/dashboard — lấy đúng theo rạp phân công
   const [overviewMetrics, setOverviewMetrics] = useState({ revenue: 0, tickets: 0, fillRate: 0 });
   useEffect(() => {
     if (activeTab !== 'overview') return undefined;
     const token = getAdminToken(false);
     if (!token) return undefined;
     let cancelled = false;
-    const to = new Date().toISOString().slice(0, 10);
-    const fromDate = new Date();
-    fromDate.setDate(fromDate.getDate() - 30);
-    const from = fromDate.toISOString().slice(0, 10);
-    Promise.all([
-      adminService.getRevenueReport(token, { from, to }),
-      adminService.getRoomOccupancy(token, { from, to })
-    ])
-      .then(([revenue, rooms]) => {
+    const cid = isManager ? (assignedCinema?.id || currentUser?.cinemaId) : null;
+    const params = cid ? { cinemaId: cid } : {};
+
+    adminService.getAdminDashboardMetrics(token, params)
+      .then((metrics) => {
         if (cancelled) return;
-        const occupancyList = Array.isArray(rooms) ? rooms : [];
-        const avgFill = occupancyList.length
-          ? occupancyList.reduce((acc, room) => acc + (room.occupancyRate || 0), 0) / occupancyList.length
-          : 0;
         setOverviewMetrics({
-          revenue: Number(revenue?.totalRevenue || 0),
-          tickets: Number(revenue?.totalTicketsSold || 0),
-          fillRate: Math.round(avgFill * 10) / 10
+          revenue: Number(metrics?.totalRevenue || 0),
+          tickets: Number(metrics?.totalPaidTickets || 0),
+          fillRate: Math.round(Number(metrics?.occupancyRate || 0) * 10) / 10
         });
       })
-      .catch(() => { /* keep zeros */ });
+      .catch(() => {
+        const to = new Date().toISOString().slice(0, 10);
+        const fromDate = new Date();
+        fromDate.setDate(fromDate.getDate() - 30);
+        const from = fromDate.toISOString().slice(0, 10);
+        Promise.all([
+          adminService.getRevenueReport(token, { from, to, ...(cid ? { cinemaId: cid } : {}) }).catch(() => null),
+          adminService.getRoomOccupancy(token, { from, to, ...(cid ? { cinemaId: cid } : {}) }).catch(() => null)
+        ]).then(([revenue, rooms]) => {
+          if (cancelled) return;
+          const occupancyList = Array.isArray(rooms) ? rooms : [];
+          const avgFill = occupancyList.length
+            ? occupancyList.reduce((acc, room) => acc + (room.occupancyRate || 0), 0) / occupancyList.length
+            : 0;
+          setOverviewMetrics({
+            revenue: Number(revenue?.totalRevenue || 0),
+            tickets: Number(revenue?.totalTicketsSold || 0),
+            fillRate: Math.round(avgFill * 10) / 10
+          });
+        }).catch(() => {});
+      });
     return () => {
       cancelled = true;
     };
-  }, [activeTab]);
+  }, [activeTab, assignedCinema?.id, currentUser?.cinemaId, isManager]);
   const totalBookingsCount = overviewMetrics.tickets;
   const calculatedRevenue = overviewMetrics.revenue;
   const averageFillRate = overviewMetrics.fillRate;
@@ -1433,7 +1484,7 @@ export default function AdminDashboard({
     }
 
     setShowtimeSuccessMessage(`Kích hoạt thành công suất chiếu mới của tác phẩm: ${targetMovie.title}`);
-    addAuditLog('Phát phối suất chiếu mới', `${targetMovie.title} tại ${publicCinema?.name || 'rạp chiếu'}`);
+    addAuditLog('Phát phối suất chiếu mới', `${targetMovie.title} tại ${assignedCinema?.name || publicCinema?.name || 'rạp chiếu'}`);
 
     setTimeout(() => {
       setShowtimeSuccessMessage('');
@@ -1624,7 +1675,9 @@ export default function AdminDashboard({
     setMoviesList,
     bookedTickets,
     setBookedTickets,
-    publicCinema,
+    publicCinema: (isManager && assignedCinema) ? assignedCinema : publicCinema,
+    assignedCinema,
+    selectedCinemaId: isManager ? (assignedCinema?.id || currentUser?.cinemaId) : null,
     onCinemaChanged,
     onSelectMovie,
     showToast,
@@ -1650,6 +1703,7 @@ export default function AdminDashboard({
     statistics: AdminStatsPanel,
     audit: AdminAuditPanel,
     users: AdminUsersPanel,
+  staff: AdminUsersPanel,
     reviews: AdminReviewsPanel,
     cinewallet: AdminWalletPanel,
     loyalty: AdminLoyaltyPanel,
@@ -1715,6 +1769,7 @@ export default function AdminDashboard({
                 { icon: ShieldAlert, tab: 'audit', sound: 508 },
                 null,
                 { icon: Users, tab: 'users', sound: 510 },
+                { icon: Shield, tab: 'staff', sound: 512 },
                 { icon: MessageSquare, tab: 'reviews', sound: 515 },
                 { icon: DollarSign, tab: 'loyalty', sound: 520 },
                 { icon: Wallet, tab: 'cinewallet', sound: 525 },
@@ -1797,10 +1852,23 @@ export default function AdminDashboard({
               onClick={() => navigate('/admin/cinema')}
               className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/[0.02] border border-transparent hover:border-white/[0.04] transition-colors group"
             >
-              <MapPin className="h-3 w-3 text-neutral-200 shrink-0 group-hover:text-amber-500/60 transition-colors" />
+              <MapPin className="h-3 w-3 text-amber-400 shrink-0 group-hover:text-amber-300 transition-colors" />
               <div className="min-w-0 text-left">
-                <span className="block text-[10px] font-medium text-neutral-200 group-hover:text-neutral-200 truncate transition-colors leading-tight">{publicCinema?.name || 'CineAI Central'}</span>
-                <span className="block text-[7.5px] font-mono text-neutral-200 truncate">{publicCinema?.city || 'Hồ Chí Minh'}</span>
+                {isAdmin ? (
+                  <>
+                    <span className="block text-[10px] font-medium text-neutral-200 group-hover:text-neutral-100 truncate transition-colors leading-tight">Hệ thống CinemaAI</span>
+                    <span className="block text-[7.5px] font-mono text-neutral-400 truncate">Toàn bộ chi nhánh</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="block text-[10px] font-medium text-neutral-200 group-hover:text-neutral-100 truncate transition-colors leading-tight">
+                      {assignedCinema?.name || (currentUser?.cinemaId ? `Rạp #${currentUser.cinemaId}` : 'Chi nhánh của bạn')}
+                    </span>
+                    <span className="block text-[7.5px] font-mono text-neutral-400 truncate">
+                      {assignedCinema?.city || assignedCinema?.address || 'Khu vực quản lý'}
+                    </span>
+                  </>
+                )}
               </div>
             </button>
           )}
@@ -1865,7 +1933,7 @@ export default function AdminDashboard({
           >
             <User className="h-3 w-3 text-neutral-300 shrink-0 group-hover:text-amber-400/60 transition-colors" />
             <span className="text-[10px] font-medium text-neutral-200 group-hover:text-amber-400/70 transition-colors">
-              {isAdmin ? 'Admin' : (currentUser?.name || 'Staff')}
+              {isAdmin ? 'Admin' : `${currentUser?.name || currentUser?.fullName || 'Manager'} • ${assignedCinema?.name || 'Chi nhánh'}`}
             </span>
           </button>
         </div>

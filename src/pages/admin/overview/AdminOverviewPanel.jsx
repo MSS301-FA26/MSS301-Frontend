@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import {
-  DollarSign, Ticket, ReceiptText, BarChart2, Users,
+  Building2, AlertTriangle, AlertCircle, DollarSign, Ticket, ReceiptText, BarChart2, Users,
   TrendingUp, TrendingDown, BadgeDollarSign, Activity,
   ArrowUpRight, Cpu, Shield, RefreshCw, ShoppingBag,
   Coffee, Film, Layers, PieChart as PieIcon, Sparkles
@@ -155,7 +155,34 @@ const ChartCard = ({ children, style = {} }) => (
 );
 
 export default function AdminOverviewPanel({ ctx }) {
-  const { activeTab, getAdminToken, playPulseSound } = ctx;
+  const {
+    activeTab,
+    getAdminToken,
+    playPulseSound,
+    isAdmin = false,
+    isManager = false,
+    currentUser = null,
+    onSectionChange = () => {}
+  } = ctx;
+
+  const isEffectiveAdmin = Boolean(
+    isAdmin ||
+    currentUser?.role === 'admin' ||
+    (currentUser?.roles || []).some((r) => String(r).toUpperCase() === 'ADMIN' || String(r).toUpperCase() === 'ROLE_ADMIN')
+  );
+  const isEffectiveManager = !isEffectiveAdmin && Boolean(
+    isManager ||
+    currentUser?.role === 'manager' ||
+    (currentUser?.roles || []).some((r) => String(r).toUpperCase() === 'MANAGER' || String(r).toUpperCase() === 'ROLE_MANAGER')
+  );
+
+  const [cinemas, setCinemas] = useState([]);
+  const [selectedCinemaId, setSelectedCinemaId] = useState(
+    isEffectiveManager && (currentUser?.cinemaId || ctx?.assignedCinema?.id)
+      ? String(currentUser?.cinemaId || ctx?.assignedCinema?.id)
+      : 'ALL'
+  );
+  const [dashboardMetrics, setDashboardMetrics] = useState(null);
 
   const [rangeDays, setRangeDays] = useState(30);
   const [activeSection, setActiveSection] = useState("ALL");
@@ -169,12 +196,44 @@ export default function AdminOverviewPanel({ ctx }) {
   const [recentAuditLogs, setRecentAuditLogs] = useState([]);
   const [lastRefresh, setLastRefresh] = useState(new Date());
 
+  // Load Cinemas
+  useEffect(() => {
+    const token = getAdminToken?.(false);
+    if (!token) return;
+    adminService.getAdminCinemas(token)
+      .then((res) => {
+        const list = Array.isArray(res) ? res : (res?.items || res?.content || []);
+        setCinemas(list);
+        if (isEffectiveManager && list.length > 0) {
+          setSelectedCinemaId(String(list[0].id));
+        }
+      })
+      .catch(() => {});
+  }, [getAdminToken, isEffectiveManager]);
+
+  const cinemaMap = useMemo(() => {
+    const map = {};
+    (cinemas || []).forEach((c) => {
+      if (c?.id) map[c.id] = c.name || `Rạp #${c.id}`;
+    });
+    return map;
+  }, [cinemas]);
+
+  // Load Dashboard Data
   useEffect(() => {
     if (activeTab !== "overview") return undefined;
     const token = getAdminToken?.(false);
     if (!token) return undefined;
     let cancelled = false;
     const params = { from: isoDaysAgo(rangeDays), to: isoDaysAgo(0) };
+
+    const metricsParams = {};
+    if (isEffectiveManager && currentUser?.cinemaId) {
+      metricsParams.cinemaId = currentUser.cinemaId;
+    } else if (selectedCinemaId !== 'ALL') {
+      metricsParams.cinemaId = Number(selectedCinemaId);
+    }
+
     setIsLoadingReports(true);
     Promise.all([
       adminService.getRevenueReport(token, params).catch(() => null),
@@ -183,8 +242,9 @@ export default function AdminOverviewPanel({ ctx }) {
       adminService.getAuditLogs(token, { page: 0, size: 8 }).catch(() => null),
       adminService.getDailyOccupancy(token, params).catch(() => []),
       adminService.getConcessionSales(token, params).catch(() => null),
+      adminService.getAdminDashboardMetrics(token, metricsParams).catch(() => null),
     ])
-      .then(([revenue, loyalty, movies, audit, daily, concessions]) => {
+      .then(([revenue, loyalty, movies, audit, daily, concessions, metrics]) => {
         if (cancelled) return;
         setRevenueReport(revenue || null);
         setLoyaltyReport(loyalty || null);
@@ -198,11 +258,12 @@ export default function AdminOverviewPanel({ ctx }) {
           user: log.actorEmail || "hệ thống",
         })));
         setConcessionReport(concessions || null);
+        setDashboardMetrics(metrics || null);
         setLastRefresh(new Date());
       })
       .finally(() => { if (!cancelled) setIsLoadingReports(false); });
     return () => { cancelled = true; };
-  }, [activeTab, rangeDays, getAdminToken]);
+  }, [activeTab, rangeDays, getAdminToken, selectedCinemaId]);
 
   if (activeTab !== "overview") return null;
 
@@ -228,26 +289,30 @@ export default function AdminOverviewPanel({ ctx }) {
       }));
     }
     const buckets = new Map();
-    dailyOccupancy.forEach((d) => {
-      if (!d.date) return;
-      const date = new Date(`${d.date}T00:00:00`);
-      let key; let label;
-      if (occupancyGroupBy === "week") {
-        const monday = new Date(date);
-        monday.setDate(date.getDate() - ((date.getDay() + 6) % 7));
-        key = monday.toISOString().slice(0, 10);
-        label = `Tuần ${String(monday.getDate()).padStart(2, "0")}/${String(monday.getMonth() + 1).padStart(2, "0")}`;
+    for (const d of dailyOccupancy) {
+      if (!d.date) continue;
+      const [year, month, day] = d.date.split("-").map(Number);
+      let bucketKey = "";
+      let bucketLabel = "";
+      if (occupancyGroupBy === "month") {
+        bucketKey = `${year}-${String(month).padStart(2, "0")}`;
+        bucketLabel = `T${month}/${year}`;
       } else {
-        key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-        label = `Th${date.getMonth() + 1}/${date.getFullYear()}`;
+        const dt = new Date(year, month - 1, day);
+        const dayOfWeek = (dt.getDay() + 6) % 7;
+        const monday = new Date(dt);
+        monday.setDate(dt.getDate() - dayOfWeek);
+        bucketKey = monday.toISOString().slice(0, 10);
+        bucketLabel = `${String(monday.getDate()).padStart(2, "0")}/${String(monday.getMonth() + 1).padStart(2, "0")}`;
       }
-      const bucket = buckets.get(key) || { label, sold: 0, capacity: 0, shows: 0 };
-      bucket.sold += Number(d.ticketsSold || 0);
-      bucket.capacity += Number(d.totalCapacity || 0);
-      bucket.shows += Number(d.totalShowtimes || 0);
-      buckets.set(key, bucket);
-    });
-    return [...buckets.entries()]
+      const existing = buckets.get(bucketKey) || { label: bucketLabel, sold: 0, capacity: 0, shows: 0, count: 0 };
+      existing.sold += Number(d.ticketsSold || 0);
+      existing.capacity += Number(d.totalCapacity || 0);
+      existing.shows += Number(d.totalShowtimes || 0);
+      existing.count += 1;
+      buckets.set(bucketKey, existing);
+    }
+    return Array.from(buckets.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([, b]) => ({
         ...b,
@@ -305,13 +370,50 @@ export default function AdminOverviewPanel({ ctx }) {
 
   const totalFnBSourceQuantity = concessionSourcesData.reduce((acc, curr) => acc + curr.value, 0);
 
-  // Top overall KPI Strip
+  // Multi-cinema standard metrics
+  const totalPaidRevenue = dashboardMetrics?.totalRevenue != null ? Number(dashboardMetrics.totalRevenue) : Number(effectiveRevenue.totalRevenue || 0);
+  const totalPaidTickets = dashboardMetrics?.totalPaidTickets != null ? Number(dashboardMetrics.totalPaidTickets) : Number(effectiveRevenue.totalTicketsSold || 0);
+  const occupancyRate = dashboardMetrics?.occupancyRate != null ? Number(dashboardMetrics.occupancyRate) : (dailyOccupancy.length ? (dailyOccupancy.reduce((s, d) => s + (d.occupancyRate || 0), 0) / dailyOccupancy.length) : 0);
+  const totalCancelledTickets = Number(dashboardMetrics?.totalCancelledTickets || 0);
+  const totalRefundedAmount = Number(dashboardMetrics?.totalRefundedAmount || 0);
+  const totalRefundedTickets = Number(dashboardMetrics?.totalRefundedTickets || 0);
+
   const primaryKpis = [
-    { label: "TỔNG DOANH THU PHIM & VÉ", value: fmtVND(effectiveRevenue.totalRevenue), icon: DollarSign, accent: "#f59e0b", sub: `${rangeDays} ngày gần nhất` },
-    { label: "SỐ LƯỢNG VÉ BÁN RA",        value: `${fmtNumber(effectiveRevenue.totalTicketsSold)} vé`, icon: Ticket, accent: "#06b6d4", sub: `Trung bình ~${Math.round(effectiveRevenue.totalTicketsSold / Math.max(1, rangeDays))} vé/ngày` },
-    { label: "BẮP NƯỚC BÁN RA",           value: `${fmtNumber(fnbTotalItems)} món`, icon: ShoppingBag, accent: "#10b981", sub: `Doanh thu F&B: ${fmtVND(fnbTotalRevenue)}` },
-    { label: "DOANH THU BẮP NƯỚC (F&B)",   value: fmtVND(fnbTotalRevenue), icon: BadgeDollarSign, accent: "#a855f7", sub: `${fmtNumber(fnbTotalOrders)} đơn hàng F&B` },
-    { label: "GIAO DỊCH THÀNH CÔNG",    value: `${fmtNumber(effectiveRevenue.totalTransactions)} GD`, icon: ReceiptText, accent: "#f43f5e", sub: `${rangeDays} ngày gần nhất` },
+    {
+      label: "DOANH THU THỰC THU (ĐÃ TRẢ)",
+      value: fmtVND(totalPaidRevenue),
+      icon: DollarSign,
+      accent: "#10b981",
+      sub: "Chỉ tính vé thanh toán & sử dụng"
+    },
+    {
+      label: "SỐ VÉ ĐÃ BÁN RA",
+      value: `${fmtNumber(totalPaidTickets)} vé`,
+      icon: Ticket,
+      accent: "#f59e0b",
+      sub: isEffectiveManager ? "Vé rạp phân công" : "Vé toàn hệ thống"
+    },
+    {
+      label: "TỶ LỆ LẤP ĐẦY RẠP",
+      value: `${occupancyRate.toFixed(1)}%`,
+      icon: Activity,
+      accent: "#06b6d4",
+      sub: "Ghế có người / Tổng công suất"
+    },
+    {
+      label: "SỐ VÉ ĐÃ HỦY",
+      value: `${fmtNumber(totalCancelledTickets)} vé`,
+      icon: ReceiptText,
+      accent: "#f43f5e",
+      sub: "Đã hủy & giải phóng ghế"
+    },
+    {
+      label: "TỔNG TIỀN ĐÃ HOÀN",
+      value: fmtVND(totalRefundedAmount),
+      icon: BadgeDollarSign,
+      accent: "#a855f7",
+      sub: `${fmtNumber(totalRefundedTickets)} vé đã hoàn tiền về ví`
+    },
   ];
 
   const loyaltyHealthLabel = effectiveLoyalty.totalBurnedPoints > 0
@@ -363,10 +465,10 @@ export default function AdminOverviewPanel({ ctx }) {
             </div>
             <div>
               <p style={{ margin: 0, fontSize: 8.5, fontWeight: 800, color: "rgba(255,255,255,0.35)", letterSpacing: "0.2em", textTransform: "uppercase", fontFamily: "monospace" }}>
-                Analytics & Performance Report
+                {isEffectiveAdmin ? 'CENTRAL ANALYTICS & DASHBOARD' : 'CINEMA BRANCH ANALYTICS'}
               </p>
               <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#fff", fontFamily: "Inter, sans-serif", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
-                Tổng quan hệ thống & Báo cáo số liệu
+                {isEffectiveAdmin ? 'Tổng quan hệ thống & Báo cáo số liệu' : 'Báo cáo & Hoạt động Cụm rạp'}
               </h1>
             </div>
           </div>
@@ -383,28 +485,54 @@ export default function AdminOverviewPanel({ ctx }) {
           </p>
         </div>
 
-        {/* Range presets */}
-        <div style={{ display: "flex", alignItems: "center", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(0,0,0,0.4)" }}>
-          {RANGE_PRESETS.map((preset) => {
-            const isActive = rangeDays === preset.days;
-            return (
-              <button
-                key={preset.days}
-                type="button"
-                onClick={() => { playPulseSound?.(500, "sine", 0.03); setRangeDays(preset.days); }}
-                style={{
-                  padding: "8px 20px", fontSize: 10, fontWeight: 800,
-                  fontFamily: "Inter, sans-serif", border: "none",
-                  borderRight: "1px solid rgba(255,255,255,0.06)",
-                  cursor: "pointer", transition: "all 0.15s",
-                  background: isActive ? "rgba(245,158,11,0.15)" : "transparent",
-                  color: isActive ? "#f59e0b" : "rgba(255,255,255,0.4)",
-                }}
+        {/* Cinema Scope Selector & Range Presets */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          {isEffectiveAdmin ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(0,0,0,0.6)", padding: "4px 10px" }}>
+              <Building2 size={13} color="#f59e0b" />
+              <select
+                value={selectedCinemaId}
+                onChange={(e) => setSelectedCinemaId(e.target.value)}
+                style={{ background: "transparent", border: "none", color: "#fff", fontSize: 10, fontWeight: 700, outline: "none", cursor: "pointer" }}
               >
-                {preset.label}
-              </button>
-            );
-          })}
+                <option value="ALL" style={{ background: "#0c0c0e", color: "#fff" }}>Toàn bộ hệ thống (Tất cả rạp)</option>
+                {cinemas.map((c) => (
+                  <option key={c.id} value={c.id} style={{ background: "#0c0c0e", color: "#fff" }}>
+                    {c.name || `Rạp #${c.id}`} {c.city ? `(${c.city})` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid rgba(6,182,212,0.3)", background: "rgba(6,182,212,0.08)", padding: "6px 12px", color: "#06b6d4", fontSize: 10, fontWeight: 700, fontFamily: "monospace" }}>
+              <Building2 size={13} />
+              <span>Phạm vi: {cinemaMap[currentUser?.cinemaId] || (cinemas.length === 1 ? cinemas[0].name : null) || ctx?.assignedCinema?.name || `Rạp #${currentUser?.cinemaId || '—'}`}</span>
+            </div>
+          )}
+
+          {/* Range presets */}
+          <div style={{ display: "flex", alignItems: "center", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(0,0,0,0.4)" }}>
+            {RANGE_PRESETS.map((preset) => {
+              const isActive = rangeDays === preset.days;
+              return (
+                <button
+                  key={preset.days}
+                  type="button"
+                  onClick={() => { playPulseSound?.(500, "sine", 0.03); setRangeDays(preset.days); }}
+                  style={{
+                    padding: "8px 20px", fontSize: 10, fontWeight: 800,
+                    fontFamily: "Inter, sans-serif", border: "none",
+                    borderRight: "1px solid rgba(255,255,255,0.06)",
+                    cursor: "pointer", transition: "all 0.15s",
+                    background: isActive ? "rgba(245,158,11,0.15)" : "transparent",
+                    color: isActive ? "#f59e0b" : "rgba(255,255,255,0.4)",
+                  }}
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -458,6 +586,109 @@ export default function AdminOverviewPanel({ ctx }) {
       )}
 
       {/* ─────────────────────────────────────────────────────────────────
+          SECTION: SO SÁNH HIỆU QUẢ CÁC RẠP (ADMIN ONLY) & VÉ CẦN LƯU Ý
+      ───────────────────────────────────────────────────────────────── */}
+      {isEffectiveAdmin && selectedCinemaId === 'ALL' && dashboardMetrics?.cinemaMetrics?.length > 0 && (
+        <ChartCard>
+          <SectionHeader
+            eyebrow="CROSS-CINEMA COMPARISON"
+            title="So sánh Hiệu quả & Doanh thu giữa các Cụm rạp"
+            badge="Toàn hệ thống"
+          />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 16 }}>
+            <ResponsiveContainer width="100%" height={240}>
+              <BarChart
+                data={dashboardMetrics.cinemaMetrics.map((cm) => ({
+                  name: cinemaMap[cm.cinemaId] || `Rạp #${cm.cinemaId}`,
+                  revenue: Number(cm.revenue || 0),
+                  ticketsSold: Number(cm.ticketsSold || 0)
+                }))}
+                margin={{ top: 12, right: 12, bottom: 4, left: 4 }}
+              >
+                <CartesianGrid vertical={false} stroke={GRID_COLOR} />
+                <XAxis dataKey="name" tick={TICK_STYLE} axisLine={false} tickLine={false} />
+                <YAxis yAxisId="rev" tickFormatter={fmtCompact} tick={{ ...TICK_STYLE, fill: "#10b981" }} axisLine={false} tickLine={false} />
+                <YAxis yAxisId="tix" orientation="right" tickFormatter={fmtNumber} tick={{ ...TICK_STYLE, fill: "#f59e0b" }} axisLine={false} tickLine={false} />
+                <Tooltip
+                  cursor={{ fill: "rgba(255,255,255,0.02)" }}
+                  content={<ChartTooltip formatter={(e) => (
+                    e.dataKey === "revenue"
+                      ? `Doanh thu thực: ${fmtVND(e.value)}`
+                      : `Vé bán ra: ${fmtNumber(e.value)} vé`
+                  )} />}
+                />
+                <Bar yAxisId="rev" dataKey="revenue" name="Doanh thu" fill="#10b981" radius={[2, 2, 0, 0]} />
+                <Bar yAxisId="tix" dataKey="ticketsSold" name="Vé bán ra" fill="#f59e0b" radius={[2, 2, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </ChartCard>
+      )}
+
+      {/* Vé cần lưu ý tại rạp (Pending Refund & Attention) */}
+      {(dashboardMetrics?.pendingRefundTickets || []).length > 0 && (
+        <div style={{ border: "1px solid rgba(244,63,94,0.3)", background: "rgba(244,63,94,0.04)", padding: "16px 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <AlertTriangle size={15} color="#f43f5e" />
+              <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.15em", textTransform: "uppercase", color: "#f43f5e", fontFamily: "monospace" }}>
+                Danh sách vé cần lưu ý (Yêu cầu hoàn tiền &amp; Đã hủy gần đây)
+              </span>
+            </div>
+            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", fontFamily: "monospace" }}>
+              {dashboardMetrics.pendingRefundTickets.length} đơn cần chú ý
+            </span>
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", textAlign: "left", fontSize: 11, fontFamily: "Inter, sans-serif", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.4)", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                  <th style={{ padding: "6px 8px" }}>Mã đơn</th>
+                  <th style={{ padding: "6px 8px" }}>Phim</th>
+                  <th style={{ padding: "6px 8px" }}>Cụm rạp</th>
+                  <th style={{ padding: "6px 8px" }}>Tổng tiền</th>
+                  <th style={{ padding: "6px 8px" }}>Trạng thái</th>
+                  <th style={{ padding: "6px 8px", textAlign: "right" }}>Điều hướng</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dashboardMetrics.pendingRefundTickets.slice(0, 5).map((pt) => (
+                  <tr key={pt.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+                    <td style={{ padding: "8px", fontFamily: "monospace", color: "#fff", fontWeight: 700 }}>
+                      {pt.bookingCode}
+                    </td>
+                    <td style={{ padding: "8px", color: "rgba(255,255,255,0.8)" }}>
+                      {pt.movieTitle}
+                    </td>
+                    <td style={{ padding: "8px", color: "#06b6d4", fontFamily: "monospace", fontSize: 10 }}>
+                      {cinemaMap[pt.cinemaId] || `Rạp #${pt.cinemaId}`}
+                    </td>
+                    <td style={{ padding: "8px", color: "#10b981", fontWeight: 700, fontFamily: "monospace" }}>
+                      {fmtVND(pt.totalAmount)}
+                    </td>
+                    <td style={{ padding: "8px" }}>
+                      <span style={{ fontSize: 8.5, padding: "2px 6px", border: "1px solid rgba(244,63,94,0.3)", background: "rgba(244,63,94,0.1)", color: "#f43f5e", fontWeight: 800 }}>
+                        {pt.status}
+                      </span>
+                    </td>
+                    <td style={{ padding: "8px", textAlign: "right" }}>
+                      <button
+                        type="button"
+                        onClick={() => onSectionChange?.('tickets')}
+                        style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.15)", color: "#fff", padding: "3px 8px", fontSize: 9, cursor: "pointer" }}
+                      >
+                        Xử lý vé →
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────────
           SECTION 1: BÁO CÁO VÉ BÁN RA & DOANH THU PHIM
       ───────────────────────────────────────────────────────────────── */}
       {showTicketsSec && (
@@ -479,119 +710,113 @@ export default function AdminOverviewPanel({ ctx }) {
                 title={`Xu hướng Vé bán ra & Tỷ lệ lấp đầy theo ${GROUP_LABELS[occupancyGroupBy]} (${rangeDays} ngày gần nhất)`}
                 badge={`Tổng vé: ${fmtNumber(effectiveRevenue.totalTicketsSold)}`}
               />
-              <div style={{ display: "flex", alignItems: "center", border: "1px solid rgba(255,255,255,0.08)" }}>
-                {[
-                  { key: "day", label: "Theo ngày" },
-                  { key: "week", label: "Theo tuần" },
-                  { key: "month", label: "Theo tháng" },
-                ].map((option) => {
-                  const isActive = occupancyGroupBy === option.key;
-                  return (
-                    <button
-                      key={option.key}
-                      type="button"
-                      onClick={() => { playPulseSound?.(510, "sine", 0.03); setOccupancyGroupBy(option.key); }}
-                      style={{
-                        padding: "6px 14px", fontSize: 9.5, fontWeight: 700,
-                        fontFamily: "Inter, sans-serif", border: "none",
-                        borderRight: "1px solid rgba(255,255,255,0.06)",
-                        cursor: "pointer", transition: "all 0.15s",
-                        background: isActive ? "rgba(6,182,212,0.15)" : "transparent",
-                        color: isActive ? "#06b6d4" : "rgba(255,255,255,0.4)",
-                      }}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
+              <div style={{ display: "flex", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(0,0,0,0.4)" }}>
+                {["day", "week", "month"].map((g) => (
+                  <button
+                    key={g}
+                    type="button"
+                    onClick={() => { playPulseSound?.(480, "sine", 0.02); setOccupancyGroupBy(g); }}
+                    style={{
+                      padding: "5px 12px", fontSize: 10, fontWeight: 700,
+                      border: "none", borderRight: "1px solid rgba(255,255,255,0.05)",
+                      background: occupancyGroupBy === g ? "rgba(6,182,212,0.18)" : "transparent",
+                      color: occupancyGroupBy === g ? "#06b6d4" : "rgba(255,255,255,0.4)",
+                      cursor: "pointer", transition: "all 0.15s", textTransform: "capitalize",
+                    }}
+                  >
+                    Theo {GROUP_LABELS[g]}
+                  </button>
+                ))}
               </div>
             </div>
 
-            {occupancyChartData.length === 0 ? <EmptyChart message="Chưa có dữ liệu vé bán ra trong khoảng thời gian này" /> : (
+            {occupancyChartData.length === 0 ? (
+              <EmptyChart message="Chưa có dữ liệu suất chiếu trong khoảng này" />
+            ) : (
               <ResponsiveContainer width="100%" height={260}>
                 <AreaChart data={occupancyChartData} margin={{ top: 12, right: 12, bottom: 4, left: 4 }}>
                   <defs>
-                    <linearGradient id="areaGradTicketsSold" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#06b6d4" stopOpacity={0.5} />
+                    <linearGradient id="areaGradTickets" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#06b6d4" stopOpacity={0.4} />
                       <stop offset="100%" stopColor="#06b6d4" stopOpacity={0.02} />
                     </linearGradient>
-                    <linearGradient id="areaGradOccRate" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.4} />
-                      <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.01} />
+                    <linearGradient id="areaGradOcc" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.3} />
+                      <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.02} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid vertical={false} stroke={GRID_COLOR} />
-                  <XAxis dataKey="label" tick={TICK_STYLE} axisLine={false} tickLine={false} interval="preserveStartEnd" minTickGap={20} />
+                  <XAxis dataKey="label" tick={TICK_STYLE} axisLine={false} tickLine={false} />
                   <YAxis yAxisId="left" tickFormatter={(v) => fmtNumber(v)} tick={TICK_STYLE} axisLine={false} tickLine={false} width={40} />
-                  <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => `${v}%`} tick={{ ...TICK_STYLE, fill: "#f59e0b" }} axisLine={false} tickLine={false} width={40} />
+                  <YAxis yAxisId="right" orientation="right" tickFormatter={(v) => `${v}%`} tick={{ ...TICK_STYLE, fill: "#f59e0b" }} axisLine={false} tickLine={false} domain={[0, 100]} width={40} />
                   <Tooltip
                     cursor={{ stroke: "rgba(255,255,255,0.15)" }}
                     content={<ChartTooltip formatter={(e) => (
                       e.dataKey === "sold"
-                        ? `Vé bán ra: ${fmtNumber(e.value)} vé (${e.payload.shows} suất)`
-                        : `Lấp đầy: ${e.value}% (${fmtNumber(e.payload.sold)}/${fmtNumber(e.payload.capacity)} ghế)`
+                        ? `Vé bán: ${fmtNumber(e.value)} / ${fmtNumber(e.payload.capacity)} ghế (${e.payload.shows} suất)`
+                        : `Tỷ lệ lấp đầy: ${e.value}%`
                     )} />}
                   />
-                  <Area yAxisId="left" type="monotone" dataKey="sold" name="Số lượng vé" stroke="#06b6d4" strokeWidth={2.5} fill="url(#areaGradTicketsSold)" />
-                  <Area yAxisId="right" type="monotone" dataKey="rate" name="Tỷ lệ lấp đầy" stroke="#f59e0b" strokeWidth={2} strokeDasharray="3 3" fill="url(#areaGradOccRate)" />
+                  <Area yAxisId="left" type="monotone" dataKey="sold" name="Vé bán ra" stroke="#06b6d4" strokeWidth={2.5} fill="url(#areaGradTickets)" />
+                  <Area yAxisId="right" type="monotone" dataKey="rate" name="Tỷ lệ lấp đầy (%)" stroke="#f59e0b" strokeWidth={2} strokeDasharray="4 4" fill="url(#areaGradOcc)" />
                 </AreaChart>
               </ResponsiveContainer>
             )}
           </ChartCard>
 
-          {/* Row 2: Top movies bar & Ticket share donut */}
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20 }}>
-            {/* Top movies bar */}
+          {/* 2-column: Top Movies Revenue Bar + Ticket Share Donut */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 16 }}>
+            {/* Top Movies Bar */}
             <ChartCard>
-              <SectionHeader eyebrow="TOP PHIM BAN RA" title="Top Phim theo Doanh thu & Lượng vé" />
-              {revenueByMovie.length === 0 ? <EmptyChart message="Chưa có dữ liệu doanh thu phim" /> : (
-                <ResponsiveContainer width="100%" height={Math.max(220, revenueByMovie.length * 44)}>
-                  <BarChart data={revenueByMovie} layout="vertical" margin={{ top: 4, right: 80, bottom: 4, left: 4 }}>
-                    <defs>
-                      <linearGradient id="barGradRev" x1="0" y1="0" x2="1" y2="0">
-                        <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.9} />
-                        <stop offset="100%" stopColor="#d97706" stopOpacity={0.65} />
-                      </linearGradient>
-                    </defs>
+              <SectionHeader eyebrow="TOP DOANH THU PHIM" title="Top 10 Phim Có Doanh Thu Cao Nhất" />
+              {revenueByMovie.length === 0 ? (
+                <EmptyChart message="Chưa có dữ liệu phim bán vé" />
+              ) : (
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={revenueByMovie.slice(0, 7)} layout="vertical" margin={{ top: 4, right: 20, bottom: 4, left: 0 }}>
                     <CartesianGrid horizontal={false} stroke={GRID_COLOR} />
                     <XAxis type="number" tickFormatter={fmtCompact} tick={TICK_STYLE} axisLine={false} tickLine={false} />
-                    <YAxis type="category" dataKey="name" width={140} tick={{ ...TICK_STYLE, fontSize: 10, fill: "#a1a1aa" }} axisLine={false} tickLine={false} />
-                    <Tooltip cursor={{ fill: "rgba(255,255,255,0.03)" }} content={<ChartTooltip formatter={(e) => `${fmtVND(e.payload.revenue)} · ${fmtNumber(e.payload.tickets)} vé đã bán`} />} />
-                    <Bar dataKey="revenue" name="Doanh thu" fill="url(#barGradRev)" barSize={16} radius={[0, 2, 2, 0]}>
-                      <LabelList dataKey="tickets" position="right" formatter={(v) => `${fmtNumber(v)} vé`} style={{ fill: "rgba(255,255,255,0.5)", fontSize: 10, fontFamily: "Inter, sans-serif", fontWeight: 600 }} />
+                    <YAxis type="category" dataKey="name" width={110} tick={{ fill: "#d4d4d8", fontSize: 9.5 }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<ChartTooltip formatter={(e) => `${fmtVND(e.value)} (${fmtNumber(e.payload.tickets)} vé)`} />} />
+                    <Bar dataKey="revenue" name="Doanh thu" fill="#f59e0b" radius={[0, 2, 2, 0]}>
+                      {revenueByMovie.slice(0, 7).map((_, idx) => (
+                        <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
+                      ))}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               )}
             </ChartCard>
 
-            {/* Ticket share donut */}
+            {/* Ticket share pie */}
             <ChartCard>
-              <SectionHeader eyebrow="THỊ PHẦN SẢN LƯỢNG" title="Cơ cấu Vé bán ra theo Phim" />
-              {ticketShare.length === 0 ? <EmptyChart message="Chưa có dữ liệu thị phần vé" /> : (
-                <div style={{ position: "relative" }}>
-                  <ResponsiveContainer width="100%" height={260}>
+              <SectionHeader eyebrow="THỊ PHẦN VÉ BÁN" title="Tỷ trọng Vé Bán Ra Theo Phim" />
+              {ticketShare.length === 0 ? (
+                <EmptyChart message="Chưa có dữ liệu tỷ trọng vé" />
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <ResponsiveContainer width="55%" height={240}>
                     <PieChart>
-                      <defs>
-                        {CHART_COLORS.map((c, i) => (
-                          <radialGradient key={i} id={`pieG${i}`} cx="50%" cy="50%" r="50%">
-                            <stop offset="0%" stopColor={c} stopOpacity={1} />
-                            <stop offset="100%" stopColor={c} stopOpacity={0.65} />
-                          </radialGradient>
-                        ))}
-                      </defs>
-                      <Pie data={ticketShare} dataKey="value" nameKey="name" innerRadius={60} outerRadius={88} paddingAngle={ticketShare.length > 1 ? 3 : 0} stroke="none">
-                        {ticketShare.map((entry, index) => (
-                          <Cell key={entry.name} fill={`url(#pieG${index % CHART_COLORS.length})`} />
+                      <Pie data={ticketShare} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} stroke="rgba(0,0,0,0.5)" strokeWidth={2}>
+                        {ticketShare.map((_, idx) => (
+                          <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
                         ))}
                       </Pie>
-                      <Tooltip content={<ChartTooltip formatter={(e) => `${fmtNumber(e.value)} vé · ${totalTicketsInShare ? Math.round((e.value / totalTicketsInShare) * 100) : 0}% thị phần`} />} />
-                      <Legend verticalAlign="bottom" iconType="circle" iconSize={7} formatter={(value) => <span style={{ fontSize: 9.5, fontFamily: "Inter, sans-serif", color: "rgba(255,255,255,0.5)" }}>{value}</span>} />
+                      <Tooltip content={<ChartTooltip formatter={(e) => `${fmtNumber(e.value)} vé (${totalTicketsInShare > 0 ? ((e.value / totalTicketsInShare) * 100).toFixed(1) : 0}%)`} />} />
                     </PieChart>
                   </ResponsiveContainer>
-                  <div style={{ position: "absolute", left: "50%", top: "42%", transform: "translate(-50%, -50%)", textAlign: "center", pointerEvents: "none" }}>
-                    <span style={{ display: "block", fontSize: 8, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "Inter, sans-serif", fontWeight: 800 }}>TỔNG VÉ</span>
-                    <span style={{ display: "block", fontSize: 18, fontWeight: 800, color: "#fff", fontFamily: "Inter, sans-serif" }}>{fmtNumber(totalTicketsInShare)}</span>
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6, fontSize: 10, fontFamily: "Inter, sans-serif" }}>
+                    {ticketShare.map((t, idx) => (
+                      <div key={t.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, overflow: "hidden" }}>
+                          <span style={{ width: 8, height: 8, flexShrink: 0, backgroundColor: CHART_COLORS[idx % CHART_COLORS.length] }} />
+                          <span style={{ color: "#d4d4d8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
+                        </div>
+                        <span style={{ color: "#71717a", fontWeight: 700, flexShrink: 0 }}>
+                          {totalTicketsInShare > 0 ? ((t.value / totalTicketsInShare) * 100).toFixed(1) : 0}%
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -601,83 +826,75 @@ export default function AdminOverviewPanel({ ctx }) {
       )}
 
       {/* ─────────────────────────────────────────────────────────────────
-          SECTION 2: BÁO CÁO BẮP NƯỚC & CONCESSIONS (F&B SALES REPORT)
+          SECTION 2: BÁO CÁO BẮP NƯỚC & F&B
       ───────────────────────────────────────────────────────────────── */}
       {showFnbSec && (
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <div style={{ borderBottom: "1px solid rgba(255,255,255,0.08)", pb: 8 }}>
             <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.2em", textTransform: "uppercase", color: "#10b981", fontFamily: "monospace" }}>
-              CONCESSIONS & F&B PERFORMANCE REPORT
+              CONCESSION &amp; F&amp;B SALES REPORT
             </span>
             <h2 style={{ margin: "2px 0 0", fontSize: 16, fontWeight: 800, color: "#fff", fontFamily: "Inter, sans-serif" }}>
-              2. Báo cáo Số lượng Bắp nước bán ra & Doanh thu F&B
+              2. Báo cáo Doanh thu &amp; Sản lượng Bắp nước (F&amp;B)
             </h2>
           </div>
 
-          {/* F&B KPI summary cards */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14 }}>
             {fnbKpis.map((kpi, i) => <KpiCard key={kpi.label} {...kpi} delay={i * 0.05} />)}
           </div>
 
-          {/* F&B Charts Grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 20 }}>
-            {/* Top Concessions items sold chart */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))", gap: 16 }}>
+            {/* Top Items Bar */}
             <ChartCard>
-              <SectionHeader
-                eyebrow="TOP F&B TIÊU THỤ"
-                title="Top Bắp nước & Combo bán chạy nhất"
-                badge={`Tổng: ${fmtNumber(fnbTotalItems)} món`}
-              />
-              {concessionItemsData.length === 0 ? <EmptyChart message="Chưa có dữ liệu món bắp nước bán ra" /> : (
-                <ResponsiveContainer width="100%" height={Math.max(220, concessionItemsData.length * 40)}>
-                  <BarChart data={concessionItemsData} layout="vertical" margin={{ top: 4, right: 80, bottom: 4, left: 4 }}>
-                    <defs>
-                      <linearGradient id="barGradFnB" x1="0" y1="0" x2="1" y2="0">
-                        <stop offset="0%" stopColor="#10b981" stopOpacity={0.9} />
-                        <stop offset="100%" stopColor="#059669" stopOpacity={0.65} />
-                      </linearGradient>
-                    </defs>
+              <SectionHeader eyebrow="TOP SẢN PHẨM TIÊU THỤ" title="Top Món Bắp Nước Bán Chạy Nhất" />
+              {concessionItemsData.length === 0 ? (
+                <EmptyChart message="Chưa có dữ liệu tiêu thụ F&B" />
+              ) : (
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={concessionItemsData} layout="vertical" margin={{ top: 4, right: 20, bottom: 4, left: 0 }}>
                     <CartesianGrid horizontal={false} stroke={GRID_COLOR} />
                     <XAxis type="number" tickFormatter={(v) => fmtNumber(v)} tick={TICK_STYLE} axisLine={false} tickLine={false} />
-                    <YAxis type="category" dataKey="name" width={150} tick={{ ...TICK_STYLE, fontSize: 10, fill: "#a1a1aa" }} axisLine={false} tickLine={false} />
-                    <Tooltip cursor={{ fill: "rgba(255,255,255,0.03)" }} content={<ChartTooltip formatter={(e) => `${fmtNumber(e.payload.quantity)} món bán ra · Doanh thu ${fmtVND(e.payload.revenue)}`} />} />
-                    <Bar dataKey="quantity" name="Số lượng bán" fill="url(#barGradFnB)" barSize={16} radius={[0, 2, 2, 0]}>
-                      <LabelList dataKey="quantity" position="right" formatter={(v) => `${fmtNumber(v)} món`} style={{ fill: "rgba(255,255,255,0.5)", fontSize: 10, fontFamily: "Inter, sans-serif", fontWeight: 600 }} />
+                    <YAxis type="category" dataKey="name" width={110} tick={{ fill: "#d4d4d8", fontSize: 9.5 }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<ChartTooltip formatter={(e) => `${fmtNumber(e.value)} món (${fmtVND(e.payload.revenue)})`} />} />
+                    <Bar dataKey="quantity" name="Số lượng" fill="#10b981" radius={[0, 2, 2, 0]}>
+                      {concessionItemsData.map((_, idx) => (
+                        <Cell key={idx} fill={CHART_COLORS[idx % CHART_COLORS.length]} />
+                      ))}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               )}
             </ChartCard>
 
-            {/* F&B Sales Source channel chart */}
+            {/* Source breakdown pie */}
             <ChartCard>
-              <SectionHeader eyebrow="KÊNH PHÁT HÀNH F&B" title="Cơ cấu Kênh đặt Bắp nước" />
-              {concessionSourcesData.length === 0 ? <EmptyChart message="Chưa có dữ liệu kênh đặt bắp nước" /> : (
-                <div style={{ position: "relative" }}>
-                  <ResponsiveContainer width="100%" height={260}>
+              <SectionHeader eyebrow="NGUỒN ĐẶT F&B" title="Phân Bổ Kênh Bán Bắp Nước" />
+              {concessionSourcesData.length === 0 ? (
+                <EmptyChart message="Chưa có dữ liệu kênh bán F&B" />
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <ResponsiveContainer width="55%" height={240}>
                     <PieChart>
-                      <defs>
-                        <radialGradient id="pieFnb0" cx="50%" cy="50%" r="50%">
-                          <stop offset="0%" stopColor="#10b981" stopOpacity={1} />
-                          <stop offset="100%" stopColor="#059669" stopOpacity={0.65} />
-                        </radialGradient>
-                        <radialGradient id="pieFnb1" cx="50%" cy="50%" r="50%">
-                          <stop offset="0%" stopColor="#a855f7" stopOpacity={1} />
-                          <stop offset="100%" stopColor="#7e22ce" stopOpacity={0.65} />
-                        </radialGradient>
-                      </defs>
-                      <Pie data={concessionSourcesData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={86} paddingAngle={3} stroke="none">
-                        {concessionSourcesData.map((entry, index) => (
-                          <Cell key={entry.name} fill={index === 0 ? "url(#pieFnb0)" : "url(#pieFnb1)"} />
+                      <Pie data={concessionSourcesData} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} stroke="rgba(0,0,0,0.5)" strokeWidth={2}>
+                        {concessionSourcesData.map((_, idx) => (
+                          <Cell key={idx} fill={idx === 0 ? "#10b981" : "#a855f7"} />
                         ))}
                       </Pie>
-                      <Tooltip content={<ChartTooltip formatter={(e) => `${fmtNumber(e.value)} món (${fmtVND(e.payload.revenue)}) · ${fmtNumber(e.payload.orders)} đơn`} />} />
-                      <Legend verticalAlign="bottom" iconType="circle" iconSize={7} formatter={(value) => <span style={{ fontSize: 9.5, fontFamily: "Inter, sans-serif", color: "rgba(255,255,255,0.5)" }}>{value}</span>} />
+                      <Tooltip content={<ChartTooltip formatter={(e) => `${fmtNumber(e.value)} món (${fmtVND(e.payload.revenue)})`} />} />
                     </PieChart>
                   </ResponsiveContainer>
-                  <div style={{ position: "absolute", left: "50%", top: "42%", transform: "translate(-50%, -50%)", textAlign: "center", pointerEvents: "none" }}>
-                    <span style={{ display: "block", fontSize: 8, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "Inter, sans-serif", fontWeight: 800 }}>TỔNG MÓN</span>
-                    <span style={{ display: "block", fontSize: 18, fontWeight: 800, color: "#fff", fontFamily: "Inter, sans-serif" }}>{fmtNumber(totalFnBSourceQuantity || fnbTotalItems)}</span>
+                  <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8, fontSize: 10, fontFamily: "Inter, sans-serif" }}>
+                    {concessionSourcesData.map((s, idx) => (
+                      <div key={s.name} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ width: 8, height: 8, flexShrink: 0, backgroundColor: idx === 0 ? "#10b981" : "#a855f7" }} />
+                          <span style={{ color: "#d4d4d8", fontWeight: 700 }}>{s.name}</span>
+                        </div>
+                        <span style={{ color: "#71717a", marginLeft: 14 }}>
+                          {fmtNumber(s.value)} món · {fmtVND(s.revenue)} ({totalFnBSourceQuantity > 0 ? ((s.value / totalFnBSourceQuantity) * 100).toFixed(1) : 0}%)
+                        </span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
