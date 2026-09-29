@@ -201,7 +201,7 @@ export default function Header({
           {!isStaffRole && !isManagerRole && (
             <>
               <button
-                onClick={() => onTabChange('explore')}
+                onClick={() => onTabChange('showtimes')}
                 className="hidden lg:flex h-9 items-center gap-1.5 bg-yellow-500 hover:bg-yellow-600 px-3.5 text-[10px] font-sans font-extrabold uppercase tracking-[0.12em] text-black transition whitespace-nowrap rounded"
                 id="btn-book-now"
               >
@@ -477,8 +477,8 @@ export default function Header({
                   }`}
                 id="nav-showtimes"
               >
-                <Search className="h-3.5 w-3.5" />
-                <span>TÌM PHIM</span>
+                <CalendarDays className="h-3.5 w-3.5 text-amber-400" />
+                <span>LỊCH CHIẾU & MUA VÉ</span>
               </button>
 
               {!isAdminRole && (

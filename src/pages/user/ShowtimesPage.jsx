@@ -1,13 +1,19 @@
-/* Hallmark · page: showtime finder · genre: atmospheric utility · theme: CinePremier dark
- * interaction: filter · select · clear · choose-showtime
- * contrast: pass · Pre-emit critique: P5 · H5 · E5 · S5 · R5 · V4
- */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowRight, CalendarDays, Check, ChevronDown, Clock, Loader2, Search, ShieldCheck, Tag, Users, X } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import {
+  Film, Calendar, CalendarDays, Clock, Building2, MapPin, Phone, ExternalLink,
+  Search, Tag, Users, CheckCircle2, ArrowRight, ChevronRight, Sparkles,
+  Ticket, Check, ChevronDown, X, ShieldCheck, Loader2, Armchair, Info,
+  CalendarX, Compass, AlertCircle, RefreshCw, Star, Layers, Map as MapIcon
+} from 'lucide-react';
 import { bookingService } from '../../services/bookingService';
+import { movieService } from '../../services/movieService';
 import { useMovies } from '../../stores/useMovieStore';
+import { useAuthStore } from '../../stores/useAuthStore';
+import { useUiStore } from '../../stores/useUiStore';
+import QuickBookingBar from '../../components/common/QuickBookingBar';
 
+// Tiện ích format ngày chuẩn địa phương (YYYY-MM-DD)
 const toDateKey = (date) => {
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, '0');
@@ -15,638 +21,1248 @@ const toDateKey = (date) => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
-const SHOWTIME_CACHE_TTL_MS = 90 * 1000;
-const showtimeCacheByDate = new Map();
-
-const getFreshShowtimes = (dateKey) => {
-  const entry = showtimeCacheByDate.get(dateKey);
-  if (!entry) return null;
-  return Date.now() - entry.updatedAt < SHOWTIME_CACHE_TTL_MS ? entry.data : null;
+const parseLocalDate = (dateStr) => {
+  if (!dateStr) return new Date();
+  const parts = String(dateStr).split('-');
+  if (parts.length === 3) {
+    const [y, m, d] = parts.map(Number);
+    return new Date(y, m - 1, d);
+  }
+  return new Date(dateStr);
 };
 
-const filterVisibleShowtimes = (rawList) => rawList.filter((st) =>
-  (st.status === 'OPEN' || st.status === 'SCHEDULED')
-  && new Date(st.startTime) > new Date()
-);
-
-const fetchShowtimesForDate = async (dateKey) => {
-  const cached = getFreshShowtimes(dateKey);
-  if (cached) return cached;
-  const data = await bookingService.getShowtimes({ date: dateKey, size: 100 });
-  const rawList = Array.isArray(data) ? data : (data?.items ?? data?.content ?? []);
-  showtimeCacheByDate.set(dateKey, { data: rawList, updatedAt: Date.now() });
-  return rawList;
+const formatVietnameseWeekday = (dateStr) => {
+  try {
+    const d = parseLocalDate(dateStr);
+    const today = new Date();
+    if (toDateKey(d) === toDateKey(today)) return 'HÔM NAY';
+    const tomorrow = new Date();
+    tomorrow.setDate(today.getDate() + 1);
+    if (toDateKey(d) === toDateKey(tomorrow)) return 'NGÀY MAI';
+    const days = ['CHỦ NHẬT', 'THỨ HAI', 'THỨ BA', 'THỨ TƯ', 'THỨ NĂM', 'THỨ SÁU', 'THỨ BẢY'];
+    return days[d.getDay()] || 'HÔM NAY';
+  } catch {
+    return 'HÔM NAY';
+  }
 };
 
-const today = new Date();
-const todayKey = toDateKey(today);
-
-const PREFETCH_DATES = Array.from({ length: 7 }, (_, i) => {
-  const d = new Date();
-  d.setDate(d.getDate() + i);
-  return toDateKey(d);
-});
-
-const AGE_RATING_OPTIONS = [
-  { value: null, label: 'Không lọc độ tuổi', description: 'Hiển thị mọi suất chiếu' },
-  { value: 'P', label: 'Mọi độ tuổi', description: 'Phù hợp mọi khán giả' },
-  { value: 'T13', label: 'Từ đủ 13 tuổi', description: 'Người xem từ đủ 13 tuổi' },
-  { value: 'T16', label: 'Từ đủ 16 tuổi', description: 'Người xem từ đủ 16 tuổi' },
-  { value: 'T18', label: 'Từ đủ 18 tuổi', description: 'Người xem từ đủ 18 tuổi' },
-];
-
-const AGE_RATING_COLOR = {
-  P:   'border-emerald-500/40 bg-emerald-500/10 text-emerald-400',
-  T13: 'border-yellow-500/40 bg-yellow-500/10 text-yellow-400',
-  T16: 'border-orange-500/40 bg-orange-500/10 text-orange-400',
-  T18: 'border-rose-500/40 bg-rose-500/10 text-rose-400',
+const formatVietnameseDayMonth = (dateStr) => {
+  try {
+    const d = parseLocalDate(dateStr);
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    return `${day}/${month}`;
+  } catch {
+    return dateStr;
+  }
 };
-const getAgeColor = (rating) => AGE_RATING_COLOR[String(rating || '').toUpperCase()] || 'border-neutral-700 bg-neutral-900 text-neutral-400';
 
-// ─── Dropdown thể loại ───────────────────────────────────────────────────────
-function GenreDropdown({ genres, selectedGenre, onChange }) {
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState('');
-  const ref = useRef(null);
+const formatFullDateVi = (dateStr) => {
+  if (!dateStr) return '';
+  try {
+    const d = parseLocalDate(dateStr);
+    const days = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+    const weekday = days[d.getDay()] || '';
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${weekday}, ngày ${day}/${month}/${year}`;
+  } catch {
+    return dateStr;
+  }
+};
 
-  useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, []);
+const formatVnd = (value) => {
+  const num = Number(value || 0);
+  return `${num.toLocaleString('vi-VN')}đ`;
+};
 
-  const filtered = useMemo(() => {
-    if (!search.trim()) return genres;
-    const q = search.trim().toLowerCase();
-    return genres.filter((g) => g.toLowerCase().includes(q));
-  }, [genres, search]);
+const AGE_RATING_BADGE = {
+  P: { bg: 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400', label: 'P - Mọi độ tuổi' },
+  K: { bg: 'bg-sky-500/15 border-sky-500/40 text-sky-400', label: 'K - Dưới 13 có phụ huynh' },
+  T13: { bg: 'bg-amber-500/15 border-amber-500/40 text-amber-400', label: 'T13 - Khán giả từ 13 tuổi' },
+  T16: { bg: 'bg-orange-500/15 border-orange-500/40 text-orange-400', label: 'T16 - Khán giả từ 16 tuổi' },
+  T18: { bg: 'bg-rose-500/15 border-rose-500/40 text-rose-400', label: 'T18 - Khán giả từ 18 tuổi' },
+  C: { bg: 'bg-red-500/15 border-red-500/40 text-red-400', label: 'C - Phim cấm phổ biến' },
+};
 
-  return (
-    <div ref={ref} className={`relative ${open ? 'z-[120]' : 'z-0'}`}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        aria-label={`Thể loại: ${selectedGenre || 'Tất cả thể loại'}`}
-        className={`flex h-[60px] w-full cursor-pointer items-center gap-2 border bg-neutral-950 py-0 pl-10 pr-4 text-left text-sm transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-300
-          ${open ? 'border-purple-400 ring-1 ring-purple-500/40' : 'border-white/10 hover:border-white/20'}`}
-      >
-        <Tag className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-purple-400" />
-        <span className={`flex-1 truncate ${selectedGenre ? 'text-white' : 'text-neutral-500'}`}>
-          {selectedGenre || 'Thể loại'}
-        </span>
-        {selectedGenre ? (
-          <X className="h-3.5 w-3.5 shrink-0 text-neutral-400 hover:text-white"
-            onClick={(e) => { e.stopPropagation(); onChange(null); setSearch(''); }} />
-        ) : (
-          <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-neutral-500 transition-transform ${open ? 'rotate-180 text-purple-300' : ''}`} />
-        )}
-      </button>
-
-      {open && (
-        <div className="absolute inset-x-0 z-[130] mt-2 w-full border border-white/15 border-t-2 border-t-purple-400 bg-neutral-950 shadow-2xl shadow-black/70">
-          <div className="relative border-b border-white/10">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-500" />
-            <input
-              autoFocus
-              type="text"
-              aria-label="Tìm thể loại"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Tìm thể loại…"
-              className="w-full bg-transparent py-2.5 pl-9 pr-4 text-xs text-white placeholder-neutral-600 outline-none"
-            />
-          </div>
-          <div className="max-h-52 overflow-y-auto">
-            <button
-              onClick={() => { onChange(null); setOpen(false); setSearch(''); }}
-              className={`flex w-full items-center px-4 py-2.5 text-xs font-bold uppercase tracking-widest transition
-                ${!selectedGenre ? 'bg-purple-500/15 text-purple-300' : 'text-neutral-400 hover:bg-white/5 hover:text-white'}`}
-            >Tất cả thể loại</button>
-            {genres.length === 0 ? (
-              <p className="py-6 text-center text-[11px] text-neutral-600">Chưa có dữ liệu thể loại</p>
-            ) : filtered.length === 0 ? (
-              <p className="py-6 text-center text-[11px] text-neutral-600">Không tìm thấy thể loại</p>
-            ) : (
-              filtered.map((g) => (
-                <button
-                  key={g}
-                  onClick={() => { onChange(selectedGenre === g ? null : g); setOpen(false); setSearch(''); }}
-                  className={`flex w-full items-center justify-between px-4 py-2.5 text-xs font-bold uppercase tracking-widest transition
-                    ${selectedGenre === g ? 'bg-purple-500/15 text-purple-300' : 'text-neutral-400 hover:bg-white/5 hover:text-white'}`}
-                >
-                  <span>{g}</span>
-                  {selectedGenre === g && <span className="h-1.5 w-1.5 rounded-full bg-purple-400" />}
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Dropdown độ tuổi ────────────────────────────────────────────────────────
-function AgeRatingDropdown({ selectedAge, onChange }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-
-  useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    const closeOnEscape = (e) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', handler);
-    document.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.removeEventListener('mousedown', handler);
-      document.removeEventListener('keydown', closeOnEscape);
-    };
-  }, []);
-
-  const selected = AGE_RATING_OPTIONS.find((o) => o.value === selectedAge) || AGE_RATING_OPTIONS[0];
-
-  return (
-    <div ref={ref} className={`relative min-w-0 ${open ? 'z-[120]' : 'z-0'}`}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        aria-controls="age-rating-options"
-        aria-label={`Phân loại độ tuổi: ${selected.label}`}
-        className={`flex h-[60px] min-h-0 w-full cursor-pointer items-center gap-3 border bg-neutral-950 px-4 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-300 active:bg-purple-500/10 disabled:cursor-not-allowed disabled:opacity-50
-          ${open ? 'border-purple-400 bg-purple-500/[0.04]' : 'border-white/10 hover:border-purple-400/40'}`}
-      >
-        <span className={`flex h-8 w-8 shrink-0 items-center justify-center border transition-colors ${open || selectedAge ? 'border-purple-400/50 bg-purple-500/15 text-purple-200' : 'border-purple-500/25 bg-purple-950/20 text-purple-400'}`}>
-          <Users className="h-4 w-4" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[8px] font-black uppercase tracking-[0.2em] text-neutral-500">Độ tuổi</span>
-          <span className={`mt-0.5 block truncate text-[15px] font-extrabold leading-tight ${selectedAge ? 'text-white' : 'text-neutral-300'}`}>
-            {selectedAge ? `${selectedAge} · ${selected.label}` : selected.label}
-          </span>
-        </span>
-        <ChevronDown className={`h-4 w-4 shrink-0 text-neutral-500 transition-transform ${open ? 'rotate-180 text-purple-300' : ''}`} />
-      </button>
-
-      {open && (
-        <div className="absolute inset-x-0 z-[130] mt-2 w-full overflow-hidden border border-white/15 border-t-2 border-t-purple-400 bg-neutral-950 shadow-2xl shadow-black/70">
-          <div className="flex h-12 items-center gap-3 border-b border-white/10 bg-purple-500/[0.05] px-3.5">
-            <ShieldCheck className="h-4 w-4 shrink-0 text-purple-300" aria-hidden="true" />
-            <p className="min-w-0 flex-1 text-[11px] font-black uppercase tracking-[0.16em] text-white">Chọn độ tuổi</p>
-          </div>
-          <div id="age-rating-options" role="listbox" aria-label="Phân loại độ tuổi" className="p-1.5">
-            {AGE_RATING_OPTIONS.map((opt) => (
-              <button
-                type="button"
-                key={opt.value ?? '__all'}
-                onClick={() => { onChange(opt.value); setOpen(false); }}
-                role="option"
-                aria-selected={selectedAge === opt.value}
-                className={`group flex min-h-[52px] w-full cursor-pointer items-center gap-3 border-b border-white/[0.06] px-2.5 py-2 text-left transition-colors last:border-b-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-purple-300 active:bg-purple-500/15 disabled:cursor-not-allowed disabled:opacity-50
-                  ${selectedAge === opt.value
-                    ? 'bg-purple-500/15'
-                    : 'hover:bg-white/[0.04]'}`}
-              >
-                <span className={`flex h-8 w-10 shrink-0 items-center justify-center border text-[9px] font-black ${opt.value ? getAgeColor(opt.value) : selectedAge === null ? 'border-purple-400/40 bg-purple-500/10 text-purple-300' : 'border-white/10 text-neutral-500'}`}>
-                  {opt.value || 'ALL'}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className={`block break-words text-[13px] font-extrabold leading-4 ${selectedAge === opt.value ? 'text-purple-100' : 'text-neutral-200 group-hover:text-white'}`}>{opt.label}</span>
-                  <span className="mt-0.5 block whitespace-normal text-[10px] leading-4 text-neutral-500">{opt.description}</span>
-                </span>
-                <span className={`flex h-7 w-7 shrink-0 items-center justify-center ${selectedAge === opt.value ? 'bg-purple-500/15 text-purple-200' : 'text-transparent'}`}>
-                  <Check className="h-3.5 w-3.5" />
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ─── Trang chính ─────────────────────────────────────────────────────────────
 export default function ShowtimesPage() {
   const navigate = useNavigate();
-  const { moviesList = [], fetchMoviesPage, isMoviesLoading } = useMovies();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { moviesList = [] } = useMovies();
+  const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
+  const currentUser = useAuthStore((state) => state.currentUser);
+  const setShowOTP = useUiStore((state) => state.setShowOTP);
+  const setAuthMode = useUiStore((state) => state.setAuthMode);
 
-  const [keyword, setKeyword] = useState('');
-  const [selectedDate, setSelectedDate] = useState(todayKey);
-  const [selectedGenre, setSelectedGenre] = useState(null);
-  const [selectedAge, setSelectedAge] = useState(null);
+  // Chế độ xem: 'movie' (Theo phim - Mặc định), 'cinema' (Theo rạp), 'date' (Theo ngày)
+  const initialMode = searchParams.get('mode') || (searchParams.get('cinemaId') ? 'cinema' : 'movie');
+  const [viewMode, setViewMode] = useState(initialMode);
 
+  // Ngày được chọn
+  const todayKey = toDateKey(new Date());
+  const initialDate = searchParams.get('date') || todayKey;
+  const [selectedDate, setSelectedDate] = useState(initialDate);
+
+  // Phim được chọn (Bước 1 của luồng Theo Phim)
+  const [selectedMovieId, setSelectedMovieId] = useState(() => {
+    return searchParams.get('movieId') || '';
+  });
+
+  // Rạp được chọn (Bước 3 hoặc Tab Theo Rạp)
+  const [selectedCinemaId, setSelectedCinemaId] = useState(() => {
+    return searchParams.get('cinemaId') || '';
+  });
+
+  // Bộ lọc khu vực / thành phố
+  const [selectedCity, setSelectedCity] = useState('ALL');
+
+  // Khung giờ lọc: 'ALL', 'MORNING' (<12:00), 'AFTERNOON' (12:00-18:00), 'EVENING' (>18:00)
+  const [timeFilter, setTimeFilter] = useState('ALL');
+
+  // Dữ liệu rạp và suất chiếu
+  const [cinemas, setCinemas] = useState([]);
   const [showtimes, setShowtimes] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingShowtimes, setIsLoadingShowtimes] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [movieSearchQuery, setMovieSearchQuery] = useState('');
 
-  // Fetch suất chiếu khi ngày thay đổi
+  // Tải danh sách rạp
   useEffect(() => {
     let cancelled = false;
-
-    const cached = getFreshShowtimes(selectedDate);
-    if (cached) {
-      setShowtimes(filterVisibleShowtimes(cached));
-      setIsLoading(false);
-      return () => { cancelled = true; };
-    }
-
-    setIsLoading(true);
-    fetchShowtimesForDate(selectedDate)
-      .then((rawList) => { if (!cancelled) setShowtimes(filterVisibleShowtimes(rawList)); })
-      .catch(() => { if (!cancelled) setShowtimes([]); })
-      .finally(() => { if (!cancelled) setIsLoading(false); });
-    return () => { cancelled = true; };
-  }, [selectedDate]);
-
-  // Prefetch nền 7 ngày tới
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      for (const dateKey of PREFETCH_DATES) {
+    movieService.getPublicCinemas()
+      .then((res) => {
         if (cancelled) return;
-        try { await fetchShowtimesForDate(dateKey); } catch { /* ignore */ }
-      }
-    })();
+        const raw = Array.isArray(res) ? res : (res?.data || []);
+        const active = raw.filter((c) => c.status === 'ACTIVE' || !c.status);
+        setCinemas(active);
+        // Pre-select first cinema if in cinema mode and none selected
+        if (active.length > 0 && !selectedCinemaId && viewMode === 'cinema') {
+          setSelectedCinemaId(String(active[0].id));
+        }
+      })
+      .catch(() => {});
     return () => { cancelled = true; };
-  }, []);
+  }, [viewMode, selectedCinemaId]);
 
-  // Auto-fetch movies nếu store chưa có dữ liệu (để lấy poster, duration)
-  useEffect(() => {
-    if (moviesList.length === 0) {
-      fetchMoviesPage({ isExplorePage: false }).catch(() => {});
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Build lookup maps để join showtime với movie — chỉ dùng cho poster/duration
-  const movieLookupById = useMemo(() => {
-    const map = new Map();
-    moviesList.forEach((m) => {
-      const bid = String(m.backendId ?? m.id ?? '');
-      if (bid) map.set(bid, m);
-    });
-    return map;
-  }, [moviesList]);
-
-  const movieLookupByTitle = useMemo(() => {
-    const map = new Map();
-    moviesList.forEach((m) => {
-      const t = String(m.title || m.englishTitle || '').toLowerCase().trim();
-      if (t) map.set(t, m);
-    });
-    return map;
-  }, [moviesList]);
-
-  // Tổng hợp genres từ showtimes (đã có trong response từ BE)
-  const genreOptions = useMemo(() => {
-    const set = new Set();
-    showtimes.forEach((st) => {
-      if (Array.isArray(st.movieGenreNames)) {
-        st.movieGenreNames.forEach((g) => {
-          if (g && g.trim()) set.add(g.trim().toUpperCase());
-        });
-      }
-    });
-    // Fallback: also pull from moviesList store if showtimes don't have genre data yet
-    if (set.size === 0) {
-      moviesList.forEach((m) => {
-        const gList = Array.isArray(m.genre) ? m.genre : [];
-        gList.forEach((g) => {
-          const name = (typeof g === 'string' ? g : g?.name || '').trim();
-          if (name && name !== 'Dang cap nhat') set.add(name.toUpperCase());
-        });
+  // Tải danh sách suất chiếu khi ngày đổi
+  const fetchShowtimes = async (silent = false) => {
+    if (!silent) setIsLoadingShowtimes(true);
+    else setIsRefreshing(true);
+    try {
+      const res = await bookingService.getShowtimes({ date: selectedDate, size: 200 });
+      const raw = Array.isArray(res) ? res : (res?.data?.items ?? res?.items ?? res?.content ?? []);
+      const now = new Date();
+      // Lọc các suất chiếu hợp lệ (chưa qua giờ hoặc trong ngày)
+      const valid = raw.filter((st) => {
+        if (!st.startTime) return false;
+        const stTime = new Date(st.startTime);
+        return stTime > now && (st.status === 'OPEN' || st.status === 'SCHEDULED');
       });
+      setShowtimes(valid);
+    } catch (err) {
+      console.error('Failed to load showtimes:', err);
+      setShowtimes([]);
+    } finally {
+      setIsLoadingShowtimes(false);
+      setIsRefreshing(false);
     }
-    return [...set].sort();
-  }, [showtimes, moviesList]);
-
-  const movieGroups = useMemo(() => {
-    const groups = new Map();
-    showtimes.forEach((st) => {
-      if (!groups.has(st.movieId))
-        groups.set(st.movieId, {
-          movieId: st.movieId,
-          movieTitle: st.movieTitle,
-          // genre & ageRating come directly from ShowtimeResponse (BE-side)
-          ageRating: st.movieAgeRating || null,
-          movieGenres: Array.isArray(st.movieGenreNames)
-            ? st.movieGenreNames.filter(Boolean)
-            : [],
-          slots: [],
-        });
-      groups.get(st.movieId).slots.push(st);
-    });
-
-    const allGroups = [...groups.values()].map((group) => {
-      // Join with store only to get poster & duration
-      const movie = movieLookupById.get(String(group.movieId))
-        || movieLookupByTitle.get(String(group.movieTitle || '').toLowerCase().trim());
-
-      return {
-        ...group,
-        routeId: movie?.backendId ?? movie?.id ?? group.movieId,
-        poster: movie?.posterUrl,
-        duration: movie?.durationMinutes || movie?.duration,
-        movieFound: Boolean(movie),
-        slots: group.slots.sort((a, b) => new Date(a.startTime) - new Date(b.startTime)),
-      };
-    }).sort((a, b) => String(a.movieTitle).localeCompare(String(b.movieTitle), 'vi'));
-
-    let filtered = allGroups;
-    if (keyword.trim()) {
-      const kw = keyword.trim().toLowerCase();
-      filtered = filtered.filter((g) => g.movieTitle?.toLowerCase().includes(kw));
-    }
-    if (selectedGenre) {
-      filtered = filtered.filter((g) =>
-        g.movieGenres.some((genre) => genre.toUpperCase() === selectedGenre.toUpperCase())
-      );
-    }
-    if (selectedAge) {
-      filtered = filtered.filter((g) =>
-        String(g.ageRating || '').toUpperCase() === selectedAge.toUpperCase()
-      );
-    }
-
-    return filtered;
-  }, [showtimes, movieLookupById, movieLookupByTitle, keyword, selectedGenre, selectedAge]);
-
-  const formatTime = (value) =>
-    new Date(value).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-
-  const getMovieEndTime = (showtime, duration) => {
-    const start = showtime?.startTime ? new Date(showtime.startTime) : null;
-    const durationMinutes = Number(duration);
-    if (start && !Number.isNaN(start.getTime()) && durationMinutes > 0) {
-      return new Date(start.getTime() + durationMinutes * 60 * 1000);
-    }
-
-    const fallbackEnd = showtime?.endTime ? new Date(showtime.endTime) : null;
-    return fallbackEnd && !Number.isNaN(fallbackEnd.getTime()) ? fallbackEnd : null;
   };
 
-  const hasActiveFilters = keyword.trim() || selectedGenre || selectedAge;
-  const visibleShowtimeCount = movieGroups.reduce((total, group) => total + group.slots.length, 0);
+  useEffect(() => {
+    fetchShowtimes();
+  }, [selectedDate]);
 
-  const clearAllFilters = () => { setKeyword(''); setSelectedGenre(null); setSelectedAge(null); };
+  // Danh sách các ngày trong 14 ngày tới
+  const upcomingDates = useMemo(() => {
+    const dates = [];
+    const base = new Date();
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(base);
+      d.setDate(base.getDate() + i);
+      dates.push(toDateKey(d));
+    }
+    return dates;
+  }, []);
+
+  // Danh sách các thành phố khả dụng
+  const cities = useMemo(() => {
+    const set = new Set();
+    cinemas.forEach((c) => {
+      if (c.city) set.add(c.city.trim());
+    });
+    return Array.from(set);
+  }, [cinemas]);
+
+  // Danh sách phim đang chiếu
+  const availableMovies = useMemo(() => {
+    return moviesList.filter((m) => m.status === 'NOW_SHOWING' || (!m.status && !m.isUpcoming));
+  }, [moviesList]);
+
+  // Phim được chọn tự động nếu chưa có
+  useEffect(() => {
+    if (!selectedMovieId && availableMovies.length > 0) {
+      setSelectedMovieId(String(availableMovies[0].backendId || availableMovies[0].id));
+    }
+  }, [availableMovies, selectedMovieId]);
+
+  // Chi tiết bộ phim đang chọn
+  const currentSelectedMovie = useMemo(() => {
+    if (!selectedMovieId) return availableMovies[0] || null;
+    return availableMovies.find((m) => String(m.backendId || m.id) === String(selectedMovieId)) || availableMovies[0] || null;
+  }, [availableMovies, selectedMovieId]);
+
+  // Lọc phim theo tìm kiếm
+  const searchedMovies = useMemo(() => {
+    if (!movieSearchQuery.trim()) return availableMovies;
+    const q = movieSearchQuery.trim().toLowerCase();
+    return availableMovies.filter((m) =>
+      (m.title || '').toLowerCase().includes(q) ||
+      (m.englishTitle || '').toLowerCase().includes(q) ||
+      (m.director || '').toLowerCase().includes(q)
+    );
+  }, [availableMovies, movieSearchQuery]);
+
+  // Lọc suất chiếu theo khung giờ (Sáng / Chiều / Tối)
+  const isTimeInFilter = (st) => {
+    if (timeFilter === 'ALL') return true;
+    try {
+      const hours = new Date(st.startTime).getHours();
+      if (timeFilter === 'MORNING') return hours < 12;
+      if (timeFilter === 'AFTERNOON') return hours >= 12 && hours < 18;
+      if (timeFilter === 'EVENING') return hours >= 18;
+    } catch {
+      return true;
+    }
+    return true;
+  };
+
+  // Gom nhóm suất chiếu cho BƯỚC 3 & 4 (Theo phim đã chọn)
+  // Kết quả: Danh sách rạp có chiếu phim này, mỗi rạp chứa các định dạng phòng (2D, 3D, IMAX) và danh sách suất chiếu
+  const cinemasWithShowtimesForSelectedMovie = useMemo(() => {
+    if (!currentSelectedMovie) return [];
+    const targetMovieId = String(currentSelectedMovie.backendId || currentSelectedMovie.id);
+
+    // Suất chiếu của phim này
+    const movieShowtimes = showtimes.filter((st) => {
+      const matchMovie = String(st.movieId) === targetMovieId;
+      if (!matchMovie) return false;
+      return isTimeInFilter(st);
+    });
+
+    // Lọc theo cụm rạp và thành phố
+    let targetCinemas = cinemas;
+    if (selectedCity !== 'ALL') {
+      targetCinemas = targetCinemas.filter((c) => c.city === selectedCity);
+    }
+    if (selectedCinemaId) {
+      targetCinemas = targetCinemas.filter((c) => String(c.id) === String(selectedCinemaId));
+    }
+
+    return targetCinemas.map((cinema) => {
+      const cinemaShowtimes = movieShowtimes.filter((st) => {
+        const cId = String(st.cinemaId || st.cinema?.id || '');
+        return cId === String(cinema.id);
+      }).sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+
+      // Phân nhóm theo định dạng phòng chiếu (Format/RoomType)
+      const formatGroups = {};
+      cinemaShowtimes.forEach((st) => {
+        let fmt = st.format || '2D';
+        const roomNameLower = (st.roomName || '').toLowerCase();
+        if (roomNameLower.includes('imax')) fmt = 'IMAX Laser 2D';
+        else if (roomNameLower.includes('vip')) fmt = '2D VIP Lounge';
+        else if (roomNameLower.includes('3d')) fmt = '3D Kỹ Thuật Số';
+        else if (fmt === '2D') fmt = '2D Phụ Đề';
+
+        if (!formatGroups[fmt]) {
+          formatGroups[fmt] = [];
+        }
+        formatGroups[fmt].push(st);
+      });
+
+      return {
+        cinema,
+        showtimes: cinemaShowtimes,
+        formatGroups,
+        hasShowtimes: cinemaShowtimes.length > 0,
+      };
+    });
+  }, [currentSelectedMovie, showtimes, cinemas, selectedCity, selectedCinemaId, timeFilter]);
+
+  // Gom nhóm suất chiếu cho TAB "THEO RẠP"
+  // Kết quả: Rạp đã chọn -> Các phim đang chiếu tại rạp này -> Các suất chiếu của từng phim
+  const selectedCinemaData = useMemo(() => {
+    if (!selectedCinemaId) return cinemas[0] || null;
+    return cinemas.find((c) => String(c.id) === String(selectedCinemaId)) || cinemas[0] || null;
+  }, [cinemas, selectedCinemaId]);
+
+  const moviesForSelectedCinema = useMemo(() => {
+    if (!selectedCinemaData) return [];
+    const cinemaShowtimes = showtimes.filter((st) => {
+      const cId = String(st.cinemaId || st.cinema?.id || '');
+      const matchCinema = cId === String(selectedCinemaData.id);
+      if (!matchCinema) return false;
+      return isTimeInFilter(st);
+    });
+
+    // Gom theo phim
+    const movieMap = new Map();
+    cinemaShowtimes.forEach((st) => {
+      const mId = String(st.movieId);
+      if (!movieMap.has(mId)) {
+        const fullMovie = moviesList.find((m) => String(m.backendId || m.id) === mId) || {
+          id: st.movieId,
+          title: st.movieTitle || 'Phim đang cập nhật',
+          ageRating: st.movieAgeRating || 'P',
+          durationMinutes: 120,
+        };
+        movieMap.set(mId, {
+          movie: fullMovie,
+          showtimes: [],
+        });
+      }
+      movieMap.get(mId).showtimes.push(st);
+    });
+
+    return Array.from(movieMap.values()).map((item) => {
+      item.showtimes.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+      return item;
+    });
+  }, [selectedCinemaData, showtimes, moviesList, timeFilter]);
+
+  // Điều hướng đặt vé
+  const handleSelectShowtime = (st, movie) => {
+    const movieId = movie?.id || st.movieId || (currentSelectedMovie ? currentSelectedMovie.id : '');
+    navigate(`/movies/${movieId}/book?showtimeId=${st.id}`);
+  };
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 overflow-x-clip px-4 py-8 sm:px-6">
-      {/* Tiêu đề */}
-      <div>
-        <p className="text-[10px] font-mono font-black uppercase tracking-[0.3em] text-purple-400">
-          Tìm suất chiếu
-        </p>
-        <h1 className="mt-1 min-w-0 break-words text-2xl font-sans font-black uppercase tracking-wide text-white [overflow-wrap:anywhere]">
-          THEO MONG MUỐN CỦA BẠN
-        </h1>
-        <p className="mt-1 text-xs text-neutral-500">
-          Lọc theo tên phim, thể loại, độ tuổi hoặc chọn ngày — suất chiếu hiển thị ngay bên dưới.
-        </p>
-      </div>
-
-      {/* ── 4 filter cùng 1 hàng ── */}
-      <div className="border border-white/[0.08] bg-white/[0.015] p-3">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {/* 1. Tìm theo tên phim */}
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-purple-400" />
-          <input
-            type="text"
-            aria-label="Tìm phim theo tên"
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-            placeholder="Tìm theo tên phim…"
-            className="h-[60px] w-full border border-white/10 bg-neutral-950 py-0 pl-10 pr-4 text-sm text-white placeholder-neutral-500
-                       outline-none transition focus:border-purple-400 focus:ring-1 focus:ring-purple-500/40"
-          />
-          {keyword && (
-            <button
-              type="button"
-              onClick={() => setKeyword('')}
-              aria-label="Xóa từ khóa tìm kiếm"
-              className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 cursor-pointer items-center justify-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-purple-300"
-            >
-              <X className="h-3.5 w-3.5 text-neutral-500 hover:text-white" />
-            </button>
-          )}
-        </div>
-
-        {/* 2. Lọc thể loại */}
-        <GenreDropdown genres={genreOptions} selectedGenre={selectedGenre} onChange={setSelectedGenre} />
-
-        {/* 3. Lọc độ tuổi */}
-        <AgeRatingDropdown selectedAge={selectedAge} onChange={setSelectedAge} />
-
-        {/* 4. Chọn ngày chiếu */}
-        <div className="relative">
-          <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-purple-400" />
-          <input
-            type="date"
-            aria-label="Chọn ngày chiếu"
-            value={selectedDate}
-            min={todayKey}
-            onChange={(e) => { if (e.target.value) setSelectedDate(e.target.value); }}
-            className="h-[60px] w-full border border-white/10 bg-neutral-950 py-0 pl-10 pr-4 text-sm text-white
-                       outline-none transition focus:border-purple-400 focus:ring-1 focus:ring-purple-500/40
-                       [color-scheme:dark]"
-          />
-        </div>
-      </div>
-      </div>
-
-      {/* Active filter badges */}
-      {hasActiveFilters && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[9px] font-bold uppercase tracking-widest text-neutral-600">Bộ lọc:</span>
-          {keyword && (
-            <span className="flex items-center gap-1.5 border border-purple-500/30 bg-purple-950/30 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-purple-300">
-              <Search className="h-3 w-3" aria-hidden="true" />
-              <span className="max-w-48 truncate">{keyword}</span>
-              <button type="button" aria-label="Xóa từ khóa" onClick={() => setKeyword('')}><X className="h-3 w-3" /></button>
-            </span>
-          )}
-          {selectedGenre && (
-            <span className="flex items-center gap-1.5 border border-purple-500/30 bg-purple-950/30 px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-purple-300">
-              <Tag className="h-3 w-3" aria-hidden="true" />
-              <span className="max-w-48 truncate">{selectedGenre}</span>
-              <button type="button" aria-label="Xóa thể loại" onClick={() => setSelectedGenre(null)}><X className="h-3 w-3" /></button>
-            </span>
-          )}
-          {selectedAge && (
-            <span className={`flex items-center gap-1.5 border px-2 py-1 text-[9px] font-bold uppercase tracking-wider ${getAgeColor(selectedAge)}`}>
-              <Users className="h-3 w-3" aria-hidden="true" />
-              {selectedAge}
-              <button type="button" aria-label="Xóa phân loại độ tuổi" onClick={() => setSelectedAge(null)}><X className="h-3 w-3" /></button>
-            </span>
-          )}
-          <button type="button" onClick={clearAllFilters} className="ml-1 cursor-pointer text-[9px] font-bold uppercase tracking-widest text-neutral-500 underline underline-offset-2 transition hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-purple-300">
-            Xoá tất cả
-          </button>
-        </div>
-      )}
-
-      {/* Hint khi moviesList đang fetch để lọc genre/ageRating */}
-      {isMoviesLoading && moviesList.length === 0 && (
-        <div className="flex items-center gap-2 border border-white/5 bg-neutral-950/60 px-4 py-2.5">
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-purple-400 shrink-0" />
-          <span className="text-[10px] font-bold uppercase tracking-widest text-neutral-500">
-            Đang tải thông tin phim — bộ lọc thể loại &amp; độ tuổi sẽ sẵn sàng ngay…
-          </span>
-        </div>
-      )}
-
-      {/* ── Danh sách phim ── */}
-      {isLoading ? (
-        <div className="flex items-center justify-center gap-2 border border-white/10 bg-neutral-950 py-16 text-neutral-500">
-          <Loader2 className="h-5 w-5 animate-spin" />
-          <span className="text-xs font-bold uppercase tracking-widest">Đang tải lịch chiếu…</span>
-        </div>
-      ) : movieGroups.length === 0 ? (
-        <div className="border border-dashed border-white/10 bg-neutral-950 py-16 text-center">
-          <CalendarDays className="mx-auto h-10 w-10 text-neutral-700" />
-          <p className="mt-3 text-xs font-bold uppercase tracking-widest text-neutral-500">
-            {hasActiveFilters ? 'Không tìm thấy phim phù hợp với bộ lọc' : 'Chưa có suất chiếu nào trong ngày này'}
-          </p>
-          {hasActiveFilters && (
-            <button
-              type="button"
-              onClick={clearAllFilters}
-              className="mt-3 text-[10px] text-purple-400 hover:text-purple-300 uppercase tracking-widest font-bold underline underline-offset-2"
-            >
-              Xoá bộ lọc
-            </button>
-          )}
-        </div>
-      ) : (
-        <div className="space-y-4">
-          <div className="flex flex-col gap-2 border-b border-white/10 pb-3 sm:flex-row sm:items-end sm:justify-between">
+    <div className="min-h-screen bg-[#070b14] text-white selection:bg-orange-500 selection:text-white pb-28">
+      {/* 1. TOP HEADER & GALAXY HERO BANNER */}
+      <div className="relative border-b border-slate-800 bg-gradient-to-b from-[#0b1120] to-[#070b14] pt-8 pb-10">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          {/* Header Title */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
             <div>
-              <p className="text-[9px] font-black uppercase tracking-[0.22em] text-purple-400">Lịch chiếu khả dụng</p>
-              <h2 className="mt-1 text-sm font-extrabold capitalize text-white">
-                {new Date(`${selectedDate}T00:00:00`).toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}
-              </h2>
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-orange-500/10 border border-orange-500/30 text-orange-400 text-xs font-bold uppercase tracking-wider mb-2">
+                <Sparkles className="h-3.5 w-3.5" />
+                <span>Hệ Thống Rạp Chiếu Phim Hiện Đại Chuẩn Galaxy</span>
+              </div>
+              <h1 className="text-2xl sm:text-4xl font-black uppercase tracking-tight text-white flex items-center gap-3">
+                <span>LỊCH CHIẾU PHIM</span>
+                <span className="text-orange-500 font-mono text-xl sm:text-2xl">&bull;</span>
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-amber-300">
+                  CINEPREMIER
+                </span>
+              </h1>
+              <p className="mt-1.5 text-xs sm:text-sm text-slate-400">
+                Trải nghiệm rạp chiếu đẳng cấp: IMAX Laser, âm thanh Dolby Atmos, ghế đôi Sweetbox và bắp nước hảo hạng.
+              </p>
             </div>
-            <p className="font-mono text-[10px] font-bold uppercase tracking-wider text-neutral-500">
-              {movieGroups.length} phim <span className="mx-1 text-neutral-700">·</span> {visibleShowtimeCount} suất chiếu
-            </p>
+
+            {/* Loyalty point badge / Member perk */}
+            <div className="shrink-0 flex items-center gap-3">
+              {isLoggedIn ? (
+                <div className="px-4 py-2 rounded-xl bg-slate-900/90 border border-slate-700 flex items-center gap-2 text-xs">
+                  <div className="w-7 h-7 rounded-lg bg-orange-500/20 text-orange-400 flex items-center justify-center font-bold">
+                    ★
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-400 uppercase font-semibold">Thành viên CineClub</div>
+                    <div className="font-bold text-orange-300">{currentUser?.fullName || currentUser?.email}</div>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => { setAuthMode('login'); setShowOTP(true); }}
+                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 text-black font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-orange-500/20 transition flex items-center gap-2"
+                >
+                  <Users className="h-4 w-4" />
+                  <span>Đăng nhập tích điểm [S2]</span>
+                </button>
+              )}
+            </div>
           </div>
-          {movieGroups.map((group) => (
-            <article key={group.movieId} className="group/card overflow-hidden border border-white/10 bg-neutral-950 transition-colors hover:border-white/20">
-              {/* Movie header */}
-              <div className="grid min-w-0 gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:px-5 sm:py-4">
-                <div className="flex min-w-0 items-center gap-4">
-                  {/* Poster */}
-                  {group.poster ? (
-                    <img
-                      src={group.poster}
-                      alt={group.movieTitle}
-                      className="h-24 w-16 shrink-0 border border-white/10 object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <div className="flex h-24 w-16 shrink-0 items-center justify-center border border-white/10 bg-neutral-900">
-                      <span className="text-neutral-700 text-[8px] font-bold uppercase">No poster</span>
-                    </div>
-                  )}
 
-                  {/* Movie info */}
-                  <div className="min-w-0 flex-1">
-                    <h3 className="break-words text-base font-sans font-black uppercase leading-tight tracking-wide text-white">
-                      {group.movieTitle}
-                    </h3>
+          {/* QUICK BOOKING BAR (Galaxy Cinema Signature Feature) */}
+          <div className="mt-4">
+            <QuickBookingBar />
+          </div>
+        </div>
+      </div>
 
-                    {group.movieGenres.length > 0 && group.movieGenres[0] !== 'Dang cap nhat' && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {group.movieGenres.slice(0, 4).map((g) => (
-                          <span
-                            key={g}
-                            className="border border-purple-500/30 bg-purple-950/30 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wider text-purple-400"
-                          >
-                            {g}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+      {/* 2. MAIN WORKSPACE CONTAINER */}
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pt-8 space-y-8">
+        
+        {/* STEPPER NAVIGATOR: 4 BƯỚC MUA VÉ CHUẨN KHÁCH HÀNG */}
+        <div className="bg-[#0f172a]/70 border border-slate-800 rounded-2xl p-4 sm:p-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3 mb-4">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-orange-500 animate-ping" />
+              <span className="text-xs font-black uppercase tracking-wider text-slate-300">
+                QUY TRÌNH MUA VÉ KHÁCH HÀNG (CUSTOMER JOURNEY)
+              </span>
+            </div>
+
+            {/* 3 Main View Tabs (Theo Phim | Theo Rạp | Theo Ngày) */}
+            <div className="inline-flex rounded-xl bg-slate-900 p-1 border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setViewMode('movie')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                  viewMode === 'movie'
+                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-black shadow-md shadow-orange-500/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                🎬 Theo Phim
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('cinema')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                  viewMode === 'cinema'
+                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-black shadow-md shadow-orange-500/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                🏛️ Theo Rạp
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('date')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                  viewMode === 'date'
+                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-black shadow-md shadow-orange-500/30'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                📅 Theo Ngày
+              </button>
+            </div>
+          </div>
+
+          {/* Sequential 4 Steps Indicator */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 text-xs font-semibold">
+            <div className={`flex items-center gap-2.5 p-2.5 rounded-xl border transition ${
+              viewMode === 'movie' ? 'bg-orange-500/10 border-orange-500/40 text-orange-300' : 'bg-slate-900/60 border-slate-800 text-slate-400'
+            }`}>
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-orange-500 text-black font-black text-xs">1</span>
+              <div>
+                <div className="text-[10px] text-slate-400 uppercase font-medium">Bước 1</div>
+                <div className="font-bold">Chọn Phim</div>
+              </div>
+            </div>
+
+            <div className={`flex items-center gap-2.5 p-2.5 rounded-xl border transition ${
+              selectedDate ? 'bg-orange-500/10 border-orange-500/40 text-orange-300' : 'bg-slate-900/60 border-slate-800 text-slate-400'
+            }`}>
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-orange-500 text-black font-black text-xs">2</span>
+              <div>
+                <div className="text-[10px] text-slate-400 uppercase font-medium">Bước 2</div>
+                <div className="font-bold">Chọn Thời Gian</div>
+              </div>
+            </div>
+
+            <div className={`flex items-center gap-2.5 p-2.5 rounded-xl border transition ${
+              selectedCinemaId || viewMode === 'cinema' ? 'bg-orange-500/10 border-orange-500/40 text-orange-300' : 'bg-slate-900/60 border-slate-800 text-slate-400'
+            }`}>
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-orange-500 text-black font-black text-xs">3</span>
+              <div>
+                <div className="text-[10px] text-slate-400 uppercase font-medium">Bước 3</div>
+                <div className="font-bold">Chọn Cụm Rạp</div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2.5 p-2.5 rounded-xl border bg-slate-900/60 border-slate-800 text-slate-400">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-slate-300 font-black text-xs">4</span>
+              <div>
+                <div className="text-[10px] text-slate-400 uppercase font-medium">Bước 4</div>
+                <div className="font-bold">Mua Vé & Ghế</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* =========================================================================
+            CHẾ ĐỘ 1: THEO PHIM (MẶC ĐỊNH - LUỒNG TUẦN TỰ ĐẦY ĐỦ 4 BƯỚC)
+           ========================================================================= */}
+        {viewMode === 'movie' && (
+          <div className="space-y-8">
+            {/* BƯỚC 1: CHỌN PHIM */}
+            <section className="bg-[#0f172a]/60 border border-slate-800 rounded-2xl p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-500 text-black font-black text-xs">
+                    1
+                  </span>
+                  <div>
+                    <h2 className="text-base font-black uppercase tracking-wide text-white flex items-center gap-2">
+                      <span>BƯỚC 1: CHỌN PHIM ĐANG CHIẾU</span>
+                      <span className="text-xs text-orange-400 font-normal">({availableMovies.length} phim)</span>
+                    </h2>
+                    <p className="text-xs text-slate-400">Chọn bộ phim bạn muốn xem để hiển thị lịch chiếu chi tiết</p>
                   </div>
                 </div>
 
-                <dl className="grid grid-cols-3 divide-x divide-white/10 border border-white/10 bg-black/35 sm:min-w-[330px]">
-                  <div className="min-w-0 px-3 py-3">
-                    <dt className="text-[8px] font-black uppercase tracking-[0.16em] text-neutral-600">Thời lượng</dt>
-                    <dd className="mt-1 truncate font-mono text-xs font-black text-white">{group.duration ? `${group.duration} phút` : 'Đang cập nhật'}</dd>
-                  </div>
-                  <div className="min-w-0 px-3 py-3">
-                    <dt className="text-[8px] font-black uppercase tracking-[0.16em] text-neutral-600">Phân loại</dt>
-                    <dd className="mt-1">
-                      {group.ageRating ? (
-                        <span className={`inline-flex border px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider ${getAgeColor(group.ageRating)}`}>
-                          {group.ageRating}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] font-bold text-neutral-500">Chưa có</span>
-                      )}
-                    </dd>
-                  </div>
-                  <div className="min-w-0 px-3 py-3">
-                    <dt className="text-[8px] font-black uppercase tracking-[0.16em] text-neutral-600">Trong ngày</dt>
-                    <dd className="mt-1 truncate font-mono text-xs font-black text-white">{group.slots.length} suất</dd>
-                  </div>
-                </dl>
+                {/* Movie search input */}
+                <div className="relative w-full sm:w-64">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    value={movieSearchQuery}
+                    onChange={(e) => setMovieSearchQuery(e.target.value)}
+                    placeholder="Tìm tên phim, diễn viên..."
+                    className="w-full h-9 bg-slate-900 border border-slate-700 hover:border-slate-600 focus:border-orange-500 rounded-xl pl-9 pr-3 text-xs text-white placeholder-slate-500 focus:outline-none transition"
+                  />
+                  {movieSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setMovieSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {/* Showtime slots — always visible */}
-              <div className="min-w-0 border-t border-white/10 bg-black/35 px-4 py-4 sm:px-5">
-                <p className="mb-3 text-[8px] font-black uppercase tracking-[0.2em] text-neutral-500">
-                  <Clock className="inline h-2.5 w-2.5 mr-1 -mt-px" />
-                  Suất chiếu — {new Date(selectedDate).toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'numeric' })}
-                </p>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                  {group.slots.map((st) => {
-                    const endTime = getMovieEndTime(st, group.duration);
-                    const startLabel = formatTime(st.startTime);
-                    const endLabel = endTime ? formatTime(endTime) : '--:--';
-                    const roomName = st.roomName || st.room?.name || (st.roomId ? `Phòng ${st.roomId}` : 'Phòng chiếu');
+              {/* Movie Cards Carousel / Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3.5 pt-2">
+                {searchedMovies.map((movie) => {
+                  const mId = String(movie.backendId || movie.id);
+                  const isSelected = String(selectedMovieId) === mId;
+                  const ageBadge = AGE_RATING_BADGE[movie.ageRating] || AGE_RATING_BADGE.P;
+
+                  return (
+                    <div
+                      key={movie.id}
+                      onClick={() => setSelectedMovieId(mId)}
+                      className={`group relative cursor-pointer rounded-xl overflow-hidden border transition-all duration-300 flex flex-col ${
+                        isSelected
+                          ? 'border-orange-500 bg-orange-950/20 shadow-xl shadow-orange-500/20 ring-2 ring-orange-500 scale-[1.02]'
+                          : 'border-slate-800 bg-slate-900/80 hover:border-slate-700 hover:bg-slate-900'
+                      }`}
+                    >
+                      {/* Poster Image */}
+                      <div className="relative aspect-[2/3] w-full overflow-hidden bg-slate-950">
+                        {movie.posterUrl ? (
+                          <img
+                            src={movie.posterUrl}
+                            alt={movie.title}
+                            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center text-slate-600">
+                            <Film className="h-10 w-10" />
+                          </div>
+                        )}
+
+                        {/* Top Badges */}
+                        <div className="absolute top-2 left-2 flex flex-col gap-1 z-10">
+                          {movie.ageRating && (
+                            <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded border backdrop-blur-md ${ageBadge.bg}`}>
+                              {movie.ageRating}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Selected Indicator */}
+                        {isSelected && (
+                          <div className="absolute inset-0 bg-orange-500/20 flex items-center justify-center">
+                            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-500 text-black shadow-lg">
+                              <Check className="h-6 w-6 stroke-[3]" />
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Movie Info */}
+                      <div className="p-2.5 flex-1 flex flex-col justify-between">
+                        <div>
+                          <h3 className={`text-xs font-extrabold line-clamp-1 group-hover:text-orange-400 transition ${
+                            isSelected ? 'text-orange-400' : 'text-white'
+                          }`}>
+                            {movie.title}
+                          </h3>
+                          <p className="text-[10px] text-slate-400 line-clamp-1 mt-0.5">
+                            {Array.isArray(movie.genre) ? movie.genre.join(', ') : (movie.genre || 'Hành động')}
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-slate-500 mt-2 pt-1 border-t border-slate-800">
+                          <span className="flex items-center gap-1">
+                            <Clock className="h-3 w-3 text-slate-400" />
+                            {movie.durationMinutes || 120}p
+                          </span>
+                          {isSelected && (
+                            <span className="text-orange-400 font-bold uppercase text-[9px]">Đang chọn</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Selected Movie Banner Detail (Hiện sau khi chọn phim) */}
+              {currentSelectedMovie && (
+                <div className="mt-4 p-4 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3.5">
+                    {currentSelectedMovie.posterUrl && (
+                      <img
+                        src={currentSelectedMovie.posterUrl}
+                        alt=""
+                        className="h-14 w-10 object-cover rounded-lg border border-slate-700 shrink-0"
+                      />
+                    )}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-black text-white uppercase">{currentSelectedMovie.title}</span>
+                        {currentSelectedMovie.ageRating && (
+                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/40">
+                            {currentSelectedMovie.ageRating}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">
+                        {currentSelectedMovie.description || 'Trải nghiệm đỉnh cao công nghệ rạp chiếu cùng dàn âm thanh sống động.'}
+                      </p>
+                      <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-1">
+                        <span>Đạo diễn: <strong className="text-slate-300">{currentSelectedMovie.director || 'Đang cập nhật'}</strong></span>
+                        <span>•</span>
+                        <span>Thời lượng: <strong className="text-slate-300">{currentSelectedMovie.durationMinutes || 120} phút</strong></span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/movies/${currentSelectedMovie.id}`)}
+                    className="shrink-0 text-xs font-bold text-orange-400 hover:text-orange-300 flex items-center gap-1 border border-orange-500/30 hover:border-orange-500/60 bg-orange-500/10 px-3 py-1.5 rounded-lg transition"
+                  >
+                    <span>Xem Trailer & Chi tiết phim</span>
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+            </section>
+
+            {/* BƯỚC 2: CHỌN THỜI GIAN (NGÀY & KHUNG GIỜ) */}
+            <section className="bg-[#0f172a]/60 border border-slate-800 rounded-2xl p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-500 text-black font-black text-xs">
+                    2
+                  </span>
+                  <div>
+                    <h2 className="text-base font-black uppercase tracking-wide text-white flex items-center gap-2">
+                      <span>BƯỚC 2: CHỌN NGÀY & KHUNG GIỜ XEM</span>
+                      <span className="text-xs text-orange-400 font-normal">({formatFullDateVi(selectedDate)})</span>
+                    </h2>
+                    <p className="text-xs text-slate-400">Chọn ngày bạn muốn thưởng thức phim</p>
+                  </div>
+                </div>
+
+                {/* Filter Time of Day (Sáng / Chiều / Tối) */}
+                <div className="flex items-center gap-1.5 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setTimeFilter('ALL')}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition ${timeFilter === 'ALL' ? 'bg-orange-500 text-black' : 'text-slate-400 hover:text-white'}`}
+                  >
+                    Tất cả
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTimeFilter('MORNING')}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition ${timeFilter === 'MORNING' ? 'bg-orange-500 text-black' : 'text-slate-400 hover:text-white'}`}
+                  >
+                    Sáng (&lt;12h)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTimeFilter('AFTERNOON')}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition ${timeFilter === 'AFTERNOON' ? 'bg-orange-500 text-black' : 'text-slate-400 hover:text-white'}`}
+                  >
+                    Chiều (12-18h)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTimeFilter('EVENING')}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition ${timeFilter === 'EVENING' ? 'bg-orange-500 text-black' : 'text-slate-400 hover:text-white'}`}
+                  >
+                    Tối (&gt;18h)
+                  </button>
+                </div>
+              </div>
+
+              {/* Horizontal Scrolling Date Pills (Galaxy Cinema style) */}
+              <div className="flex gap-2.5 overflow-x-auto pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {upcomingDates.map((dateStr) => {
+                  const isSelected = selectedDate === dateStr;
+                  const weekday = formatVietnameseWeekday(dateStr);
+                  const dayMonth = formatVietnameseDayMonth(dateStr);
+
+                  return (
+                    <button
+                      key={dateStr}
+                      type="button"
+                      onClick={() => setSelectedDate(dateStr)}
+                      className={`shrink-0 flex flex-col items-center justify-center min-w-[92px] py-2.5 px-3 rounded-xl border transition-all duration-200 cursor-pointer ${
+                        isSelected
+                          ? 'bg-gradient-to-b from-orange-500 to-orange-600 border-orange-400 text-white shadow-lg shadow-orange-500/30 scale-105'
+                          : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700 hover:bg-slate-850'
+                      }`}
+                    >
+                      <span className={`text-[10px] font-extrabold uppercase tracking-wider ${
+                        isSelected ? 'text-black/80' : 'text-slate-400'
+                      }`}>
+                        {weekday}
+                      </span>
+                      <span className="text-base font-black tracking-tight mt-0.5">
+                        {dayMonth}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            {/* BƯỚC 3 & 4: CHỌN RẠP CHIẾU (SETUP MỚI ĐẶC BIỆT) & CHỌN SUẤT MUA VÉ */}
+            <section className="space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#0f172a]/60 border border-slate-800 rounded-2xl p-5">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-500 text-black font-black text-xs">
+                    3
+                  </span>
+                  <div>
+                    <h2 className="text-base font-black uppercase tracking-wide text-white flex items-center gap-2">
+                      <span>BƯỚC 3 & 4: CHỌN CỤM RẠP & SUẤT CHIẾU</span>
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      Chọn rạp gần bạn nhất và nhấp vào khung giờ phù hợp để tiến hành chọn ghế & mua vé
+                    </p>
+                  </div>
+                </div>
+
+                {/* City Filter & Cinema Filter */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* City Dropdown */}
+                  <div className="relative">
+                    <select
+                      value={selectedCity}
+                      onChange={(e) => setSelectedCity(e.target.value)}
+                      className="h-9 bg-slate-900 border border-slate-700 hover:border-orange-500/60 focus:border-orange-500 rounded-xl px-3 pr-8 text-xs font-semibold text-white focus:outline-none appearance-none transition cursor-pointer"
+                    >
+                      <option value="ALL">Toàn Quốc (Tất cả khu vực)</option>
+                      {cities.map((city) => (
+                        <option key={city} value={city}>{city}</option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  </div>
+
+                  {/* Cinema Dropdown */}
+                  <div className="relative">
+                    <select
+                      value={selectedCinemaId}
+                      onChange={(e) => setSelectedCinemaId(e.target.value)}
+                      className="h-9 bg-slate-900 border border-slate-700 hover:border-orange-500/60 focus:border-orange-500 rounded-xl px-3 pr-8 text-xs font-semibold text-white focus:outline-none appearance-none transition cursor-pointer"
+                    >
+                      <option value="">Tất cả cụm rạp</option>
+                      {cinemas
+                        .filter((c) => selectedCity === 'ALL' || c.city === selectedCity)
+                        .map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                  </div>
+
+                  {/* Refresh Button */}
+                  <button
+                    type="button"
+                    onClick={() => fetchShowtimes(true)}
+                    disabled={isRefreshing}
+                    className="h-9 w-9 flex items-center justify-center rounded-xl bg-slate-900 border border-slate-700 text-slate-400 hover:text-white transition disabled:opacity-50"
+                    title="Làm mới suất chiếu"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin text-orange-400' : ''}`} />
+                  </button>
+                </div>
+              </div>
+
+              {/* LIST OF CINEMAS (SETUP MỚI THEO YÊU CẦU: Trực quan, đầy đủ thông tin rạp và suất chiếu) */}
+              {isLoadingShowtimes ? (
+                <div className="py-16 text-center space-y-3 bg-[#0f172a]/30 border border-slate-800 rounded-2xl">
+                  <Loader2 className="h-8 w-8 text-orange-500 animate-spin mx-auto" />
+                  <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Đang cập nhật lịch chiếu từ hệ thống...</p>
+                </div>
+              ) : cinemasWithShowtimesForSelectedMovie.length === 0 ? (
+                <div className="py-16 text-center space-y-3 bg-[#0f172a]/30 border border-slate-800 rounded-2xl">
+                  <CalendarX className="h-10 w-10 text-slate-600 mx-auto" />
+                  <h3 className="text-sm font-bold text-white uppercase">Chưa có lịch chiếu trong ngày này</h3>
+                  <p className="text-xs text-slate-400 max-w-md mx-auto">
+                    Vui lòng chọn ngày chiếu khác hoặc chuyển sang cụm rạp khác để tìm suất chiếu phù hợp.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-5">
+                  {cinemasWithShowtimesForSelectedMovie.map(({ cinema, showtimes: cinemaShowtimes, formatGroups, hasShowtimes }) => {
+                    const googleMapsUrl = cinema.address
+                      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${cinema.name} ${cinema.address}`)}`
+                      : 'https://www.google.com/maps';
 
                     return (
-                      <button
-                        type="button"
-                        key={st.id}
-                        onClick={() => navigate(`/movies/${group.routeId}/book?showtimeId=${st.id}`)}
-                        aria-label={`Chọn suất chiếu ${roomName} từ ${startLabel} đến ${endLabel}`}
-                        className="group flex w-full min-w-0 cursor-pointer flex-col border border-white/15 bg-black px-3.5 py-3 text-left transition-colors hover:border-purple-400 hover:bg-purple-500/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-300 active:bg-purple-500/15"
-                        title={`${roomName} · Suất chiếu từ ${startLabel} đến ${endLabel}`}
+                      <div
+                        key={cinema.id}
+                        className={`rounded-2xl border transition-all duration-300 overflow-hidden ${
+                          hasShowtimes
+                            ? 'bg-[#0f172a]/80 border-slate-700/80 shadow-xl shadow-black/40'
+                            : 'bg-[#0f172a]/40 border-slate-800/60 opacity-60'
+                        }`}
                       >
-                        <div className="mb-2 flex items-center justify-between border-b border-white/10 pb-1.5">
-                          <span className="truncate text-[9.5px] font-black uppercase tracking-[0.14em] text-purple-300 transition group-hover:text-purple-200">
-                            {roomName}
-                          </span>
+                        {/* KHỐI THÔNG TIN RẠP CHIẾU (SETUP MỚI: Thiết kế thẻ rạp sang trọng, rõ ràng) */}
+                        <div className="p-5 border-b border-slate-800/80 bg-gradient-to-r from-slate-900/90 via-slate-900/50 to-transparent">
+                          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                            <div className="space-y-1.5">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-orange-500/20 text-orange-400">
+                                  <Building2 className="h-3.5 w-3.5" />
+                                </span>
+                                <h3 className="text-base font-black text-white uppercase tracking-wide">
+                                  {cinema.name}
+                                </h3>
+                                {cinema.city && (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+                                    {cinema.city}
+                                  </span>
+                                )}
+                                {hasShowtimes ? (
+                                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center gap-1">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                    {cinemaShowtimes.length} suất chiếu
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] font-semibold text-slate-500">Chưa có suất</span>
+                                )}
+                              </div>
+
+                              {/* Cinema Address & Hotline */}
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-400">
+                                <div className="flex items-center gap-1.5">
+                                  <MapPin className="h-3.5 w-3.5 text-orange-400 shrink-0" />
+                                  <span>{cinema.address || 'Đang cập nhật địa chỉ'}</span>
+                                </div>
+                                {cinema.phone && (
+                                  <div className="flex items-center gap-1.5">
+                                    <Phone className="h-3 w-3 text-slate-500 shrink-0" />
+                                    <span>Hotline: <strong className="text-slate-300">{cinema.phone}</strong></span>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Cinema Amenities Badges */}
+                              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-800/80 text-slate-400 border border-slate-700/60">
+                                  Dolby Atmos Sound
+                                </span>
+                                <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-800/80 text-slate-400 border border-slate-700/60">
+                                  Ghế Sweetbox Đôi
+                                </span>
+                                <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-800/80 text-slate-400 border border-slate-700/60">
+                                  Phòng Chiếu Tiêu Chuẩn 4K
+                                </span>
+                                <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-800/80 text-slate-400 border border-slate-700/60">
+                                  Bắp Rang Bơ Độc Quyền
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Action: Google Map */}
+                            <div className="shrink-0 flex items-center gap-2">
+                              <a
+                                href={googleMapsUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700 text-xs font-semibold text-slate-300 hover:text-white transition"
+                              >
+                                <MapIcon className="h-3.5 w-3.5 text-orange-400" />
+                                <span>Chỉ đường</span>
+                                <ExternalLink className="h-3 w-3 text-slate-500" />
+                              </a>
+                            </div>
+                          </div>
                         </div>
-                        <span className="grid w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
-                          <span className="grid min-w-0 grid-cols-[12px_minmax(0,1fr)] items-start gap-1.5">
-                            <Clock className="mt-0.5 h-3 w-3 shrink-0 text-neutral-500 transition group-hover:text-purple-300" />
-                            <span className="min-w-0">
-                              <span className="block font-mono text-sm font-black text-white transition group-hover:text-purple-200">{startLabel}</span>
-                              <span className="mt-1 block text-[8px] font-bold uppercase tracking-[0.14em] text-neutral-600 transition group-hover:text-purple-300/70">Bắt đầu</span>
-                            </span>
-                          </span>
-                          <ArrowRight className="h-3 w-3 shrink-0 text-neutral-600 transition group-hover:translate-x-0.5 group-hover:text-purple-400" aria-hidden="true" />
-                          <span className="min-w-0 text-right">
-                            <span className="block font-mono text-sm font-black text-purple-300">{endLabel}</span>
-                            <span className="mt-1 block text-[8px] font-bold uppercase tracking-[0.14em] text-neutral-600 transition group-hover:text-purple-300/70">Kết thúc</span>
-                          </span>
-                        </span>
-                      </button>
+
+                        {/* DANH SÁCH SUẤT CHIẾU THEO ĐỊNH DẠNG (BƯỚC 4: MUA VÉ) */}
+                        <div className="p-5">
+                          {!hasShowtimes ? (
+                            <p className="text-xs text-slate-500 italic">
+                              Hôm nay không có suất chiếu của phim này tại {cinema.name}. Vui lòng chọn ngày hoặc rạp khác.
+                            </p>
+                          ) : (
+                            <div className="space-y-4">
+                              {Object.entries(formatGroups).map(([formatName, groupShowtimes]) => (
+                                <div key={formatName} className="space-y-2.5">
+                                  {/* Format Label */}
+                                  <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-orange-400">
+                                    <Layers className="h-3.5 w-3.5 text-orange-500" />
+                                    <span>{formatName}</span>
+                                    <span className="text-[10px] font-normal text-slate-500">
+                                      ({groupShowtimes.length} khung giờ)
+                                    </span>
+                                  </div>
+
+                                  {/* Showtime Chips Buttons (Click để sang trang chọn ghế/vé) */}
+                                  <div className="flex flex-wrap gap-2.5">
+                                    {groupShowtimes.map((st) => {
+                                      const startTimeStr = new Date(st.startTime).toLocaleTimeString('vi-VN', {
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                      });
+                                      const endTimeStr = st.endTime ? new Date(st.endTime).toLocaleTimeString('vi-VN', {
+                                        hour: '2-digit',
+                                        minute: '2-digit'
+                                      }) : '';
+                                      const minPrice = st.basePrice || st.adultStandardPrice || 60000;
+
+                                      return (
+                                        <button
+                                          key={st.id}
+                                          type="button"
+                                          onClick={() => handleSelectShowtime(st, currentSelectedMovie)}
+                                          className="group/chip relative flex flex-col items-center justify-center px-4 py-2.5 rounded-xl border border-slate-700 bg-slate-900/90 hover:border-orange-500 hover:bg-orange-500/15 hover:shadow-lg hover:shadow-orange-500/20 transition-all duration-200 cursor-pointer min-w-[105px]"
+                                        >
+                                          {/* Start Time */}
+                                          <span className="text-sm font-black text-white group-hover/chip:text-orange-400 transition">
+                                            {startTimeStr}
+                                          </span>
+
+                                          {/* End Time & Room */}
+                                          <div className="flex items-center gap-1 text-[10px] text-slate-400 group-hover/chip:text-slate-300 mt-0.5">
+                                            {endTimeStr && <span>~ {endTimeStr}</span>}
+                                            {st.roomName && <span>• {st.roomName}</span>}
+                                          </div>
+
+                                          {/* Price Tag Hint */}
+                                          <span className="text-[9px] font-semibold text-orange-400/90 mt-1">
+                                            {formatVnd(minPrice)}
+                                          </span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
+              )}
+            </section>
+          </div>
+        )}
+
+        {/* =========================================================================
+            CHẾ ĐỘ 2: THEO RẠP (TAB THEO RẠP CHUẨN GALAXY CINE)
+           ========================================================================= */}
+        {viewMode === 'cinema' && (
+          <div className="space-y-6">
+            {/* Chọn Cụm Rạp */}
+            <div className="bg-[#0f172a]/60 border border-slate-800 rounded-2xl p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-orange-500 text-black font-black text-xs">
+                    🏛️
+                  </span>
+                  <div>
+                    <h2 className="text-base font-black uppercase tracking-wide text-white">
+                      CHỌN CỤM RẠP GALAXY / CINEPREMIER
+                    </h2>
+                    <p className="text-xs text-slate-400">Chọn rạp chiếu để xem toàn bộ phim và lịch chiếu hôm nay</p>
+                  </div>
+                </div>
+
+                {/* City selection buttons */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCity('ALL')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                      selectedCity === 'ALL' ? 'bg-orange-500 text-black' : 'bg-slate-900 border border-slate-700 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Tất cả
+                  </button>
+                  {cities.map((city) => (
+                    <button
+                      key={city}
+                      type="button"
+                      onClick={() => setSelectedCity(city)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition ${
+                        selectedCity === city ? 'bg-orange-500 text-black' : 'bg-slate-900 border border-slate-700 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {city}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </article>
-          ))}
-        </div>
-      )}
+
+              {/* Cinema Grid Selector */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
+                {cinemas
+                  .filter((c) => selectedCity === 'ALL' || c.city === selectedCity)
+                  .map((cinema) => {
+                    const isSelected = String(selectedCinemaId) === String(cinema.id);
+
+                    return (
+                      <div
+                        key={cinema.id}
+                        onClick={() => setSelectedCinemaId(String(cinema.id))}
+                        className={`p-4 rounded-xl border cursor-pointer transition-all duration-200 flex flex-col justify-between ${
+                          isSelected
+                            ? 'bg-orange-950/20 border-orange-500 shadow-lg shadow-orange-500/10 ring-2 ring-orange-500'
+                            : 'bg-slate-900/80 border-slate-800 hover:border-slate-700 hover:bg-slate-900'
+                        }`}
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <h3 className={`text-sm font-extrabold uppercase line-clamp-1 ${
+                              isSelected ? 'text-orange-400' : 'text-white'
+                            }`}>
+                              {cinema.name}
+                            </h3>
+                            {isSelected && (
+                              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-orange-500 text-black">
+                                <Check className="h-3.5 w-3.5 stroke-[3]" />
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-400 line-clamp-2">
+                            {cinema.address}
+                          </p>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 mt-3 pt-2 border-t border-slate-800/80">
+                          <span>{cinema.city}</span>
+                          <span>Hotline: {cinema.phone || '1900 2224'}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </div>
+
+            {/* Dải chọn ngày cho Tab Theo Rạp */}
+            <div className="bg-[#0f172a]/60 border border-slate-800 rounded-2xl p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                  Chọn ngày xem tại {selectedCinemaData?.name}:
+                </h3>
+                <span className="text-xs text-orange-400 font-bold">{formatFullDateVi(selectedDate)}</span>
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {upcomingDates.map((dateStr) => {
+                  const isSelected = selectedDate === dateStr;
+                  const weekday = formatVietnameseWeekday(dateStr);
+                  const dayMonth = formatVietnameseDayMonth(dateStr);
+
+                  return (
+                    <button
+                      key={dateStr}
+                      type="button"
+                      onClick={() => setSelectedDate(dateStr)}
+                      className={`shrink-0 flex flex-col items-center justify-center min-w-[85px] py-2 px-2.5 rounded-xl border transition ${
+                        isSelected
+                          ? 'bg-orange-500 border-orange-400 text-white shadow-md'
+                          : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <span className={`text-[9px] font-bold uppercase ${isSelected ? 'text-black/80' : 'text-slate-400'}`}>
+                        {weekday}
+                      </span>
+                      <span className="text-sm font-extrabold mt-0.5">{dayMonth}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Danh sách phim và suất chiếu tại rạp này */}
+            {isLoadingShowtimes ? (
+              <div className="py-16 text-center space-y-3 bg-[#0f172a]/30 border border-slate-800 rounded-2xl">
+                <Loader2 className="h-8 w-8 text-orange-500 animate-spin mx-auto" />
+                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Đang tải lịch chiếu...</p>
+              </div>
+            ) : moviesForSelectedCinema.length === 0 ? (
+              <div className="py-16 text-center space-y-3 bg-[#0f172a]/30 border border-slate-800 rounded-2xl">
+                <CalendarX className="h-10 w-10 text-slate-600 mx-auto" />
+                <h3 className="text-sm font-bold text-white uppercase">Chưa có suất chiếu tại rạp này hôm nay</h3>
+                <p className="text-xs text-slate-400">Vui lòng chọn ngày chiếu khác để kiểm tra</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {moviesForSelectedCinema.map(({ movie, showtimes: movieShowtimes }) => (
+                  <div
+                    key={movie.id}
+                    className="p-5 rounded-2xl border border-slate-800 bg-[#0f172a]/80 shadow-lg flex flex-col md:flex-row gap-5 items-start"
+                  >
+                    {/* Poster */}
+                    <img
+                      src={movie.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80'}
+                      alt={movie.title}
+                      className="w-20 h-28 object-cover rounded-xl border border-slate-700 shrink-0"
+                    />
+
+                    {/* Movie Info & Showtimes */}
+                    <div className="flex-1 space-y-3">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-black text-white uppercase">{movie.title}</h3>
+                          {movie.ageRating && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/40">
+                              {movie.ageRating}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          {Array.isArray(movie.genre) ? movie.genre.join(', ') : (movie.genre || 'Hành động')} • {movie.durationMinutes || 120} phút
+                        </p>
+                      </div>
+
+                      {/* Showtime Chips */}
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {movieShowtimes.map((st) => {
+                          const timeStr = new Date(st.startTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                          return (
+                            <button
+                              key={st.id}
+                              type="button"
+                              onClick={() => handleSelectShowtime(st, movie)}
+                              className="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-orange-500 hover:bg-orange-500/20 text-xs font-bold text-white hover:text-orange-400 transition cursor-pointer flex flex-col items-center"
+                            >
+                              <span>{timeStr}</span>
+                              <span className="text-[9px] text-slate-400 font-normal">{st.roomName || '2D'}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* =========================================================================
+            CHẾ ĐỘ 3: THEO NGÀY (TAB THEO NGÀY)
+           ========================================================================= */}
+        {viewMode === 'date' && (
+          <div className="space-y-6">
+            {/* Dải chọn ngày lớn */}
+            <div className="bg-[#0f172a]/60 border border-slate-800 rounded-2xl p-5 space-y-3">
+              <h2 className="text-base font-black uppercase tracking-wide text-white">
+                CHỌN NGÀY CHIẾU PHIM
+              </h2>
+              <div className="flex gap-2.5 overflow-x-auto pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {upcomingDates.map((dateStr) => {
+                  const isSelected = selectedDate === dateStr;
+                  const weekday = formatVietnameseWeekday(dateStr);
+                  const dayMonth = formatVietnameseDayMonth(dateStr);
+
+                  return (
+                    <button
+                      key={dateStr}
+                      type="button"
+                      onClick={() => setSelectedDate(dateStr)}
+                      className={`shrink-0 flex flex-col items-center justify-center min-w-[95px] py-2.5 px-3 rounded-xl border transition ${
+                        isSelected
+                          ? 'bg-orange-500 border-orange-400 text-white shadow-lg'
+                          : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-700'
+                      }`}
+                    >
+                      <span className={`text-[10px] font-bold uppercase ${isSelected ? 'text-black/80' : 'text-slate-400'}`}>
+                        {weekday}
+                      </span>
+                      <span className="text-base font-black mt-0.5">{dayMonth}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Suất chiếu theo từng phim trong ngày */}
+            {isLoadingShowtimes ? (
+              <div className="py-16 text-center space-y-3 bg-[#0f172a]/30 border border-slate-800 rounded-2xl">
+                <Loader2 className="h-8 w-8 text-orange-500 animate-spin mx-auto" />
+                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Đang tải lịch chiếu...</p>
+              </div>
+            ) : showtimes.length === 0 ? (
+              <div className="py-16 text-center space-y-3 bg-[#0f172a]/30 border border-slate-800 rounded-2xl">
+                <CalendarX className="h-10 w-10 text-slate-600 mx-auto" />
+                <h3 className="text-sm font-bold text-white uppercase">Chưa có suất chiếu trong ngày này</h3>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {availableMovies.map((movie) => {
+                  const mId = String(movie.backendId || movie.id);
+                  const movieShowtimes = showtimes.filter((st) => String(st.movieId) === mId);
+                  if (movieShowtimes.length === 0) return null;
+
+                  return (
+                    <div
+                      key={movie.id}
+                      className="p-5 rounded-2xl border border-slate-800 bg-[#0f172a]/80 shadow-lg flex flex-col sm:flex-row gap-5"
+                    >
+                      <img
+                        src={movie.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80'}
+                        alt={movie.title}
+                        className="w-20 h-28 object-cover rounded-xl border border-slate-700 shrink-0"
+                      />
+                      <div className="flex-1 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-black text-white uppercase">{movie.title}</h3>
+                          {movie.ageRating && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400 border border-orange-500/40">
+                              {movie.ageRating}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap gap-2">
+                          {movieShowtimes.map((st) => {
+                            const timeStr = new Date(st.startTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                            return (
+                              <button
+                                key={st.id}
+                                type="button"
+                                onClick={() => handleSelectShowtime(st, movie)}
+                                className="px-3.5 py-2 rounded-xl bg-slate-900 border border-slate-700 hover:border-orange-500 hover:bg-orange-500/20 text-xs font-bold text-white hover:text-orange-400 transition cursor-pointer flex flex-col items-center"
+                              >
+                                <span>{timeStr}</span>
+                                <span className="text-[9px] text-slate-400 font-normal">{st.cinemaName}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

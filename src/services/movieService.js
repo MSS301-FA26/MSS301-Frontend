@@ -80,7 +80,7 @@ export const normalizeMovie = (movie = {}, fallback = {}) => {
       audio: Number(ratings.audio ?? fallback.ratings?.audio ?? Math.max(0, overall - 0.1))
     },
     approvalStatus: movie.approvalStatus || fallback.approvalStatus || 'APPROVED',
-    publicationStatus: movie.publicationStatus || fallback.publicationStatus || 'PUBLISHED',
+    publicationStatus: movie.publicationStatus || (effectiveStatus === 'ENDED' || effectiveStatus === 'INACTIVE' ? 'ARCHIVED' : (fallback.publicationStatus || 'PUBLISHED')),
     submittedAt: movie.submittedAt || fallback.submittedAt || null,
     submittedById: movie.submittedById || fallback.submittedById || null,
     submittedByName: movie.submittedByName || fallback.submittedByName || '',
@@ -138,4 +138,6 @@ export const movieService = {
   getFoodCombos: () => request('/api/v1/foods/combos').then(unwrapListPayload),
   getFoodCategories: () => request('/api/v1/foods/categories').then(unwrapListPayload),
   getPublicCinema: () => request('/api/v1/cinema'),
+  getPublicCinemas: () => request('/api/v1/cinemas').then(unwrapListPayload),
+  getDirectors: (params = {}) => request(`/api/v1/directors${buildQueryString(params)}`).then(unwrapListPayload),
 };
