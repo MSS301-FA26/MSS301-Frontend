@@ -229,7 +229,7 @@ export default function DetailView() {
 
   const onBook = (mv) => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-    navigate(`/movies/${mv.backendId || mv.id}/book`);
+    navigate(`/showtimes?movieId=${mv.backendId || mv.id}`);
   };
 
   // Robust detail fetching for all movie states (published, draft, pending, approved)

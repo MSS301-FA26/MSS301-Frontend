@@ -25,7 +25,7 @@ export default function ExploreView() {
   const onDateChange = (d) => { setMovieDateFilter(d); setMoviePagination(prev => ({ ...prev, page: 0 })); };
   const onPageChange = (page) => setMoviePagination(prev => ({ ...prev, page: page - 1 }));
   const onSelectMovie = (id) => navigate(`/movies/${id}`);
-  const onBookMovie = (movie) => navigate(`/movies/${movie.id}/book`);
+  const onBookMovie = (movie) => navigate(`/showtimes?movieId=${movie.backendId || movie.id}`);
   const isMovieWatchlisted = (movie) => watchlist.some((item) => (
     String(item.backendId || item.movieId || item.id) === String(movie.backendId || movie.movieId || movie.id)
   ));

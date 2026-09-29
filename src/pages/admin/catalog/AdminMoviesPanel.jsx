@@ -24,7 +24,7 @@ const extractYoutubeId = (url = '') => {
       if (videoId) return videoId;
       if (['embed', 'shorts', 'live'].includes(parts[0])) return parts[1] || '';
     }
-  } catch {}
+  } catch { }
   const patterns = [
     /youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/,
     /youtu\.be\/([a-zA-Z0-9_-]{11})/,
@@ -241,6 +241,8 @@ export default function AdminMoviesPanel({ ctx }) {
     showMovieForm,
     setShowMovieForm,
     isMovieSaving,
+    movieFormError,
+    setMovieFormError,
     formData,
     setFormData,
     resetMovieForm,
@@ -359,6 +361,16 @@ export default function AdminMoviesPanel({ ctx }) {
   const [genreDropdownPosition, setGenreDropdownPosition] = useState(null);
   const [isActorDropdownOpen, setIsActorDropdownOpen] = useState(false);
   const [actorPickerSearch, setActorPickerSearch] = useState('');
+  const [directorsList, setDirectorsList] = useState([]);
+
+  useEffect(() => {
+    const token = typeof getAdminToken === 'function' ? getAdminToken() : null;
+    if (token && typeof adminService?.getAdminDirectors === 'function') {
+      adminService.getAdminDirectors(token, { size: 100 })
+        .then((data) => setDirectorsList(Array.isArray(data) ? data : []))
+        .catch(() => { });
+    }
+  }, []);
   const actorTriggerRef = useRef(null);
   const actorDropdownRef = useRef(null);
   const [actorDropdownPosition, setActorDropdownPosition] = useState(null);
@@ -504,7 +516,7 @@ export default function AdminMoviesPanel({ ctx }) {
     const timer = window.setTimeout(() => {
       const currentDrafts = getStoredDrafts();
       const currentDraftId = activeDraftIdRef.current;
-      
+
       let existingIndex = currentDraftId ? currentDrafts.findIndex((d) => d.id === currentDraftId) : -1;
       const normTitle = String(formData.title || '').trim().toLowerCase();
       if (existingIndex < 0 && normTitle) {
@@ -558,14 +570,19 @@ export default function AdminMoviesPanel({ ctx }) {
     return () => window.clearTimeout(timer);
   }, [formData, editingMovie, showMovieForm]);
 
-  const handleCloseMovieForm = () => {
+  const handleCloseMovieForm = (e) => {
+    setMovieFormError?.(null);
+    if (e) {
+      e.preventDefault?.();
+      e.stopPropagation?.();
+    }
     playPulseSound?.(300, 'sine', 0.05);
-    
+
     // Only save as draft if we are adding a new movie, not editing an already published catalog movie
     if (!editingMovie && hasDraftContent(formData)) {
       const currentDrafts = getStoredDrafts();
       const currentDraftId = activeDraftIdRef.current;
-      
+
       let existingIndex = currentDraftId ? currentDrafts.findIndex((d) => d.id === currentDraftId) : -1;
       const normTitle = String(formData.title || '').trim().toLowerCase();
       if (existingIndex < 0 && normTitle) {
@@ -614,12 +631,14 @@ export default function AdminMoviesPanel({ ctx }) {
 
     activeDraftIdRef.current = null;
     setActiveDraftId(null);
+    setHasAttemptedNextStep(false);
     setMovieFormStep(1);
     resetMovieForm();
     setShowMovieForm(false);
   };
 
   const handleResumeDraft = (draft) => {
+    setMovieFormError?.(null);
     playPulseSound?.(600, 'sine', 0.1);
     if (draft?.formData) {
       setFormData(draft.formData);
@@ -631,6 +650,7 @@ export default function AdminMoviesPanel({ ctx }) {
       activeDraftIdRef.current = draft.id;
       setActiveDraftId(draft.id);
     }
+    setHasAttemptedNextStep(false);
     setMovieFormStep(1);
     setShowMovieForm(true);
   };
@@ -640,7 +660,7 @@ export default function AdminMoviesPanel({ ctx }) {
     const updated = draftList.filter((d) => d.id !== draftId);
     try {
       localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(updated));
-    } catch {}
+    } catch { }
     setDraftList(updated);
     if (activeDraftIdRef.current === draftId) {
       activeDraftIdRef.current = null;
@@ -650,6 +670,7 @@ export default function AdminMoviesPanel({ ctx }) {
   };
 
   const handleStartCreateMovie = () => {
+    setMovieFormError?.(null);
     playPulseSound?.(600, 'sine', 0.1);
     resetMovieForm();
     if (typeof setEditingMovie === 'function') {
@@ -657,6 +678,7 @@ export default function AdminMoviesPanel({ ctx }) {
     }
     activeDraftIdRef.current = null;
     setActiveDraftId(null);
+    setHasAttemptedNextStep(false);
     setMovieFormStep(1);
     setShowMovieForm(true);
   };
@@ -851,7 +873,14 @@ export default function AdminMoviesPanel({ ctx }) {
   };
 
   const onMovieSubmit = async (e) => {
-    e.preventDefault();
+    if (e) {
+      e.preventDefault?.();
+      e.stopPropagation?.();
+    }
+    if (movieFormStep < 3) {
+      handleNextStep();
+      return;
+    }
     if (!validateStep1(true)) {
       goToMovieFormStep(1);
       setHasAttemptedNextStep(true);
@@ -872,7 +901,7 @@ export default function AdminMoviesPanel({ ctx }) {
     const currentId = activeDraftIdRef.current || activeDraftId;
     const currentTitle = String(formData.title || '').trim().toLowerCase();
     await handleCreateMovieSubmit(e);
-    
+
     // Clean up draft by id and by title
     const remaining = getStoredDrafts().filter((d) => {
       if (currentId && d.id === currentId) return false;
@@ -881,7 +910,7 @@ export default function AdminMoviesPanel({ ctx }) {
     });
     try {
       localStorage.setItem(DRAFTS_STORAGE_KEY, JSON.stringify(remaining));
-    } catch {}
+    } catch { }
     setDraftList(remaining);
     activeDraftIdRef.current = null;
     setActiveDraftId(null);
@@ -1496,6 +1525,13 @@ export default function AdminMoviesPanel({ ctx }) {
               {[
                 { id: 'ALL', name: 'TẤT CẢ' },
                 { id: 'PUBLISHED', name: 'ĐÃ XUẤT BẢN', icon: Globe2, color: 'emerald' },
+                {
+                  id: 'DRAFT',
+                  name: 'BẢN NHÁP',
+                  icon: FileText,
+                  color: 'amber',
+                  count: (draftList?.length || 0) > 0 ? draftList.length : undefined
+                },
                 { id: 'ARCHIVED', name: 'LƯU TRỮ', icon: Archive, color: 'gray' }
               ].map((filter) => {
                 const isActive = filmFilter === filter.id;
@@ -1507,18 +1543,16 @@ export default function AdminMoviesPanel({ ctx }) {
                       setFilmFilter(filter.id);
                       setAdminMoviePagination((prev) => ({ ...prev, page: 0 }));
                     }}
-                    className={`px-3 py-1.5 text-[10.5px] uppercase font-bold transition-all rounded-none flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
-                      isActive
+                    className={`px-3 py-1.5 text-[10.5px] uppercase font-bold transition-all rounded-none flex items-center gap-1.5 whitespace-nowrap shrink-0 ${isActive
                         ? 'bg-amber-500 text-black font-extrabold shadow-sm'
                         : 'bg-black/50 text-neutral-300 border border-white/[0.07] hover:border-white/20 hover:text-white'
-                    }`}
+                      }`}
                   >
                     {filter.icon && <filter.icon className="h-3 w-3" />}
                     <span>{filter.name}</span>
                     {typeof filter.count === 'number' && filter.count > 0 && (
-                      <span className={`text-[9.5px] px-1.5 py-0.2 rounded-none font-mono font-bold ${
-                        isActive ? 'bg-black/25 text-black' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                      }`}>
+                      <span className={`text-[9.5px] px-1.5 py-0.2 rounded-none font-mono font-bold ${isActive ? 'bg-black/25 text-black' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                        }`}>
                         {filter.count}
                       </span>
                     )}
@@ -1598,8 +1632,55 @@ export default function AdminMoviesPanel({ ctx }) {
                     </div>
                   )}
 
+                  {/* MOVIE FORM ERROR ALERT */}
+                  {movieFormError && (
+                    <div className="mx-5 sm:mx-6 mt-2.5 shrink-0 flex items-start justify-between gap-3 border border-rose-500/50 bg-rose-950/80 p-3 text-rose-200">
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <AlertCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
+                        <div className="min-w-0">
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-rose-400">Không thể cập nhật phim</p>
+                          <p className="text-xs mt-0.5 text-rose-200 whitespace-pre-line">{movieFormError}</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setMovieFormError?.(null)}
+                        className="text-neutral-400 hover:text-white shrink-0 p-1"
+                        title="Đóng thông báo lỗi"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* NON-UPCOMING MOVIE ADVISORY NOTICE */}
+                  {editingMovie && editingMovie.status && editingMovie.status !== 'UPCOMING' && (
+                    <div className="mx-5 sm:mx-6 mt-2.5 shrink-0 flex items-center gap-2.5 border border-amber-500/30 bg-amber-950/40 p-2.5 text-amber-200 text-xs">
+                      <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />
+                      <div>
+                        <strong>Lưu ý:</strong> Phim đang ở trạng thái <strong>{editingMovie.status === 'NOW_SHOWING' ? 'ĐANG CHIẾU' : editingMovie.status === 'ENDED' ? 'ĐÃ KẾT THÚC' : editingMovie.status}</strong>. Theo quy định hệ thống, chỉ phim <strong>SẮP CHIẾU (UPCOMING)</strong> mới có thể cập nhật nội dung.
+                      </div>
+                    </div>
+                  )}
+
                   {/* FORM WITH FIXED STEPPER, SCROLLABLE BODY, FIXED FOOTER */}
-                  <form onSubmit={onMovieSubmit} className="flex flex-1 min-h-0 flex-col text-xs font-sans overflow-hidden">
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (movieFormStep < 3) {
+                        handleNextStep();
+                        return;
+                      }
+                      onMovieSubmit(e);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && e.target.tagName === 'INPUT' && movieFormStep < 3) {
+                        e.preventDefault();
+                        handleNextStep();
+                      }
+                    }}
+                    className="flex flex-1 min-h-0 flex-col text-xs font-sans overflow-hidden"
+                  >
                     {/* Stepper bar */}
                     <div className="border-b border-white/[0.08] bg-black/25 px-5 py-2 sm:px-6 shrink-0">
                       <div className="grid grid-cols-3 gap-2">
@@ -1641,21 +1722,19 @@ export default function AdminMoviesPanel({ ctx }) {
                                   goToMovieFormStep(3);
                                 }
                               }}
-                              className={`group relative flex min-w-0 items-center gap-2 rounded-none border px-2.5 py-1.5 text-left transition sm:px-3 ${
-                                isActive
+                              className={`group relative flex min-w-0 items-center gap-2 rounded-none border px-2.5 py-1.5 text-left transition sm:px-3 ${isActive
                                   ? 'border-amber-400/60 bg-amber-400/10'
                                   : isDone
                                     ? 'cursor-pointer border-emerald-500/25 bg-emerald-500/[0.06] hover:border-emerald-400/50'
                                     : 'cursor-pointer border-white/[0.06] bg-black/20 hover:border-white/20'
-                              }`}
+                                }`}
                             >
-                              <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-none border text-[10px] font-black ${
-                                isActive
+                              <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-none border text-[10px] font-black ${isActive
                                   ? 'border-amber-400 bg-amber-400 text-black'
                                   : isDone
                                     ? 'border-emerald-400 bg-emerald-400 text-black'
                                     : 'border-white/15 text-neutral-500'
-                              }`}>
+                                }`}>
                                 {isDone ? <Check className="h-3 w-3 stroke-[3]" /> : step.id}
                               </span>
                               <span className="min-w-0">
@@ -1697,11 +1776,10 @@ export default function AdminMoviesPanel({ ctx }) {
                                 maxLength={50}
                                 value={formData.title}
                                 onChange={(e) => setFormData({ ...formData, title: uppercaseMovieTitle(e.target.value) })}
-                                className={`w-full bg-black/80 border p-2 text-xs font-bold rounded-none focus:outline-none transition ${
-                                  isDuplicateTitle || (hasAttemptedNextStep && !formData.title?.trim())
+                                className={`w-full bg-black/80 border p-2 text-xs font-bold rounded-none focus:outline-none transition ${isDuplicateTitle || (hasAttemptedNextStep && !formData.title?.trim())
                                     ? 'border-rose-500 text-rose-200 bg-rose-950/20 focus:border-rose-400'
                                     : 'border-white/10 text-white focus:border-amber-400'
-                                }`}
+                                  }`}
                               />
                               {hasAttemptedNextStep && !formData.title?.trim() && !isDuplicateTitle && (
                                 <p className="text-[10px] text-rose-400 font-medium">Bắt buộc nhập tên tác phẩm</p>
@@ -1729,11 +1807,10 @@ export default function AdminMoviesPanel({ ctx }) {
                                 maxLength={30}
                                 value={formData.englishTitle}
                                 onChange={(e) => setFormData({ ...formData, englishTitle: e.target.value })}
-                                className={`w-full bg-black/80 border p-2 text-xs text-white rounded-none focus:outline-none transition ${
-                                  hasAttemptedNextStep && !formData.englishTitle?.trim()
+                                className={`w-full bg-black/80 border p-2 text-xs text-white rounded-none focus:outline-none transition ${hasAttemptedNextStep && !formData.englishTitle?.trim()
                                     ? 'border-rose-500 bg-rose-950/20 text-rose-200 focus:border-rose-400'
                                     : 'border-white/10 focus:border-amber-400'
-                                }`}
+                                  }`}
                               />
                               {hasAttemptedNextStep && !formData.englishTitle?.trim() && (
                                 <p className="text-[10px] text-rose-400 font-medium">Bắt buộc nhập tên tiếng Anh hoặc tiêu đề gốc</p>
@@ -1752,11 +1829,10 @@ export default function AdminMoviesPanel({ ctx }) {
                                   ref={directorTriggerRef}
                                   type="button"
                                   onClick={toggleDirectorDropdown}
-                                  className={`flex min-h-[36px] w-full items-center justify-between gap-2 rounded-none border bg-black/80 px-3 py-1.5 text-left text-xs transition focus:outline-none ${
-                                    hasAttemptedNextStep && !formData.director?.trim()
+                                  className={`flex min-h-[36px] w-full items-center justify-between gap-2 rounded-none border bg-black/80 px-3 py-1.5 text-left text-xs transition focus:outline-none ${hasAttemptedNextStep && !formData.director?.trim()
                                       ? 'border-rose-500 bg-rose-950/20 text-rose-200 focus:border-rose-400'
                                       : 'border-white/10 text-white hover:border-amber-500/60 focus:border-amber-400'
-                                  }`}
+                                    }`}
                                 >
                                   <span className="min-w-0 flex-1 truncate">
                                     {selectedDirectorNames.length ? (
@@ -1867,11 +1943,10 @@ export default function AdminMoviesPanel({ ctx }) {
                                   ref={genreTriggerRef}
                                   type="button"
                                   onClick={toggleGenreDropdown}
-                                  className={`flex min-h-[36px] w-full items-center justify-between gap-2 rounded-none border bg-black/80 px-3 py-1.5 text-left text-xs transition focus:outline-none ${
-                                    hasAttemptedNextStep && (!formData.genreIds || formData.genreIds.length === 0)
+                                  className={`flex min-h-[36px] w-full items-center justify-between gap-2 rounded-none border bg-black/80 px-3 py-1.5 text-left text-xs transition focus:outline-none ${hasAttemptedNextStep && (!formData.genreIds || formData.genreIds.length === 0)
                                       ? 'border-rose-500 bg-rose-950/20 text-rose-200'
                                       : 'border-white/10 text-white hover:border-amber-500/60 focus:border-amber-400'
-                                  }`}
+                                    }`}
                                 >
                                   <span className="min-w-0 flex-1 truncate text-neutral-400">
                                     {selectedGenreObjects.length
@@ -1942,11 +2017,10 @@ export default function AdminMoviesPanel({ ctx }) {
                                 max={180}
                                 value={formData.duration}
                                 onChange={(e) => setFormData({ ...formData, duration: Number(e.target.value) })}
-                                className={`w-full bg-black/80 border p-2 text-xs text-white rounded-none focus:outline-none font-mono transition ${
-                                  hasAttemptedNextStep && (!formData.duration || formData.duration < 60 || formData.duration > 180)
+                                className={`w-full bg-black/80 border p-2 text-xs text-white rounded-none focus:outline-none font-mono transition ${hasAttemptedNextStep && (!formData.duration || formData.duration < 60 || formData.duration > 180)
                                     ? 'border-rose-500 bg-rose-950/20 text-rose-200 focus:border-rose-400'
                                     : 'border-white/10 focus:border-amber-400'
-                                }`}
+                                  }`}
                               />
                               {hasAttemptedNextStep && (!formData.duration || formData.duration < 60 || formData.duration > 180) && (
                                 <p className="text-[10px] text-rose-400 font-medium">Thời lượng 60 - 180 phút</p>
@@ -2004,11 +2078,10 @@ export default function AdminMoviesPanel({ ctx }) {
                                 <label className="text-[10px] uppercase tracking-wider text-neutral-300 font-bold block">
                                   Thể loại phim <span className="text-amber-400">*</span>
                                 </label>
-                                <span className={`text-[9px] font-mono px-2 py-0.5 rounded-none border ${
-                                  (formData.genreIds || []).length > 0
+                                <span className={`text-[9px] font-mono px-2 py-0.5 rounded-none border ${(formData.genreIds || []).length > 0
                                     ? 'text-amber-300 bg-amber-500/10 border-amber-500/30'
                                     : 'text-neutral-400 bg-white/[0.03] border-white/10'
-                                }`}>
+                                  }`}>
                                   {(formData.genreIds || []).length} thể loại đã chọn
                                 </span>
                               </div>
@@ -2027,11 +2100,10 @@ export default function AdminMoviesPanel({ ctx }) {
                               <button
                                 type="button"
                                 onClick={toggleGenreDropdown}
-                                className={`flex min-h-[36px] w-full items-center justify-between gap-2 rounded-none border bg-black/80 px-3 py-1.5 text-left text-xs transition focus:outline-none ${
-                                  hasAttemptedNextStep && (!formData.genreIds || formData.genreIds.length === 0)
+                                className={`flex min-h-[36px] w-full items-center justify-between gap-2 rounded-none border bg-black/80 px-3 py-1.5 text-left text-xs transition focus:outline-none ${hasAttemptedNextStep && (!formData.genreIds || formData.genreIds.length === 0)
                                     ? 'border-rose-500 bg-rose-950/20 text-rose-200 focus:border-rose-400'
                                     : 'border-white/10 text-white hover:border-amber-500/60 focus:border-amber-400'
-                                }`}
+                                  }`}
                               >
                                 <span className="min-w-0 flex-1 truncate">
                                   {selectedGenreObjects.length > 0 ? (
@@ -2104,18 +2176,16 @@ export default function AdminMoviesPanel({ ctx }) {
                                               key={genre.id}
                                               type="button"
                                               onClick={() => toggleMovieGenre(genre.id)}
-                                              className={`flex items-center gap-2 px-2 py-1.5 rounded-none border text-left transition select-none ${
-                                                isSelected
+                                              className={`flex items-center gap-2 px-2 py-1.5 rounded-none border text-left transition select-none ${isSelected
                                                   ? 'border-amber-500/50 bg-amber-500/15 text-amber-200'
                                                   : 'border-white/[0.06] bg-neutral-900/60 text-neutral-300 hover:bg-neutral-800 hover:text-white'
-                                              }`}
+                                                }`}
                                             >
                                               <span
-                                                className={`grid h-3.5 w-3.5 shrink-0 place-items-center rounded-none border text-[9px] ${
-                                                  isSelected
+                                                className={`grid h-3.5 w-3.5 shrink-0 place-items-center rounded-none border text-[9px] ${isSelected
                                                     ? 'border-amber-400 bg-amber-400 text-black'
                                                     : 'border-white/20 text-transparent'
-                                                }`}
+                                                  }`}
                                               >
                                                 <Check className="h-2.5 w-2.5 stroke-[3]" />
                                               </span>
@@ -2214,11 +2284,10 @@ export default function AdminMoviesPanel({ ctx }) {
                                 maxLength={30}
                                 value={formData.language}
                                 onChange={(e) => setFormData({ ...formData, language: e.target.value })}
-                                className={`w-full bg-black/80 border p-2 text-xs text-white rounded-none focus:outline-none transition ${
-                                  hasAttemptedNextStep && !formData.language?.trim()
+                                className={`w-full bg-black/80 border p-2 text-xs text-white rounded-none focus:outline-none transition ${hasAttemptedNextStep && !formData.language?.trim()
                                     ? 'border-rose-500 bg-rose-950/20 text-rose-200 focus:border-rose-400'
                                     : 'border-white/10 focus:border-amber-400'
-                                }`}
+                                  }`}
                               />
                               {hasAttemptedNextStep && !formData.language?.trim() && (
                                 <p className="text-[10px] text-rose-400 font-medium">Bắt buộc nhập ngôn ngữ</p>
@@ -2235,11 +2304,10 @@ export default function AdminMoviesPanel({ ctx }) {
                                 maxLength={30}
                                 value={formData.subtitleLanguage}
                                 onChange={(e) => setFormData({ ...formData, subtitleLanguage: e.target.value })}
-                                className={`w-full bg-black/80 border p-2 text-xs text-white rounded-none focus:outline-none transition ${
-                                  hasAttemptedNextStep && !formData.subtitleLanguage?.trim()
+                                className={`w-full bg-black/80 border p-2 text-xs text-white rounded-none focus:outline-none transition ${hasAttemptedNextStep && !formData.subtitleLanguage?.trim()
                                     ? 'border-rose-500 bg-rose-950/20 text-rose-200 focus:border-rose-400'
                                     : 'border-white/10 focus:border-amber-400'
-                                }`}
+                                  }`}
                               />
                               {hasAttemptedNextStep && !formData.subtitleLanguage?.trim() && (
                                 <p className="text-[10px] text-rose-400 font-medium">Bắt buộc nhập phụ đề</p>
@@ -2268,11 +2336,10 @@ export default function AdminMoviesPanel({ ctx }) {
                                 ref={actorTriggerRef}
                                 type="button"
                                 onClick={toggleActorDropdown}
-                                className={`flex min-h-[36px] w-full items-center justify-between gap-2 rounded-none border bg-black/80 px-3 py-1.5 text-left text-xs transition focus:outline-none ${
-                                  hasAttemptedNextStep && (!formData.actorIds || formData.actorIds.length === 0)
+                                className={`flex min-h-[36px] w-full items-center justify-between gap-2 rounded-none border bg-black/80 px-3 py-1.5 text-left text-xs transition focus:outline-none ${hasAttemptedNextStep && (!formData.actorIds || formData.actorIds.length === 0)
                                     ? 'border-rose-500 bg-rose-950/20 text-rose-200 focus:border-rose-400'
                                     : 'border-white/10 text-white hover:border-amber-500/60 focus:border-amber-400'
-                                }`}
+                                  }`}
                               >
                                 <span className="min-w-0 flex-1 truncate">
                                   {selectedActors.length ? (
@@ -2406,11 +2473,10 @@ export default function AdminMoviesPanel({ ctx }) {
 
                                 {!formData.trailerUrl ? (
                                   <div>
-                                    <label className={`relative h-44 sm:h-48 flex flex-col items-center justify-center border border-dashed hover:border-amber-400/70 bg-black/50 hover:bg-neutral-900/60 rounded-none transition cursor-pointer p-3 text-center group ${
-                                      hasAttemptedNextStep && !formData.trailerUrl
+                                    <label className={`relative h-44 sm:h-48 flex flex-col items-center justify-center border border-dashed hover:border-amber-400/70 bg-black/50 hover:bg-neutral-900/60 rounded-none transition cursor-pointer p-3 text-center group ${hasAttemptedNextStep && !formData.trailerUrl
                                         ? 'border-rose-500/80 bg-rose-950/20'
                                         : 'border-white/15'
-                                    } ${isTrailerUploading ? 'pointer-events-none' : ''}`}>
+                                      } ${isTrailerUploading ? 'pointer-events-none' : ''}`}>
                                       {isTrailerUploading ? (
                                         <div className="flex flex-col items-center gap-1.5 text-amber-400">
                                           <RefreshCw className="h-6 w-6 animate-spin" />
@@ -2501,11 +2567,10 @@ export default function AdminMoviesPanel({ ctx }) {
 
                                 {!formData.posterUrl ? (
                                   <div>
-                                    <label className={`relative h-44 sm:h-48 flex flex-col items-center justify-center border border-dashed hover:border-amber-400/70 bg-black/50 hover:bg-neutral-900/60 rounded-none transition cursor-pointer p-3 text-center group ${
-                                      hasAttemptedNextStep && !formData.posterUrl
+                                    <label className={`relative h-44 sm:h-48 flex flex-col items-center justify-center border border-dashed hover:border-amber-400/70 bg-black/50 hover:bg-neutral-900/60 rounded-none transition cursor-pointer p-3 text-center group ${hasAttemptedNextStep && !formData.posterUrl
                                         ? 'border-rose-500/80 bg-rose-950/20'
                                         : 'border-white/15'
-                                    } ${isPosterUploading ? 'pointer-events-none' : ''}`}>
+                                      } ${isPosterUploading ? 'pointer-events-none' : ''}`}>
                                       {isPosterUploading ? (
                                         <div className="flex flex-col items-center gap-1.5 text-amber-400">
                                           <RefreshCw className="h-6 w-6 animate-spin" />
@@ -2604,11 +2669,10 @@ export default function AdminMoviesPanel({ ctx }) {
 
                                 {!formData.bannerUrl ? (
                                   <div>
-                                    <label className={`relative h-44 sm:h-48 flex flex-col items-center justify-center border border-dashed hover:border-amber-400/70 bg-black/50 hover:bg-neutral-900/60 rounded-none transition cursor-pointer p-3 text-center group ${
-                                      hasAttemptedNextStep && !formData.bannerUrl
+                                    <label className={`relative h-44 sm:h-48 flex flex-col items-center justify-center border border-dashed hover:border-amber-400/70 bg-black/50 hover:bg-neutral-900/60 rounded-none transition cursor-pointer p-3 text-center group ${hasAttemptedNextStep && !formData.bannerUrl
                                         ? 'border-rose-500/80 bg-rose-950/20'
                                         : 'border-white/15'
-                                    } ${isBannerUploading ? 'pointer-events-none' : ''}`}>
+                                      } ${isBannerUploading ? 'pointer-events-none' : ''}`}>
                                       {isBannerUploading ? (
                                         <div className="flex flex-col items-center gap-1.5 text-amber-400">
                                           <RefreshCw className="h-6 w-6 animate-spin" />
@@ -2738,11 +2802,10 @@ export default function AdminMoviesPanel({ ctx }) {
                               value={formData.synopsis}
                               onChange={(e) => setFormData({ ...formData, synopsis: e.target.value })}
                               placeholder="Nội dung tóm tắt phim, tối đa 1000 ký tự (bắt buộc)"
-                              className={`w-full bg-black/80 border p-2.5 text-xs text-white rounded-none focus:outline-none focus:border-amber-400 leading-relaxed max-h-28 overflow-y-auto custom-scrollbar transition ${
-                                hasAttemptedNextStep && !formData.synopsis?.trim()
+                              className={`w-full bg-black/80 border p-2.5 text-xs text-white rounded-none focus:outline-none focus:border-amber-400 leading-relaxed max-h-28 overflow-y-auto custom-scrollbar transition ${hasAttemptedNextStep && !formData.synopsis?.trim()
                                   ? 'border-rose-500 bg-rose-950/20'
                                   : 'border-white/10'
-                              }`}
+                                }`}
                             />
                             {hasAttemptedNextStep && !formData.synopsis?.trim() && (
                               <p className="text-[10px] text-rose-400 font-medium">Bắt buộc nhập nội dung tóm tắt phim trước khi đăng</p>
@@ -2754,13 +2817,35 @@ export default function AdminMoviesPanel({ ctx }) {
 
                     {/* FIXED MODAL FOOTER */}
                     <div className="flex flex-col-reverse items-stretch justify-between gap-3 border-t border-white/10 bg-black/40 px-5 py-2.5 sm:flex-row sm:items-center sm:px-6 shrink-0">
-                      <button
-                        type="button"
-                        onClick={handleCloseMovieForm}
-                        className="px-3 py-2 text-neutral-400 hover:text-white font-sans font-bold text-[10px] uppercase tracking-wider transition rounded-none"
-                      >
-                        Hủy thao tác
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            resetMovieForm();
+                            setShowMovieForm(false);
+                            activeDraftIdRef.current = null;
+                            setActiveDraftId(null);
+                          }}
+                          className="px-3 py-2 text-neutral-400 hover:text-white font-sans font-bold text-[10px] uppercase tracking-wider transition rounded-none"
+                          title="Hủy thao tác mà không lưu nháp"
+                        >
+                          Hủy bỏ
+                        </button>
+                        {!editingMovie && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleCloseMovieForm(e);
+                            }}
+                            className="flex items-center gap-1.5 px-3 py-2 text-amber-400 hover:text-amber-300 border border-amber-500/20 bg-amber-500/10 font-sans font-bold text-[10px] uppercase tracking-wider transition rounded-none"
+                            title="Lưu các thông tin đã nhập vào mục Bản nháp để chỉnh sửa sau"
+                          >
+                            <FileText className="h-3 w-3" /> Lưu nháp & Đóng
+                          </button>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2">
                         {movieFormStep > 1 && (
                           <button
@@ -3101,9 +3186,6 @@ export default function AdminMoviesPanel({ ctx }) {
                                     </span>
                                   </div>
                                 </td>
-                                <td className="py-3.5 px-4 whitespace-nowrap">
-                                  <span className="text-[10px] text-neutral-500 italic">Chưa đăng</span>
-                                </td>
                                 <td className="py-3.5 px-4 text-right whitespace-nowrap">
                                   <div className="flex items-center justify-end gap-1.5">
                                     <button
@@ -3166,8 +3248,8 @@ export default function AdminMoviesPanel({ ctx }) {
                               </div>
                               <p className="text-sm font-bold text-neutral-300">
                                 {filmFilter === 'PUBLISHED' ? 'Không có phim nào đã xuất bản' :
-                                 filmFilter === 'ARCHIVED' ? 'Không có phim nào được lưu trữ' :
-                                 'Không tìm thấy phim phù hợp'}
+                                  filmFilter === 'ARCHIVED' ? 'Không có phim nào được lưu trữ' :
+                                    'Không tìm thấy phim phù hợp'}
                               </p>
                               <button
                                 type="button"

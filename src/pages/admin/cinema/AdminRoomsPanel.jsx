@@ -220,6 +220,11 @@ export default function AdminRoomsPanel({ ctx }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [cinemas, setCinemas] = useState([]);
   const [selectedCinemaFilter, setSelectedCinemaFilter] = useState(managerCinemaId || ctx?.assignedCinema?.id ? String(managerCinemaId || ctx?.assignedCinema?.id) : 'ALL');
+  const selectedCinemaFilterRef = useRef(selectedCinemaFilter);
+  useEffect(() => {
+    selectedCinemaFilterRef.current = selectedCinemaFilter;
+  }, [selectedCinemaFilter]);
+  const fetchReqIdRef = useRef(0);
 
   // Editor states
   const [roomName, setRoomName] = useState('');
@@ -339,32 +344,35 @@ export default function AdminRoomsPanel({ ctx }) {
     }
   }, []);
 
-  // Fetch all cinemas for dropdown
-  const loadCinemas = useCallback(async () => {
-    const token = getTokenRef.current?.();
-    if (!token) return;
-    try {
-      const res = await adminService.getAdminCinemas(token);
-      const list = Array.isArray(res) ? res : (res?.items || res?.content || []);
-      setCinemas(list);
-      if (list.length > 0) {
-        setSelectedCinemaFilter((prev) => (isEffectiveManager || prev === 'ALL' || !prev) ? String(list[0].id) : prev);
-      }
-    } catch (e) {
-      console.warn('Lỗi tải danh sách rạp:', e);
-    }
+  // Reset all room editor states when no room is selected or rooms list is empty
+  const resetEditor = useCallback(() => {
+    setSelectedRoomId(null);
+    setRoomName('');
+    setRoomType('STANDARD');
+    setFloorNumber(1);
+    setRoomActive(true);
+    setAisleIndex(0);
+    setDefaultCols(10);
+    setRows([]);
+    setPrices(DEFAULT_PRICES);
+    setDirty(false);
+    setHistory([]);
+    setSelectedSeatCoord(null);
+    setSelectedRowIndex(null);
   }, []);
 
   // Fetch rooms optionally filtered by cinema
   const fetchRooms = useCallback(async (preferredId = null, filterCinemaId = null) => {
     const token = getTokenRef.current?.();
     if (!token) return;
+    const reqId = ++fetchReqIdRef.current;
     setIsLoadingRooms(true);
     try {
-      const activeCId = filterCinemaId !== null
-        ? (filterCinemaId === 'ALL' ? null : Number(filterCinemaId))
-        : (selectedCinemaFilter !== 'ALL' ? Number(selectedCinemaFilter) : null);
+      const currentCFilter = filterCinemaId !== null ? filterCinemaId : selectedCinemaFilterRef.current;
+      const activeCId = currentCFilter !== 'ALL' && currentCFilter ? Number(currentCFilter) : null;
       const data = await adminService.getAdminRooms(token, activeCId);
+      if (reqId !== fetchReqIdRef.current) return;
+
       const list = Array.isArray(data) ? data : (data?.items || data?.content || []);
       setRooms(list);
 
@@ -376,15 +384,25 @@ export default function AdminRoomsPanel({ ctx }) {
           await loadRoomIntoEditor(targetRoom);
         }
       } else {
-        setSelectedRoomId(null);
+        resetEditor();
       }
     } catch (err) {
-      showToast(err.message || 'Không thể tải danh sách phòng chiếu.', 'error');
+      if (reqId === fetchReqIdRef.current) {
+        showToast(err.message || 'Không thể tải danh sách phòng chiếu.', 'error');
+      }
     } finally {
-      setIsLoadingRooms(false);
+      if (reqId === fetchReqIdRef.current) {
+        setIsLoadingRooms(false);
+      }
     }
-  }, [loadRoomIntoEditor, selectedRoomId, selectedCinemaFilter, showToast]);
+  }, [loadRoomIntoEditor, selectedRoomId, resetEditor, showToast]);
 
+  const fetchRoomsRef = useRef(fetchRooms);
+  useEffect(() => {
+    fetchRoomsRef.current = fetchRooms;
+  }, [fetchRooms]);
+
+  // Initial load only - does NOT re-trigger when user selects a different cinema in dropdown
   useEffect(() => {
     let cancelled = false;
     const initData = async () => {
@@ -397,15 +415,14 @@ export default function AdminRoomsPanel({ ctx }) {
         setCinemas(list);
         const defaultCId = managerCinemaId || (list.length > 0 ? String(list[0].id) : 'ALL');
         setSelectedCinemaFilter(defaultCId);
-        // Sequential call: load rooms only after cinema is resolved
-        await fetchRooms(null, defaultCId);
+        await fetchRoomsRef.current?.(null, defaultCId);
       } catch (e) {
         console.warn('Lỗi tải rạp & phòng:', e);
       }
     };
     initData();
     return () => { cancelled = true; };
-  }, [fetchRooms, managerCinemaId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [managerCinemaId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Warn on page unload if changes are unsaved
   useEffect(() => {
@@ -1004,7 +1021,7 @@ export default function AdminRoomsPanel({ ctx }) {
           <button
             type="button"
             onClick={handleSaveAll}
-            disabled={isSaving}
+            disabled={isSaving || !currentRoom}
             className="inline-flex items-center gap-2 px-4 sm:px-5 py-2 rounded-none bg-[#f5b800] hover:bg-[#ffc933] active:bg-[#d99f00] text-[#090909] text-xs font-black uppercase tracking-wider shadow-lg shadow-amber-500/20 hover:shadow-amber-500/30 transition-all disabled:opacity-50"
           >
             {isSaving ? (
@@ -1202,6 +1219,32 @@ export default function AdminRoomsPanel({ ctx }) {
           }}
           className="flex-1 bg-[#101318] border border-[#24282f] rounded-none flex flex-col min-h-0 shadow-[0_8px_24px_rgba(0,0,0,0.25)] overflow-hidden relative"
         >
+          {!currentRoom ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#080a0d]">
+              <div className="w-16 h-16 rounded-none bg-[#101318] border border-[#24282f] flex items-center justify-center text-[#8b9098] mb-4">
+                <Film className="w-8 h-8 text-[#555b64]" />
+              </div>
+              <h3 className="text-sm sm:text-base font-bold text-white uppercase tracking-wider mb-2">
+                {rooms.length === 0 ? 'Chi nhánh chưa có phòng chiếu' : 'Chưa chọn phòng chiếu'}
+              </h3>
+              <p className="text-xs text-[#8b9098] max-w-sm leading-relaxed mb-6">
+                {rooms.length === 0
+                  ? 'Cụm rạp đang chọn chưa có phòng chiếu nào được thiết lập. Bạn có thể thêm phòng mới để bắt đầu.'
+                  : 'Vui lòng chọn một phòng chiếu từ danh sách bên trái để chỉnh sửa sơ đồ ghế.'}
+              </p>
+              {rooms.length === 0 && (
+                <button
+                  type="button"
+                  onClick={handleOpenAddModal}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-[#f5b800] hover:bg-[#ffc933] text-[#090909] text-xs font-black uppercase tracking-wider transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Thêm phòng mới</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
           {/* TOOLBAR */}
           <div className="min-h-[44px] bg-[#0c0f13] border-b border-[#24282f] px-3.5 py-1.5 flex items-center gap-2 shrink-0 flex-wrap">
             <span className="text-[11px] font-bold text-[#8b9098] uppercase tracking-wider mr-1">
@@ -1439,6 +1482,8 @@ export default function AdminRoomsPanel({ ctx }) {
               </b>
             </div>
           </div>
+            </>
+          )}
         </section>
 
         {/* =========================================================================
@@ -1472,6 +1517,14 @@ export default function AdminRoomsPanel({ ctx }) {
           }}
           className="bg-[#101318] border border-[#24282f] rounded-none flex flex-col min-h-0 shadow-[0_8px_24px_rgba(0,0,0,0.25)] overflow-hidden"
         >
+          {!currentRoom ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-[#555b64] bg-[#0c0f13]">
+              <AlertCircle className="w-8 h-8 mb-2 opacity-40 text-neutral-500" />
+              <p className="text-xs font-medium text-neutral-400">Không có dữ liệu phòng để cấu hình</p>
+              <p className="text-[11px] text-[#555b64] mt-1">Chọn hoặc thêm phòng chiếu để tùy chỉnh thông tin và giá vé</p>
+            </div>
+          ) : (
+            <>
           {/* TABS HEADER */}
           <div className="flex border-b border-[#24282f] bg-[#0c0f13] shrink-0">
             {['Thông tin', 'Hàng ghế', 'Giá vé'].map((tabLabel, idx) => {
@@ -1777,6 +1830,8 @@ export default function AdminRoomsPanel({ ctx }) {
             )}
 
           </div>
+            </>
+          )}
         </section>
       </main>
 

@@ -1,48 +1,38 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { getStoredAuth, request } from '../services/authService';
+import { useAuthStore } from '../stores/useAuthStore';
 
 const ManagerCinemaContext = createContext(null);
 
 export function ManagerCinemaProvider({ children }) {
+  const currentUser = useAuthStore((state) => state.currentUser);
   const [cinemas, setCinemas] = useState([]);
-  const [selectedCinemaId, setSelectedCinemaId] = useState(() => {
-    return localStorage.getItem('manager_selected_cinema_id') || '';
-  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
+  // Manager Cinema scope is strictly derived from currentUser.cinemaId (never from arbitrary localStorage)
+  const assignedCinemaId = currentUser?.cinemaId ? String(currentUser.cinemaId) : '';
 
   const fetchCinemas = async () => {
     setLoading(true);
     setError('');
     try {
       const { accessToken } = getStoredAuth();
-      if (!accessToken) throw new Error('Chưa đăng nhập');
       let items = [];
       try {
-        const data = await request('/api/v1/admin/cinemas', { token: accessToken });
+        const data = await request('/api/v1/cinemas', { token: accessToken });
         items = Array.isArray(data) ? data : (data?.items || data?.content || []);
       } catch (e) {
         try {
-          const data = await request('/api/v1/manager/cinemas', { token: accessToken });
+          const data = await request('/api/v1/admin/cinemas', { token: accessToken });
           items = Array.isArray(data) ? data : (data?.items || data?.content || []);
         } catch (err2) {
-          console.warn('Lỗi lấy danh sách rạp manager:', err2);
+          console.warn('Lỗi lấy danh sách rạp:', err2);
         }
       }
       setCinemas(items);
-
-      if (items.length > 0) {
-        setSelectedCinemaId((prev) => {
-          const exists = items.some((c) => String(c.id) === String(prev));
-          const next = exists ? prev : String(items[0].id);
-          localStorage.setItem('manager_selected_cinema_id', next);
-          return next;
-        });
-      } else {
-        setSelectedCinemaId('');
-      }
     } catch (err) {
-      setError(err.message || 'Không thể tải danh sách rạp được phân công.');
+      setError(err.message || 'Không thể tải thông tin cụm rạp.');
     } finally {
       setLoading(false);
     }
@@ -50,22 +40,23 @@ export function ManagerCinemaProvider({ children }) {
 
   useEffect(() => {
     fetchCinemas();
-  }, []);
+  }, [assignedCinemaId]);
 
-  const handleSelectCinema = (id) => {
-    setSelectedCinemaId(String(id));
-    localStorage.setItem('manager_selected_cinema_id', String(id));
-  };
-
-  const selectedCinema = cinemas.find((c) => String(c.id) === String(selectedCinemaId)) || null;
+  const selectedCinema = useMemo(() => {
+    if (!assignedCinemaId) return cinemas[0] || null;
+    return cinemas.find((c) => String(c.id) === String(assignedCinemaId)) || {
+      id: Number(assignedCinemaId),
+      name: `Rạp #${assignedCinemaId}`,
+      city: 'Chi nhánh được phân công'
+    };
+  }, [cinemas, assignedCinemaId]);
 
   return (
     <ManagerCinemaContext.Provider
       value={{
         cinemas,
-        selectedCinemaId,
+        selectedCinemaId: assignedCinemaId,
         selectedCinema,
-        setSelectedCinemaId: handleSelectCinema,
         loading,
         error,
         refreshCinemas: fetchCinemas

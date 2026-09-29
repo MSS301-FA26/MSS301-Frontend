@@ -1,6 +1,12 @@
 import React from 'react';
 import { Navigate } from 'react-router-dom';
-import { getStoredAuth, hasBackendAdminAccess, hasBackendManagerAccess } from '../services/authService';
+import {
+  getStoredAuth,
+  hasBackendAdminAccess,
+  hasBackendManagerAccess,
+  isAdmin as checkIsAdmin,
+  isManager as checkIsManager
+} from '../services/authService';
 import { useAuthStore } from '../stores/useAuthStore';
 
 export default function AdminRoute({ children }) {
@@ -9,13 +15,16 @@ export default function AdminRoute({ children }) {
   const currentRole = useAuthStore((state) => state.currentRole);
   const currentUser = useAuthStore((state) => state.currentUser);
   const { accessToken, user } = getStoredAuth();
-  const hasStoredAccess = hasBackendAdminAccess(accessToken, user) || hasBackendManagerAccess(accessToken, user);
-  const hasContextAccess = currentRole === 'admin' || currentRole === 'manager' ||
-    currentUser?.role === 'admin' || currentUser?.role === 'manager' ||
-    hasBackendAdminAccess(accessToken, currentUser) || hasBackendManagerAccess(accessToken, currentUser);
+
+  const isUserAdmin = checkIsAdmin(currentUser) || checkIsAdmin(user) || currentRole === 'admin' || hasBackendAdminAccess(accessToken, user);
+  const isUserManager = checkIsManager(currentUser) || checkIsManager(user) || currentRole === 'manager' || hasBackendManagerAccess(accessToken, user);
 
   if (!isAuthReady) return null;
   if (!isLoggedIn && !accessToken) return <Navigate to="/" replace />;
-  if (!hasStoredAccess && !hasContextAccess) return <Navigate to="/" replace />;
+
+  // Unified Portal: Both Admin and Manager can access /admin/**
+  if (!isUserAdmin && !isUserManager) {
+    return <Navigate to="/" replace />;
+  }
   return children;
 }

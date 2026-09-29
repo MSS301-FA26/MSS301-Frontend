@@ -997,28 +997,32 @@ export default function AdminUsersPanel({ ctx }) {
             >
               🎫 Staff rạp ({staffCinemaCount})
             </button>
-            <button
-              type="button"
-              onClick={() => setStaffFilter('MANAGER')}
-              className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase tracking-wider transition border ${
-                staffFilter === 'MANAGER'
-                  ? 'border-sky-400 bg-sky-500/20 text-sky-300'
-                  : 'border-white/[0.08] bg-black/60 text-neutral-300 hover:border-sky-400/60'
-              }`}
-            >
-              🏢 Quản lý ({managerCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStaffFilter('ADMIN')}
-              className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase tracking-wider transition border ${
-                staffFilter === 'ADMIN'
-                  ? 'border-rose-400 bg-rose-500/20 text-rose-300'
-                  : 'border-white/[0.08] bg-black/60 text-neutral-300 hover:border-rose-400/60'
-              }`}
-            >
-              👑 Admin ({adminCount})
-            </button>
+            {isEffectiveAdmin && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setStaffFilter('MANAGER')}
+                  className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase tracking-wider transition border ${
+                    staffFilter === 'MANAGER'
+                      ? 'border-sky-400 bg-sky-500/20 text-sky-300'
+                      : 'border-white/[0.08] bg-black/60 text-neutral-300 hover:border-sky-400/60'
+                  }`}
+                >
+                  🏢 Quản lý ({managerCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStaffFilter('ADMIN')}
+                  className={`px-3 py-1.5 text-[10px] font-mono font-black uppercase tracking-wider transition border ${
+                    staffFilter === 'ADMIN'
+                      ? 'border-rose-400 bg-rose-500/20 text-rose-300'
+                      : 'border-white/[0.08] bg-black/60 text-neutral-300 hover:border-rose-400/60'
+                  }`}
+                >
+                  👑 Admin ({adminCount})
+                </button>
+              </>
+            )}
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-1.5">

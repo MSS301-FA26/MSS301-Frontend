@@ -19,6 +19,22 @@ const todayStr = () => {
   const d = new Date();
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 };
+
+const getTomorrowStr = () => {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
+const getApiErrorMessage = (err, fallback = 'Có lỗi xảy ra khi thực hiện thao tác.') => {
+  if (!err) return fallback;
+  const data = err?.response?.data;
+  if (Array.isArray(data?.errors) && data.errors.length > 0) {
+    return data.errors.map(e => e.message || `${e.field}: không hợp lệ`).join('; ');
+  }
+  if (data?.message) return data.message;
+  return err?.message || fallback;
+};
 const toMin = (t) => {
   if (!t) return 0;
   const [h, m] = t.split(':').map(Number);
@@ -49,6 +65,35 @@ const DEFAULT_PRICES = {
   '4DX': { std: 140000, vip: 180000, couple: 300000 },
 };
 
+/* ================= RESIZABLE SPLITTER COMPONENT ================= */
+function Splitter({ onDrag, isDragging, title = "Kéo để thay đổi độ rộng" }) {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      title={title}
+      draggable={false}
+      className={`schedule-splitter ${isDragging ? 'is-dragging' : ''} ${hovered ? 'is-hovered' : ''}`}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onDrag(e);
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div className="splitter-line" />
+      <div className="splitter-handle">
+        <span className="splitter-dot" />
+        <span className="splitter-dot" />
+        <span className="splitter-dot" />
+      </div>
+    </div>
+  );
+}
+
 export default function AdminShowtimesPanel({ ctx }) {
   const { getAdminToken, showToast, moviesList, isManager = false, isAdmin = false, currentUser = null } = ctx || {};
   const userRole = (currentUser?.role || currentUser?.roles?.[0] || '').toUpperCase();
@@ -67,6 +112,9 @@ export default function AdminShowtimesPanel({ ctx }) {
   const [loading, setLoading] = useState(false);
   const [cinemas, setCinemas] = useState([]);
   const [selectedCinemaId, setSelectedCinemaId] = useState(managerCinemaId || ctx?.assignedCinema?.id ? String(managerCinemaId || ctx?.assignedCinema?.id) : 'ALL');
+  const fetchRoomsReqIdRef = useRef(0);
+  const fetchShowsReqIdRef = useRef(0);
+  const fetchShowtimesRef = useRef(null);
   const [selId, setSelId] = useState(null);
   const [selMovie, setSelMovie] = useState(null);
   const [tabIdx, setTabIdx] = useState(0); // 0: detail, 1: overview, 2: warnings
@@ -76,14 +124,106 @@ export default function AdminShowtimesPanel({ ctx }) {
   const [movieFilter, setMovieFilter] = useState('NOW_SHOWING'); // 'NOW_SHOWING' | 'UPCOMING' | 'ALL'
   const [loadingMovies, setLoadingMovies] = useState(false);
 
+  /* Draft Mode & Price Preview State */
+  const [isDraftMode, setIsDraftMode] = useState(true);
+  const [draftShows, setDraftShows] = useState([]);
+  const [previewModal, setPreviewModal] = useState(false);
+  const [previewData, setPreviewData] = useState([]);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [isSavingAllDrafts, setIsSavingAllDrafts] = useState(false);
+
   /* Modals */
   const [addModal, setAddModal] = useState(null);
   const [copyModal, setCopyModal] = useState(false);
-  const [autoModal, setAutoModal] = useState(false);
 
   /* Timeline Scroll */
   const tlWrapRef = useRef(null);
   const scrolledOnceRef = useRef(false);
+
+  /* Resizable Splitters State */
+  const mainContainerRef = useRef(null);
+  const [leftWidth, setLeftWidth] = useState(() => {
+    try {
+      const v = localStorage.getItem('cinema_admin_schedule_left_w');
+      return v ? Math.max(200, Math.min(420, Number(v))) : 260;
+    } catch { return 260; }
+  });
+  const [rightWidth, setRightWidth] = useState(() => {
+    try {
+      const v = localStorage.getItem('cinema_admin_schedule_right_w');
+      return v ? Math.max(260, Math.min(500, Number(v))) : 345;
+    } catch { return 345; }
+  });
+  const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
+  const [draggingSplitter, setDraggingSplitter] = useState(null); // 'left' | 'right' | null
+
+  const leftWidthRef = useRef(leftWidth);
+  const rightWidthRef = useRef(rightWidth);
+  useEffect(() => { leftWidthRef.current = leftWidth; }, [leftWidth]);
+  useEffect(() => { rightWidthRef.current = rightWidth; }, [rightWidth]);
+
+  const handleStartDragLeft = useCallback((e) => {
+    const startX = e.clientX;
+    const startW = leftWidthRef.current;
+    setDraggingSplitter('left');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMouseMove = (moveEvent) => {
+      moveEvent.preventDefault();
+      const deltaX = moveEvent.clientX - startX;
+      const containerW = mainContainerRef.current?.getBoundingClientRect().width || window.innerWidth;
+      const effectiveRight = isRightPanelOpen ? rightWidthRef.current : 0;
+      const maxLeft = Math.max(200, containerW - effectiveRight - 400); // giữ ít nhất 400px cho timeline ở giữa
+      const newW = Math.max(200, Math.min(Math.min(420, maxLeft), startW + deltaX));
+      setLeftWidth(newW);
+    };
+
+    const onMouseUp = () => {
+      setDraggingSplitter(null);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      try {
+        localStorage.setItem('cinema_admin_schedule_left_w', String(leftWidthRef.current));
+      } catch { /* ignore */ }
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, [isRightPanelOpen]);
+
+  const handleStartDragRight = useCallback((e) => {
+    const startX = e.clientX;
+    const startW = rightWidthRef.current;
+    setDraggingSplitter('right');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const onMouseMove = (moveEvent) => {
+      moveEvent.preventDefault();
+      const deltaX = startX - moveEvent.clientX; // kéo sang trái làm tăng chiều rộng panel phải
+      const containerW = mainContainerRef.current?.getBoundingClientRect().width || window.innerWidth;
+      const maxRight = Math.max(260, containerW - leftWidthRef.current - 400); // giữ ít nhất 400px cho timeline ở giữa
+      const newW = Math.max(260, Math.min(Math.min(500, maxRight), startW + deltaX));
+      setRightWidth(newW);
+    };
+
+    const onMouseUp = () => {
+      setDraggingSplitter(null);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      try {
+        localStorage.setItem('cinema_admin_schedule_right_w', String(rightWidthRef.current));
+      } catch { /* ignore */ }
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, []);
 
   /* ================= FETCH MOVIES TỪ BE (NOW SHOWING & ALL) ================= */
   const fetchMovies = useCallback(async () => {
@@ -140,6 +280,7 @@ export default function AdminShowtimesPanel({ ctx }) {
 
   /* ================= FETCH ROOMS TỪ BE ================= */
   const fetchRooms = useCallback(async (filterCinemaId = selectedCinemaId) => {
+    const reqId = ++fetchRoomsReqIdRef.current;
     try {
       const token = getTokenRef.current?.();
       let list = [];
@@ -147,41 +288,58 @@ export default function AdminShowtimesPanel({ ctx }) {
         try {
           const cId = filterCinemaId !== 'ALL' && filterCinemaId ? Number(filterCinemaId) : null;
           const res = await adminService.getAdminRooms(token, cId);
+          if (reqId !== fetchRoomsReqIdRef.current) return;
           list = Array.isArray(res) ? res : (res?.content || res?.items || []);
         } catch (e) {
           console.warn('Lỗi getAdminRooms:', e);
         }
       }
-      if (list && list.length > 0) {
-        const formatted = list.map((r, i) => ({
-          id: r.id || r.roomId,
-          name: r.name || `Phòng ${pad(i + 1)}`,
-          type: r.type || r.roomType || '2D',
-          seats: r.totalSeats || r.seatCount || 80,
-          active: r.active !== false && r.status !== 'INACTIVE',
-          price: r.price || DEFAULT_PRICES[r.type || '2D'] || DEFAULT_PRICES['2D']
-        }));
-        setRooms(formatted);
-      }
+      if (reqId !== fetchRoomsReqIdRef.current) return;
+      const formatted = (list || []).map((r, i) => ({
+        id: r.id || r.roomId,
+        name: r.name || `Phòng ${pad(i + 1)}`,
+        type: r.type || r.roomType || '2D',
+        seats: r.totalSeats || r.seatCount || 80,
+        active: r.active !== false && r.status !== 'INACTIVE',
+        price: r.price || DEFAULT_PRICES[r.type || '2D'] || DEFAULT_PRICES['2D']
+      }));
+      setRooms(formatted);
     } catch (err) {
       console.warn('Lỗi lấy danh sách phòng:', err);
     }
   }, [selectedCinemaId]);
 
+  const fetchRoomsRef = useRef(fetchRooms);
+  useEffect(() => { fetchRoomsRef.current = fetchRooms; }, [fetchRooms]);
+
+  const fetchMoviesRef = useRef(fetchMovies);
+  useEffect(() => { fetchMoviesRef.current = fetchMovies; }, [fetchMovies]);
+
+  // Initial load only - does NOT re-trigger when user selects a different cinema in dropdown
   useEffect(() => {
     let cancelled = false;
     const initShowtimesData = async () => {
-      // Step 1: Load cinemas & rooms sequentially
-      await loadCinemas();
-      if (cancelled) return;
-      await fetchRooms();
-      if (cancelled) return;
-      // Step 2: Load movies
-      await fetchMovies();
+      try {
+        const token = getTokenRef.current?.();
+        if (!token) return;
+        const res = await adminService.getAdminCinemas(token);
+        if (cancelled) return;
+        const list = Array.isArray(res) ? res : (res?.items || res?.content || []);
+        setCinemas(list);
+        const defaultCId = managerCinemaId || (list.length > 0 ? String(list[0].id) : 'ALL');
+        setSelectedCinemaId(defaultCId);
+        await fetchRoomsRef.current?.(defaultCId);
+        if (cancelled) return;
+        await fetchShowtimesRef.current?.(date, defaultCId);
+        if (cancelled) return;
+        await fetchMoviesRef.current?.();
+      } catch (e) {
+        console.warn('Lỗi khởi tạo showtimes:', e);
+      }
     };
     initShowtimesData();
     return () => { cancelled = true; };
-  }, [loadCinemas, fetchRooms, fetchMovies]);
+  }, [managerCinemaId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Merged Movies List từ Backend */
   const movies = useMemo(() => {
@@ -216,11 +374,13 @@ export default function AdminShowtimesPanel({ ctx }) {
     const token = getTokenRef.current?.();
     if (!token) return;
 
+    const reqId = ++fetchShowsReqIdRef.current;
     setLoading(true);
     try {
       const cId = filterCinemaId !== 'ALL' && filterCinemaId ? Number(filterCinemaId) : undefined;
       // Gọi API lấy danh sách suất chiếu (hỗ trợ phân trang và filter cinemaId)
       const resAll = await adminService.getAdminShowtimes(token, { ...(cId ? { cinemaId: cId } : {}), page: 0, size: 100 });
+      if (reqId !== fetchShowsReqIdRef.current) return;
       let itemsAll = Array.isArray(resAll) ? resAll : (resAll?.content || resAll?.items || resAll?.data?.content || []);
 
       // Nếu targetDate được chỉ định, gọi thêm query theo date để đảm bảo không bị miss
@@ -228,9 +388,12 @@ export default function AdminShowtimesPanel({ ctx }) {
       if (targetDate) {
         try {
           const resDate = await adminService.getAdminShowtimes(token, { ...(cId ? { cinemaId: cId } : {}), date: targetDate, page: 0, size: 100 });
+          if (reqId !== fetchShowsReqIdRef.current) return;
           itemsDate = Array.isArray(resDate) ? resDate : (resDate?.content || resDate?.items || resDate?.data?.content || []);
         } catch { /* ignore */ }
       }
+
+      if (reqId !== fetchShowsReqIdRef.current) return;
 
       // Hợp nhất dữ liệu tránh trùng ID
       const mergedMap = new Map();
@@ -287,34 +450,21 @@ export default function AdminShowtimesPanel({ ctx }) {
       });
 
       setShows(mapped);
-
-      // Tự động bổ sung phòng từ suất chiếu nếu phòng đó chưa có trong `rooms`
-      combinedItems.forEach(item => {
-        const rid = Number(item.roomId || item.room?.id);
-        const rname = item.roomName || item.room?.name;
-        if (rid && rname) {
-          setRooms(prevRooms => {
-            if (!prevRooms.some(r => Number(r.id) === rid)) {
-              return [...prevRooms, {
-                id: rid,
-                name: rname,
-                type: item.roomType || '2D',
-                seats: 80,
-                active: true,
-                price: DEFAULT_PRICES['2D']
-              }];
-            }
-            return prevRooms;
-          });
-        }
-      });
     } catch (err) {
-      console.warn('Lỗi gọi API getAdminShowtimes:', err);
-      showToast?.('Không thể tải lịch chiếu từ server: ' + err.message, 'error');
+      if (reqId === fetchShowsReqIdRef.current) {
+        console.warn('Lỗi gọi API getAdminShowtimes:', err);
+        showToast?.('Không thể tải lịch chiếu từ server: ' + err.message, 'error');
+      }
     } finally {
-      setLoading(false);
+      if (reqId === fetchShowsReqIdRef.current) {
+        setLoading(false);
+      }
     }
-  }, [date, movies, showToast]);
+  }, [date, selectedCinemaId, movies, showToast]);
+
+  useEffect(() => {
+    fetchShowtimesRef.current = fetchShowtimes;
+  }, [fetchShowtimes]);
 
   // Gọi API tải suất chiếu khi component mount hoặc khi đổi ngày `date`
   useEffect(() => {
@@ -335,9 +485,16 @@ export default function AdminShowtimesPanel({ ctx }) {
     return toMin(s.start) + (movie?.dur || 120) + ADS;
   }, [M]);
 
+  const findShowById = useCallback((id) => {
+    if (!id) return null;
+    return shows.find(x => String(x.id) === String(id)) || draftShows.find(x => String(x.id) === String(id)) || null;
+  }, [shows, draftShows]);
+
   const dayShows = useCallback((d = date) => {
-    return shows.filter(s => s.date === d);
-  }, [shows, date]);
+    const saved = shows.filter(s => s.date === d);
+    const drafts = draftShows.filter(s => s.date === d);
+    return [...saved, ...drafts];
+  }, [shows, draftShows, date]);
 
   /* Validation */
   const validate = useCallback((s, ignoreId = null) => {
@@ -359,6 +516,11 @@ export default function AdminShowtimesPanel({ ctx }) {
     if (m.end && s.date > m.end) warns.push(`Phim đã hết hạn chiếu (${m.end})`);
     if (st < OPEN * 60) errs.push(`Rạp mở cửa từ ${pad(OPEN)}:00`);
     if (en > CLOSE * 60) errs.push(`Suất kết thúc quá ${toT(CLOSE * 60)} (sau giờ đóng cửa)`);
+
+    // Quy định: Suất chiếu phải được tạo trước ít nhất 1 ngày (từ ngày mai trở đi)
+    if (s.date && s.date < getTomorrowStr()) {
+      errs.push('Suất chiếu phải được lên lịch trước ít nhất 1 ngày (từ ngày mai trở đi)');
+    }
 
     dayShows(s.date)
       .filter(o => Number(o.roomId) === Number(s.roomId) && String(o.id) !== String(ignoreId) && o.status !== 'cancel')
@@ -418,7 +580,7 @@ export default function AdminShowtimesPanel({ ctx }) {
     const r = R(roomId);
     const fmt = m.formats.includes(r.type) ? r.type : (m.formats.includes('2D') ? '2D' : m.formats[0]);
     const candidate = {
-      id: Math.random().toString(36).slice(2, 9),
+      id: 'draft_' + Math.random().toString(36).slice(2, 9),
       date,
       roomId,
       movieId,
@@ -427,12 +589,20 @@ export default function AdminShowtimesPanel({ ctx }) {
       lang: m.lang,
       sold: 0,
       status: 'plan',
+      isDraft: isDraftMode,
       note: ''
     };
     const v = validate(candidate);
     if (v.errs.length) {
       setAddModal({ roomId, movieId, start, date });
       showToast?.('⚠ ' + v.errs[0], 'warning');
+      return;
+    }
+
+    if (isDraftMode) {
+      setDraftShows(prev => [...prev, candidate]);
+      setSelId(candidate.id);
+      showToast?.(`📝 Đã thêm vào bản thảo: ${m.title} lúc ${start}`, 'info');
       return;
     }
 
@@ -450,10 +620,11 @@ export default function AdminShowtimesPanel({ ctx }) {
         };
         const created = await adminService.createAdminShowtime(token, payload);
         if (created?.id) candidate.id = String(created.id);
+        candidate.isDraft = false;
         showToast?.(`✓ Đã tạo suất chiếu ${m.title} lúc ${start}`, 'success');
         fetchShowtimes(date);
       } catch (err) {
-        showToast?.('Lỗi tạo suất chiếu: ' + err.message, 'error');
+        showToast?.('✕ Lỗi tạo suất chiếu: ' + getApiErrorMessage(err), 'error');
         return;
       }
     }
@@ -462,7 +633,7 @@ export default function AdminShowtimesPanel({ ctx }) {
   };
 
   const handleUpdate = async (key, val) => {
-    const s = shows.find(x => String(x.id) === String(selId));
+    const s = findShowById(selId);
     if (!s) return;
     const cand = { ...s, [key]: val };
     if (key === 'movieId') {
@@ -475,21 +646,36 @@ export default function AdminShowtimesPanel({ ctx }) {
       showToast?.('⚠ Đã lưu nhưng có xung đột: ' + valRes.errs[0], 'warning');
     }
 
+    if (s.isDraft) {
+      setDraftShows(prev => prev.map(x => String(x.id) === String(selId) ? cand : x));
+      if (key === 'date') setDate(val);
+      return;
+    }
+
     const token = getTokenRef.current?.();
     if (token && s.id && !isNaN(Number(s.id))) {
       try {
         const statusMap = { 'open': 'OPEN', 'plan': 'SCHEDULED', 'cancel': 'CANCELLED', 'done': 'COMPLETED' };
+        const stdPrice = cand.price?.std || cand.raw?.basePrice || DEFAULT_PRICES[cand.fmt]?.std || 60000;
+        const vipPrice = cand.price?.vip || cand.raw?.vipPrice || DEFAULT_PRICES[cand.fmt]?.vip || 90000;
+        const couplePrice = cand.price?.couple || cand.raw?.couplePrice || DEFAULT_PRICES[cand.fmt]?.couple || 150000;
+
         const payload = {
           movieId: Number(cand.movieId),
           roomId: Number(cand.roomId),
           startTime: `${cand.date}T${cand.start}:00`,
-          status: statusMap[cand.status] || 'SCHEDULED'
+          basePrice: stdPrice,
+          vipPrice: vipPrice,
+          couplePrice: couplePrice,
+          status: statusMap[cand.status] || cand.raw?.status || 'SCHEDULED'
         };
         await adminService.updateAdminShowtime(token, s.id, payload);
-        showToast?.('Đã cập nhật suất chiếu thành công', 'success');
+        showToast?.('✓ Đã cập nhật suất chiếu thành công', 'success');
         fetchShowtimes(date);
       } catch (err) {
         console.warn('Lỗi update showtime:', err);
+        showToast?.('✕ Lỗi cập nhật suất chiếu: ' + getApiErrorMessage(err), 'error');
+        return;
       }
     }
 
@@ -498,8 +684,16 @@ export default function AdminShowtimesPanel({ ctx }) {
   };
 
   const handleDelete = async () => {
-    const s = shows.find(x => String(x.id) === String(selId));
+    const s = findShowById(selId);
     if (!s) return;
+
+    if (s.isDraft) {
+      setDraftShows(prev => prev.filter(x => String(x.id) !== String(selId)));
+      setSelId(null);
+      showToast?.('Đã xóa suất bản thảo', 'info');
+      return;
+    }
+
     if (!window.confirm(`Xoá suất ${s.start} – ${M(s.movieId).title}?`)) return;
     if (s.sold > 0 && !window.confirm(`Suất này đã bán ${s.sold} vé! Vẫn xoá? (Nên chuyển sang "Đã huỷ" thay vì xoá)`)) return;
 
@@ -518,6 +712,143 @@ export default function AdminShowtimesPanel({ ctx }) {
     setSelId(null);
   };
 
+  /* Draft Operations: Preview & Save All */
+  const handlePreviewPrices = async (targetDrafts = draftShows) => {
+    if (!targetDrafts || targetDrafts.length === 0) {
+      showToast?.('Không có suất chiếu bản thảo nào để xem trước giá.', 'info');
+      return;
+    }
+
+    const token = getTokenRef.current?.();
+    if (!token) return;
+
+    setLoadingPreview(true);
+    setPreviewModal(true);
+    try {
+      const grouped = {};
+      targetDrafts.forEach(s => {
+        const mid = Number(s.movieId);
+        if (!grouped[mid]) grouped[mid] = [];
+        grouped[mid].push({
+          roomId: Number(s.roomId),
+          startTime: `${s.date}T${s.start}:00`,
+          tempId: String(s.id)
+        });
+      });
+
+      const requests = Object.entries(grouped).map(([mId, slots]) =>
+        adminService.previewShowtimePrices(token, {
+          movieId: Number(mId),
+          slots
+        }).catch(err => {
+          console.warn('Preview prices error for movie', mId, err);
+          return { data: [] };
+        })
+      );
+
+      const responses = await Promise.all(requests);
+      const combined = [];
+      responses.forEach(res => {
+        const list = Array.isArray(res) ? res : (res?.data || []);
+        combined.push(...list);
+      });
+
+      setPreviewData(combined);
+    } catch (err) {
+      showToast?.('Lỗi khi tính toán bảng giá xem trước: ' + (err?.message || err), 'error');
+    } finally {
+      setLoadingPreview(false);
+    }
+  };
+
+  const handleSaveAllDrafts = async () => {
+    if (draftShows.length === 0) return;
+    const token = getTokenRef.current?.();
+    if (!token) return;
+
+    const invalidDrafts = draftShows.map(s => ({ s, ...validate(s, s.id) })).filter(x => x.errs.length > 0);
+    if (invalidDrafts.length > 0) {
+      const firstErr = invalidDrafts[0].errs[0];
+      const m = M(invalidDrafts[0].s.movieId);
+      if (!window.confirm(`Có ${invalidDrafts.length} suất bản thảo đang có xung đột (${m.title}: ${firstErr}). Bạn vẫn muốn lưu các suất hợp lệ?`)) {
+        return;
+      }
+    }
+
+    const validDrafts = draftShows.filter(s => validate(s, s.id).errs.length === 0);
+    if (validDrafts.length === 0) {
+      showToast?.('Không có suất chiếu hợp lệ nào để lưu!', 'warning');
+      return;
+    }
+
+    setIsSavingAllDrafts(true);
+    let savedCount = 0;
+    const savedIds = new Set();
+
+    for (const s of validDrafts) {
+      try {
+        const payload = {
+          movieId: Number(s.movieId),
+          roomId: Number(s.roomId),
+          startTime: `${s.date}T${s.start}:00`,
+          basePrice: DEFAULT_PRICES[s.fmt]?.std || 60000,
+          vipPrice: DEFAULT_PRICES[s.fmt]?.vip || 90000,
+          couplePrice: DEFAULT_PRICES[s.fmt]?.couple || 150000,
+          status: 'SCHEDULED'
+        };
+        await adminService.createAdminShowtime(token, payload);
+        savedCount++;
+        savedIds.add(String(s.id));
+      } catch (err) {
+        console.warn('Lỗi lưu suất chiếu:', err);
+      }
+    }
+
+    setDraftShows(prev => prev.filter(d => !savedIds.has(String(d.id))));
+    setIsSavingAllDrafts(false);
+    setPreviewModal(false);
+
+    showToast?.(`✓ Đã lưu thành công ${savedCount}/${validDrafts.length} suất chiếu vào hệ thống!`, 'success');
+    fetchShowtimes(date);
+  };
+
+  const handleSaveSingleDraft = async (s) => {
+    const token = getTokenRef.current?.();
+    if (!token) return;
+
+    const v = validate(s, s.id);
+    if (v.errs.length > 0) {
+      showToast?.('✕ ' + v.errs[0], 'error');
+      return;
+    }
+
+    try {
+      const payload = {
+        movieId: Number(s.movieId),
+        roomId: Number(s.roomId),
+        startTime: `${s.date}T${s.start}:00`,
+        basePrice: DEFAULT_PRICES[s.fmt]?.std || 60000,
+        vipPrice: DEFAULT_PRICES[s.fmt]?.vip || 90000,
+        couplePrice: DEFAULT_PRICES[s.fmt]?.couple || 150000,
+        status: 'SCHEDULED'
+      };
+      await adminService.createAdminShowtime(token, payload);
+      setDraftShows(prev => prev.filter(d => String(d.id) !== String(s.id)));
+      showToast?.(`✓ Đã lưu suất chiếu ${M(s.movieId).title} lúc ${s.start}`, 'success');
+      fetchShowtimes(date);
+    } catch (err) {
+      showToast?.('✕ Lỗi lưu suất chiếu: ' + getApiErrorMessage(err), 'error');
+    }
+  };
+
+  const handleClearAllDrafts = () => {
+    if (draftShows.length === 0) return;
+    if (!window.confirm(`Bạn có chắc chắn muốn hủy bỏ tất cả ${draftShows.length} suất chiếu bản thảo chưa lưu?`)) return;
+    setDraftShows([]);
+    setSelId(null);
+    showToast?.('Đã xóa toàn bộ bản thảo', 'info');
+  };
+
   const handleNextSlot = () => {
     const s = shows.find(x => String(x.id) === String(selId));
     if (!s) return;
@@ -525,19 +856,7 @@ export default function AdminShowtimesPanel({ ctx }) {
     quickAdd(s.roomId, s.movieId, start);
   };
 
-  const handleExportJSON = () => {
-    const data = shows.map(s => ({
-      ...s,
-      end: toT(endOf(s)),
-      movie: M(s.movieId).title,
-      room: R(s.roomId).name
-    }));
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }));
-    a.download = `lich-chieu-${date}.json`;
-    a.click();
-    showToast?.('Đã xuất JSON', 'success');
-  };
+
 
   /* Filtered Movies (Hỗ trợ lọc Phim đang chiếu từ BE) */
   const filteredMovies = useMemo(() => {
@@ -626,93 +945,178 @@ export default function AdminShowtimesPanel({ ctx }) {
         }
 
         .cinema-schedule-dark header {
-          height: 56px;
+          min-height: 56px;
+          height: auto;
           background: #0d1117;
           border-bottom: 1px solid var(--line);
           display: flex;
           align-items: center;
-          padding: 0 20px;
-          gap: 12px;
+          justify-content: space-between;
+          padding: 8px 16px;
+          gap: 10px 14px;
           flex-shrink: 0;
+          flex-wrap: wrap;
+          z-index: 10;
+        }
+        .cinema-schedule-dark .toolbar-group {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: nowrap;
         }
         .cinema-schedule-dark .logo {
           display: flex;
           align-items: center;
-          gap: 10px;
-          font-weight: 700;
+          gap: 8px;
+          font-weight: 800;
           font-size: 15px;
+          white-space: nowrap;
         }
         .cinema-schedule-dark .logo i {
           width: 32px;
           height: 32px;
-          border-radius: 10px;
+          border-radius: 9px;
           background: linear-gradient(135deg, #f5b800, #b45309);
           display: grid;
           place-items: center;
           color: #000;
           font-style: normal;
           font-size: 16px;
+          flex-shrink: 0;
         }
-        .cinema-schedule-dark .nav {
+        .cinema-schedule-dark .cinema-box {
           display: flex;
           align-items: center;
           gap: 6px;
-          margin-left: 10px;
+          background: #161b22;
+          padding: 0 10px;
+          height: 38px;
+          border-radius: 9px;
+          border: 1px solid var(--line);
+          box-sizing: border-box;
         }
-        .cinema-schedule-dark .nav .btn { padding: 6px 10px; }
-        .cinema-schedule-dark .datebox {
+        .cinema-schedule-dark .cinema-select {
+          background: transparent;
+          border: none;
+          color: #fff;
+          font-size: 12.5px;
+          font-weight: 700;
+          outline: none;
+          cursor: pointer;
+          height: 100%;
+          font-family: inherit;
+        }
+        .cinema-schedule-dark .datebox-card {
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          height: 38px;
+          padding: 2px 10px;
+          border: 1px solid var(--line);
+          border-radius: 9px;
+          background: #161b22;
+          box-sizing: border-box;
+          min-width: 150px;
+          transition: border-color .15s, background .15s;
+        }
+        .cinema-schedule-dark .datebox-card.is-today {
+          border-color: rgba(245, 184, 0, 0.45);
+          background: #191e27;
+        }
+        .cinema-schedule-dark .date-input-wrap {
           display: flex;
           align-items: center;
-          gap: 8px;
-          padding: 6px 12px;
-          border: 1px solid var(--line);
-          border-radius: 10px;
-          background: #161b22;
-          font-weight: 600;
+          height: 18px;
         }
-        .cinema-schedule-dark .datebox input {
+        .cinema-schedule-dark .date-input-native {
           border: none;
           outline: none;
-          font-weight: 600;
           background: transparent;
           color: #fff;
+          font-weight: 700;
+          font-size: 12.5px;
           cursor: pointer;
+          padding: 0;
+          margin: 0;
+          font-family: inherit;
+          text-align: center;
         }
-        .cinema-schedule-dark .datebox small { color: var(--muted); font-weight: 500; }
+        .cinema-schedule-dark .date-sub-badge {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 4px;
+          font-size: 10px;
+          font-weight: 600;
+          color: var(--muted);
+          white-space: nowrap;
+          line-height: 1;
+        }
+        .cinema-schedule-dark .datebox-card.is-today .date-sub-badge {
+          color: var(--primary);
+        }
+        .cinema-schedule-dark .today-badge {
+          color: var(--primary);
+          font-weight: 700;
+        }
         .cinema-schedule-dark .seg {
           display: flex;
+          height: 38px;
           border: 1px solid var(--line);
-          border-radius: 10px;
+          border-radius: 9px;
           overflow: hidden;
           background: #161b22;
+          box-sizing: border-box;
         }
         .cinema-schedule-dark .seg button {
-          padding: 7px 14px;
+          padding: 0 14px;
+          height: 100%;
           font-weight: 600;
-          font-size: 13px;
+          font-size: 12.5px;
           color: var(--muted);
           transition: .15s;
+          white-space: nowrap;
+          display: inline-flex;
+          align-items: center;
         }
         .cinema-schedule-dark .seg button.on {
           background: var(--primary);
           color: #000;
+          font-weight: 700;
         }
-        .cinema-schedule-dark .spacer { flex: 1; }
         .cinema-schedule-dark .btn {
           display: inline-flex;
           align-items: center;
+          justify-content: center;
           gap: 6px;
-          padding: 8px 14px;
-          border-radius: 10px;
+          height: 38px;
+          padding: 0 14px;
+          border-radius: 9px;
           font-weight: 600;
-          font-size: 13px;
+          font-size: 12.5px;
           border: 1px solid var(--line);
           background: #161b22;
           color: #f0f6fc;
           transition: .15s;
           white-space: nowrap;
+          box-sizing: border-box;
+          user-select: none;
         }
         .cinema-schedule-dark .btn:hover { background: #21262d; border-color: #30363d; }
+        .cinema-schedule-dark .btn.nav-arrow {
+          width: 32px;
+          padding: 0;
+          font-size: 18px;
+          font-weight: 700;
+          line-height: 1;
+        }
+        .cinema-schedule-dark .btn.btn-today-active {
+          border-color: var(--primary);
+          color: var(--primary);
+          background: var(--primary-2);
+          font-weight: 700;
+        }
         .cinema-schedule-dark .btn.primary {
           background: var(--primary);
           color: #000;
@@ -720,19 +1124,127 @@ export default function AdminShowtimesPanel({ ctx }) {
           font-weight: 700;
         }
         .cinema-schedule-dark .btn.primary:hover { background: #e5a700; }
+        .cinema-schedule-dark .btn.btn-active {
+          background: var(--primary-2);
+          border-color: var(--primary);
+          color: var(--primary);
+        }
         .cinema-schedule-dark .btn.danger { color: var(--danger); }
         .cinema-schedule-dark .btn.danger:hover { background: rgba(220, 38, 38, 0.15); border-color: rgba(220, 38, 38, 0.3); }
-        .cinema-schedule-dark .btn.sm { padding: 5px 10px; font-size: 12px; border-radius: 8px; }
+        .cinema-schedule-dark .btn.sm { padding: 4px 8px; font-size: 11px; height: 26px; border-radius: 6px; }
         .cinema-schedule-dark .btn:disabled { opacity: .45; cursor: not-allowed; }
+        .cinema-schedule-dark .conflict-badge {
+          background: var(--danger);
+          color: #fff;
+          border-radius: 99px;
+          padding: 1px 6px;
+          font-size: 10px;
+          font-weight: 700;
+          margin-left: 2px;
+          line-height: 1.2;
+        }
+        .cinema-schedule-dark .spin-icon {
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
 
-        /* Main 3 columns layout (cột phải mở rộng 345px để không bị thanh cuộn ngang) */
+        /* Main 3 columns layout with Resizable Splitters */
         .cinema-schedule-dark main {
           flex: 1;
-          display: grid;
-          grid-template-columns: 260px 1fr 345px;
-          gap: 14px;
-          padding: 14px;
+          display: flex;
+          flex-direction: row;
+          align-items: stretch;
+          padding: 10px 12px 12px;
+          gap: 0;
           min-height: 0;
+          overflow: hidden;
+          width: 100%;
+          position: relative;
+          box-sizing: border-box;
+        }
+        .cinema-schedule-dark .panel-left {
+          flex-shrink: 0;
+          height: 100%;
+          min-width: 200px;
+          max-width: 440px;
+        }
+        .cinema-schedule-dark .panel-center {
+          flex: 1 1 0%;
+          min-width: 380px;
+          height: 100%;
+          overflow: hidden;
+        }
+        .cinema-schedule-dark .panel-right {
+          flex-shrink: 0;
+          height: 100%;
+          min-width: 260px;
+          max-width: 520px;
+        }
+
+        /* Resizable Splitter Styles */
+        .cinema-schedule-dark .schedule-splitter {
+          width: 10px;
+          flex-shrink: 0;
+          height: 100%;
+          cursor: col-resize;
+          position: relative;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 15;
+          user-select: none;
+          touch-action: none;
+          box-sizing: border-box;
+        }
+        .cinema-schedule-dark .schedule-splitter .splitter-line {
+          width: 1.5px;
+          height: 100%;
+          background: var(--line);
+          transition: background-color .15s, box-shadow .15s;
+        }
+        .cinema-schedule-dark .schedule-splitter .splitter-handle {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          width: 6px;
+          height: 36px;
+          background: #161b22;
+          border: 1px solid #30363d;
+          border-radius: 99px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 3px;
+          transition: background-color .15s, border-color .15s, box-shadow .15s, transform .15s;
+          pointer-events: none;
+        }
+        .cinema-schedule-dark .schedule-splitter .splitter-dot {
+          width: 2px;
+          height: 2px;
+          border-radius: 50%;
+          background: #8b949e;
+          transition: background-color .15s;
+        }
+        .cinema-schedule-dark .schedule-splitter:hover .splitter-line,
+        .cinema-schedule-dark .schedule-splitter.is-dragging .splitter-line {
+          background: var(--primary);
+          box-shadow: 0 0 8px rgba(245, 184, 0, 0.45);
+        }
+        .cinema-schedule-dark .schedule-splitter:hover .splitter-handle,
+        .cinema-schedule-dark .schedule-splitter.is-dragging .splitter-handle {
+          background: var(--primary);
+          border-color: var(--primary);
+          box-shadow: 0 0 10px rgba(245, 184, 0, 0.6);
+          transform: translate(-50%, -50%) scale(1.1);
+        }
+        .cinema-schedule-dark .schedule-splitter:hover .splitter-dot,
+        .cinema-schedule-dark .schedule-splitter.is-dragging .splitter-dot {
+          background: #000;
         }
         .cinema-schedule-dark .card {
           background: var(--card);
@@ -1053,85 +1565,188 @@ export default function AdminShowtimesPanel({ ctx }) {
 
       {/* ── HEADER ── */}
       <header>
-        <div className="logo">
-          <i>🎬</i>
-          CinemaAdmin
-          <span style={{ color: 'var(--muted)', fontWeight: 500, fontSize: '13px', marginLeft: '6px' }}>
-            / Lịch chiếu
-          </span>
-        </div>
-
-        {/* Cinema Selector */}
-        {isEffectiveAdmin ? (
-          cinemas.length > 0 && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#161b22', padding: '4px 10px', borderRadius: '8px', border: '1px solid var(--line)', marginLeft: '8px' }}>
-              <span style={{ fontSize: '13px' }}>🏢</span>
-              <select
-                value={selectedCinemaId}
-                onChange={(e) => {
-                  const cId = e.target.value;
-                  setSelectedCinemaId(cId);
-                  fetchRooms(cId);
-                  fetchShowtimes(date, cId);
-                }}
-                style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '12px', fontWeight: 700, outline: 'none', cursor: 'pointer' }}
-              >
-                <option value="ALL" style={{ background: '#0d1117' }}>Tất cả cụm rạp ({cinemas.length})</option>
-                {cinemas.map(c => (
-                  <option key={c.id} value={c.id} style={{ background: '#0d1117' }}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )
-        ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(6,182,212,0.1)', padding: '4px 10px', borderRadius: '8px', border: '1px solid rgba(6,182,212,0.3)', marginLeft: '8px' }}>
-            <span style={{ fontSize: '13px' }}>🏢</span>
-            <span style={{ color: '#06b6d4', fontSize: '11px', fontWeight: 700 }}>
-              {cinemas.find(c => String(c.id) === String(selectedCinemaId))?.name || (cinemas.length > 0 ? cinemas[0].name : ctx?.assignedCinema?.name || 'Chi nhánh của bạn')}
+        {/* GROUP 1: Logo & Cinema Selector */}
+        <div className="toolbar-group">
+          <div className="logo" style={{ whiteSpace: 'nowrap' }}>
+            <i>🎬</i>
+            <span style={{ fontWeight: 800, fontSize: '15px', color: '#fff', letterSpacing: '0.02em' }}>CinemaAdmin</span>
+            <span style={{ color: 'var(--muted)', fontWeight: 500, fontSize: '13px', marginLeft: '6px' }}>
+              / Lịch chiếu
             </span>
           </div>
-        )}
 
-        <div className="nav">
-          <button className="btn" onClick={() => shiftDay(-1)}>‹</button>
-          <div className="datebox">
-            <input type="date" value={date} onChange={(e) => { setDate(e.target.value); setSelId(null); }} />
-            <small>
-              {DOW[new Date(date + 'T00:00:00').getDay()]}
-              {date === todayStr() ? ' • Hôm nay' : ''}
-            </small>
+          {/* Cinema Selector */}
+          {isEffectiveAdmin ? (
+            cinemas.length > 0 && (
+              <div className="cinema-box">
+                <span style={{ fontSize: '13px', flexShrink: 0 }}>🏢</span>
+                <select
+                  value={selectedCinemaId}
+                  onChange={(e) => {
+                    const cId = e.target.value;
+                    setSelectedCinemaId(cId);
+                    fetchRooms(cId);
+                    fetchShowtimes(date, cId);
+                  }}
+                  className="cinema-select"
+                  title="Chọn chi nhánh rạp"
+                >
+                  <option value="ALL" style={{ background: '#0d1117' }}>Tất cả cụm rạp ({cinemas.length})</option>
+                  {cinemas.map(c => (
+                    <option key={c.id} value={c.id} style={{ background: '#0d1117' }}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )
+          ) : (
+            <div className="cinema-box" style={{ background: 'rgba(6,182,212,0.1)', borderColor: 'rgba(6,182,212,0.3)' }}>
+              <span style={{ fontSize: '13px', flexShrink: 0 }}>🏢</span>
+              <span style={{ color: '#06b6d4', fontSize: '12px', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                {cinemas.find(c => String(c.id) === String(selectedCinemaId))?.name || (cinemas.length > 0 ? cinemas[0].name : ctx?.assignedCinema?.name || 'Chi nhánh của bạn')}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* GROUP 2: Date Navigation Cluster */}
+        <div className="toolbar-group">
+          <button className="btn nav-arrow" onClick={() => shiftDay(-1)} title="Ngày trước">‹</button>
+          
+          <div className={`datebox-card ${date === todayStr() ? 'is-today' : ''}`}>
+            <div className="date-input-wrap">
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => { setDate(e.target.value); setSelId(null); }}
+                className="date-input-native"
+                title="Chọn ngày lịch chiếu"
+              />
+            </div>
+            <div className="date-sub-badge">
+              <span>{DOW[new Date(date + 'T00:00:00').getDay()]}</span>
+              {date === todayStr() && <span className="today-badge">• Hôm nay</span>}
+            </div>
           </div>
-          <button className="btn" onClick={() => shiftDay(1)}>›</button>
-          <button className="btn sm" onClick={() => { setDate(todayStr()); setSelId(null); }}>Hôm nay</button>
+
+          <button className="btn nav-arrow" onClick={() => shiftDay(1)} title="Ngày sau">›</button>
+
           <button
-            className="btn sm"
-            onClick={() => fetchShowtimes(date)}
-            title="Làm mới từ máy chủ"
-            style={{ marginLeft: '4px', color: loading ? 'var(--primary)' : 'inherit' }}
+            className={`btn ${date === todayStr() ? 'btn-today-active' : ''}`}
+            onClick={() => { setDate(todayStr()); setSelId(null); }}
+            title="Xem lịch hôm nay"
           >
-            ↻ {loading ? 'Đang tải...' : 'Làm mới'}
+            Hôm nay
+          </button>
+
+          <button
+            className="btn"
+            onClick={() => fetchShowtimes(date)}
+            title="Làm mới lịch chiếu từ máy chủ"
+            style={{ color: loading ? 'var(--primary)' : 'inherit' }}
+          >
+            <span className={loading ? 'spin-icon' : ''} style={{ display: 'inline-block', marginRight: '4px' }}>↻</span>
+            <span>{loading ? 'Đang tải...' : 'Làm mới'}</span>
           </button>
         </div>
 
-        <div className="seg">
-          <button className={view === 'day' ? 'on' : ''} onClick={() => setView('day')}>Ngày</button>
-          <button className={view === 'week' ? 'on' : ''} onClick={() => setView('week')}>Tuần</button>
+        {/* GROUP 3: View Mode & Operations */}
+        <div className="toolbar-group">
+          <div className="seg">
+            <button className={view === 'day' ? 'on' : ''} onClick={() => setView('day')}>Ngày</button>
+            <button className={view === 'week' ? 'on' : ''} onClick={() => setView('week')}>Tuần</button>
+          </div>
+
+          <button
+            className={`btn ${isDraftMode ? 'btn-today-active' : ''}`}
+            onClick={() => setIsDraftMode(v => !v)}
+            title={isDraftMode ? "Chế độ Bản thảo đang BẬT: Thao tác kéo thả sẽ lưu nháp trước khi lưu CSDL" : "Chế độ Bản thảo đang TẮT: Thao tác sẽ lưu trực tiếp vào CSDL"}
+            style={{
+              borderColor: isDraftMode ? 'var(--primary)' : 'inherit',
+              color: isDraftMode ? 'var(--primary)' : 'inherit'
+            }}
+          >
+            <span>📝</span>
+            <span>{isDraftMode ? 'Bản thảo: BẬT' : 'Bản thảo: TẮT'}</span>
+          </button>
+
+          <button className="btn" onClick={() => setCopyModal(true)} title="Sao chép toàn bộ suất chiếu sang ngày khác">
+            <span>⧉</span>
+            <span>Sao chép lịch</span>
+          </button>
+
+          <button className="btn primary" onClick={() => setAddModal({ date })} title="Tạo suất chiếu mới">
+            <span style={{ fontSize: '15px', fontWeight: 900 }}>＋</span>
+            <span>Thêm suất chiếu</span>
+          </button>
+
+          <button
+            className={`btn ${isRightPanelOpen ? 'btn-active' : ''}`}
+            onClick={() => setIsRightPanelOpen(v => !v)}
+            title={isRightPanelOpen ? "Thu gọn bảng thông tin bên phải" : "Mở bảng thông tin bên phải"}
+          >
+            <span>📊</span>
+            <span>{isRightPanelOpen ? 'Bảng thông tin' : 'Hiện thông tin'}</span>
+            {allConflicts.length > 0 && (
+              <span className="conflict-badge">{allConflicts.length}</span>
+            )}
+          </button>
         </div>
-
-        <div className="spacer" />
-
-        <button className="btn" onClick={() => setCopyModal(true)}>⧉ Sao chép lịch</button>
-        <button className="btn" onClick={() => setAutoModal(true)}>✨ Xếp tự động</button>
-        <button className="btn" onClick={handleExportJSON}>⬇ Xuất</button>
-        <button className="btn primary" onClick={() => setAddModal({ date })}>＋ Thêm suất chiếu</button>
       </header>
 
+      {/* ── DRAFT ACTIONS BAR ── */}
+      {draftShows.length > 0 && (
+        <div style={{
+          background: 'linear-gradient(90deg, rgba(245, 184, 0, 0.15), rgba(245, 184, 0, 0.04))',
+          borderBottom: '1px solid rgba(245, 184, 0, 0.35)',
+          padding: '8px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          flexShrink: 0
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ fontSize: '16px' }}>📋</span>
+            <span style={{ fontSize: '12.5px', color: '#fff', fontWeight: 600 }}>
+              Có <strong style={{ color: '#f5b800' }}>{draftShows.length}</strong> suất chiếu bản thảo chưa lưu vào hệ thống.
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              className="btn sm"
+              onClick={() => handlePreviewPrices(draftShows)}
+              disabled={loadingPreview}
+              title="Xem trước bảng giá vé được tính toán tự động"
+              style={{ background: '#161b22', border: '1px solid rgba(255,255,255,0.2)', color: '#fff' }}
+            >
+              <span>👁️ Xem trước giá</span>
+            </button>
+            <button
+              className="btn primary sm"
+              onClick={handleSaveAllDrafts}
+              disabled={isSavingAllDrafts}
+              title="Lưu tất cả suất bản thảo vào CSDL"
+            >
+              <span>💾 {isSavingAllDrafts ? 'Đang lưu...' : `Lưu tất cả (${draftShows.length})`}</span>
+            </button>
+            <button
+              className="btn sm"
+              onClick={handleClearAllDrafts}
+              title="Hủy bỏ tất cả suất bản thảo"
+              style={{ color: '#f85149', borderColor: 'rgba(248, 81, 73, 0.3)' }}
+            >
+              <span>🗑️ Hủy tất cả</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── MAIN 3 COLUMNS ── */}
-      <main>
+      <main ref={mainContainerRef}>
         {/* LEFT: movies */}
-        <section className="card">
+        <section className="card panel-left" style={{ width: `${leftWidth}px`, flexShrink: 0 }}>
           <div className="card-h" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div>
               <h3>Phim đang chiếu</h3>
@@ -1273,10 +1888,27 @@ export default function AdminShowtimesPanel({ ctx }) {
           </div>
         </section>
 
+        {/* SPLITTER 1: Between Left Panel & Center Timeline */}
+        <Splitter
+          onDrag={handleStartDragLeft}
+          isDragging={draggingSplitter === 'left'}
+          title="Kéo sang trái / phải để điều chỉnh độ rộng danh sách phim"
+        />
+
         {/* CENTER: timeline or week */}
-        <section className="card">
+        <section className="card panel-center" style={{ flex: '1 1 0%', minWidth: '380px' }}>
           <div ref={tlWrapRef} className="tl-wrap">
-            {view === 'day' ? (
+            {rooms.length === 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '360px', padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
+                <div style={{ fontSize: '36px', marginBottom: '12px', opacity: 0.6 }}>🏢</div>
+                <h4 style={{ color: '#fff', fontSize: '15px', fontWeight: 700, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Chi nhánh chưa có phòng chiếu hoạt động
+                </h4>
+                <p style={{ fontSize: '12.5px', maxWidth: '420px', lineHeight: 1.6, margin: '0 0 16px 0', color: 'var(--muted)' }}>
+                  Cụm rạp đang chọn chưa có phòng chiếu nào được thiết lập. Vui lòng chuyển sang tab <strong style={{ color: '#f5b800' }}>Phòng chiếu &amp; ghế</strong> để tạo phòng chiếu trước khi điều phối lịch chiếu.
+                </p>
+              </div>
+            ) : view === 'day' ? (
               <div className="tl">
                 <div className="corner">Phòng / Giờ</div>
                 <div className="hours">
@@ -1362,14 +1994,54 @@ export default function AdminShowtimesPanel({ ctx }) {
                           if (mid && !sid) {
                             quickAdd(r.id, Number(mid), start);
                           } else if (sid) {
-                            const curShow = shows.find(x => String(x.id) === String(sid));
+                            const curShow = findShowById(sid);
                             if (curShow) {
                               const cand = { ...curShow, roomId: r.id, start };
                               const val = validate(cand, curShow.id);
                               if (val.errs.length) return showToast?.('✕ ' + val.errs[0], 'error');
-                              setShows(prev => prev.map(x => String(x.id) === String(sid) ? cand : x));
-                              setSelId(curShow.id);
-                              showToast?.('Đã di chuyển suất chiếu', 'success');
+
+                              // Nếu là bản thảo chưa lưu vào server:
+                              if (curShow.isDraft) {
+                                setDraftShows(prev => prev.map(x => String(x.id) === String(sid) ? cand : x));
+                                setSelId(curShow.id);
+                                showToast?.(`✓ Đã chuyển bản thảo sang ${start} (${r.name})`, 'info');
+                                return;
+                              }
+
+                              // Nếu là suất chiếu đã lưu trong database: Gọi API cập nhật ngay lập tức
+                              const token = getTokenRef.current?.();
+                              if (token && curShow.id && !isNaN(Number(curShow.id))) {
+                                (async () => {
+                                  try {
+                                    const statusMap = { 'open': 'OPEN', 'plan': 'SCHEDULED', 'cancel': 'CANCELLED', 'done': 'COMPLETED' };
+                                    const stdPrice = cand.price?.std || cand.raw?.basePrice || DEFAULT_PRICES[cand.fmt]?.std || 60000;
+                                    const vipPrice = cand.price?.vip || cand.raw?.vipPrice || DEFAULT_PRICES[cand.fmt]?.vip || 90000;
+                                    const couplePrice = cand.price?.couple || cand.raw?.couplePrice || DEFAULT_PRICES[cand.fmt]?.couple || 150000;
+
+                                    const payload = {
+                                      movieId: Number(cand.movieId),
+                                      roomId: Number(r.id),
+                                      startTime: `${cand.date}T${start}:00`,
+                                      basePrice: stdPrice,
+                                      vipPrice: vipPrice,
+                                      couplePrice: couplePrice,
+                                      status: statusMap[cand.status] || cand.raw?.status || 'SCHEDULED'
+                                    };
+
+                                    await adminService.updateAdminShowtime(token, curShow.id, payload);
+                                    setShows(prev => prev.map(x => String(x.id) === String(sid) ? cand : x));
+                                    setSelId(curShow.id);
+                                    showToast?.(`✓ Đã chuyển suất chiếu sang ${start} (${r.name})`, 'success');
+                                    fetchShowtimes(date);
+                                  } catch (err) {
+                                    console.error('Lỗi di chuyển suất chiếu:', err);
+                                    showToast?.('✕ Không thể di chuyển suất chiếu: ' + getApiErrorMessage(err), 'error');
+                                  }
+                                })();
+                              } else {
+                                setShows(prev => prev.map(x => String(x.id) === String(sid) ? cand : x));
+                                setSelId(curShow.id);
+                              }
                             }
                           }
                         }}
@@ -1412,6 +2084,7 @@ export default function AdminShowtimesPanel({ ctx }) {
                           const v = validate(s, s.id);
                           const sold = r.seats > 0 ? Math.round((s.sold / r.seats) * 100) : 0;
                           const isSel = selId === s.id;
+                          const isDraft = Boolean(s.isDraft);
 
                           return (
                             <div
@@ -1435,17 +2108,19 @@ export default function AdminShowtimesPanel({ ctx }) {
                                 setSelId(s.id);
                                 setTabIdx(0);
                               }}
-                              className={`blk ${isSel ? 'sel' : ''} ${v.errs.length ? 'conflict' : ''} ${s.status === 'cancel' ? 'cancel' : ''}`}
+                              className={`blk ${isSel ? 'sel' : ''} ${v.errs.length ? 'conflict' : ''} ${s.status === 'cancel' ? 'cancel' : ''} ${isDraft ? 'is-draft-slot' : ''}`}
                               style={{
                                 left: `${left}px`,
                                 width: `${wd + cw}px`,
-                                background: m.color,
+                                background: isDraft ? `repeating-linear-gradient(45deg, ${m.color}, ${m.color} 10px, ${m.color}cc 10px, ${m.color}cc 20px)` : m.color,
+                                border: isDraft ? '2px dashed #f5b800' : undefined,
+                                boxShadow: isDraft ? '0 0 10px rgba(245, 184, 0, 0.4)' : undefined,
                                 opacity: draggingShowId === s.id ? 0.35 : 1,
                                 transition: 'opacity 0.15s ease'
                               }}
-                              title={`${m.title} • ${s.start}–${toT(st + dur)} • ${s.sold}/${r.seats} vé`}
+                              title={`${isDraft ? '[BẢN THẢO] ' : ''}${m.title} • ${s.start}–${toT(st + dur)} • ${s.sold}/${r.seats} vé`}
                             >
-                              <b>{m.title}</b>
+                              <b>{isDraft ? `[BẢN THẢO] ${m.title}` : m.title}</b>
                               <span>
                                 {s.start}–{toT(st + dur)} • {s.fmt} {s.lang === 'Lồng tiếng' ? 'LT' : s.lang === 'Phụ đề' ? 'PĐ' : ''} • {sold}%
                               </span>
@@ -1564,20 +2239,52 @@ export default function AdminShowtimesPanel({ ctx }) {
           </div>
         </section>
 
+        {/* SPLITTER 2: Between Center Timeline & Right Info Panel */}
+        {isRightPanelOpen && (
+          <Splitter
+            onDrag={handleStartDragRight}
+            isDragging={draggingSplitter === 'right'}
+            title="Kéo sang trái / phải để điều chỉnh độ rộng bảng thông tin"
+          />
+        )}
+
         {/* RIGHT: tabs */}
-        <section className="card right">
-          <div className="tabs">
-            <button className={tabIdx === 0 ? 'on' : ''} onClick={() => setTabIdx(0)}>Chi tiết suất</button>
-            <button className={tabIdx === 1 ? 'on' : ''} onClick={() => setTabIdx(1)}>Tổng quan ngày</button>
-            <button className={tabIdx === 2 ? 'on' : ''} onClick={() => setTabIdx(2)}>
-              Cảnh báo {allConflicts.length > 0 && <span style={{ background: 'var(--danger)', color: '#fff', borderRadius: '99px', padding: '0 6px', fontSize: '11px', marginLeft: '4px' }}>{allConflicts.length}</span>}
-            </button>
-          </div>
+        {isRightPanelOpen && (
+          <section className="card panel-right right" style={{ width: `${rightWidth}px`, flexShrink: 0 }}>
+            <div className="tabs" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
+                <button className={tabIdx === 0 ? 'on' : ''} onClick={() => setTabIdx(0)}>Chi tiết suất</button>
+                <button className={tabIdx === 1 ? 'on' : ''} onClick={() => setTabIdx(1)}>Tổng quan ngày</button>
+                <button className={tabIdx === 2 ? 'on' : ''} onClick={() => setTabIdx(2)}>
+                  Cảnh báo {allConflicts.length > 0 && <span className="conflict-badge">{allConflicts.length}</span>}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsRightPanelOpen(false)}
+                title="Thu gọn bảng thông tin bên phải"
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'var(--muted)',
+                  cursor: 'pointer',
+                  padding: '4px 8px',
+                  fontSize: '12px',
+                  borderRadius: '6px',
+                  marginRight: '6px',
+                  transition: 'color .15s'
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.color = '#fff'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--muted)'; }}
+              >
+                ✕
+              </button>
+            </div>
 
           <div className="card-b">
             {/* TAB 0 */}
             {tabIdx === 0 && (() => {
-              const s = shows.find(x => String(x.id) === String(selId));
+              const s = findShowById(selId);
               if (!s) {
                 return (
                   <div className="empty">
@@ -1598,6 +2305,54 @@ export default function AdminShowtimesPanel({ ctx }) {
 
               return (
                 <div>
+                  {s.isDraft && (
+                    <div style={{
+                      background: 'rgba(245, 184, 0, 0.12)',
+                      border: '1px dashed #f5b800',
+                      padding: '10px 12px',
+                      borderRadius: '6px',
+                      marginBottom: '14px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '8px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: '12px', color: '#f5b800', fontWeight: 800 }}>
+                          📝 Suất Chiếu Bản Thảo (Chưa Lưu)
+                        </span>
+                        <span style={{ fontSize: '10.5px', background: 'rgba(245, 184, 0, 0.2)', color: '#f5b800', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                          DRAFT
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button
+                          className="btn sm"
+                          style={{ flex: 1, fontSize: '11px', padding: '4px 6px', background: '#161b22', border: '1px solid rgba(255,255,255,0.2)' }}
+                          onClick={() => handlePreviewPrices([s])}
+                          title="Xem trước giá vé tính toán cho suất này"
+                        >
+                          👁️ Xem giá
+                        </button>
+                        <button
+                          className="btn primary sm"
+                          style={{ flex: 1, fontSize: '11px', padding: '4px 6px' }}
+                          onClick={() => handleSaveSingleDraft(s)}
+                          title="Lưu ngay suất chiếu này vào hệ thống"
+                        >
+                          💾 Lưu ngay
+                        </button>
+                        <button
+                          className="btn sm"
+                          style={{ fontSize: '11px', padding: '4px 8px', color: '#f85149', borderColor: 'rgba(248,81,73,0.3)' }}
+                          onClick={() => handleDeleteDraft(s.id)}
+                          title="Xóa suất bản thảo này"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
                     <div className="poster" style={{ background: m.color, width: '44px', height: '60px' }}>
                       {m.title.charAt(0)}
@@ -1848,6 +2603,7 @@ export default function AdminShowtimesPanel({ ctx }) {
             })()}
           </div>
         </section>
+        )}
       </main>
 
       {/* ── MODALS ── */}
@@ -1862,6 +2618,11 @@ export default function AdminShowtimesPanel({ ctx }) {
               setAddModal(null);
               showToast?.('✓ Đã tạo suất chiếu thành công', 'success');
               fetchShowtimes(date);
+            }}
+            onAddDraft={(draftList) => {
+              setDraftShows(prev => [...prev, ...draftList]);
+              setAddModal(null);
+              showToast?.(`📝 Đã thêm ${draftList.length} suất chiếu vào bản thảo`, 'info');
             }}
             getAdminToken={getAdminToken}
             validate={validate}
@@ -1890,32 +2651,27 @@ export default function AdminShowtimesPanel({ ctx }) {
         </div>
       )}
 
-      {autoModal && (
-        <div className="modal-bg" onClick={(e) => { if (e.target.classList.contains('modal-bg')) setAutoModal(false); }}>
-          <AutoModalContent
-            date={date}
-            rooms={rooms}
-            movies={movies}
-            onClose={() => setAutoModal(false)}
-            onSuccess={() => {
-              setAutoModal(false);
-              showToast?.('✓ Đã xếp lịch tự động thành công', 'success');
-              fetchShowtimes(date);
-            }}
-            getAdminToken={getAdminToken}
-            validate={validate}
-            M={M}
-            R={R}
+      {previewModal && (
+        <div className="modal-bg" onClick={(e) => { if (e.target.classList.contains('modal-bg')) setPreviewModal(false); }}>
+          <PreviewPricesModalContent
+            previewData={previewData}
+            loading={loadingPreview}
+            draftCount={draftShows.length}
+            onClose={() => setPreviewModal(false)}
+            onSaveAll={handleSaveAllDrafts}
+            isSaving={isSavingAllDrafts}
           />
         </div>
       )}
+
+
     </div>
   );
 }
 
 /* ================= SUB-MODAL COMPONENTS ================= */
 
-function AddModalContent({ params, movies, rooms, onClose, onSuccess, getAdminToken, validate, M, R, endOf }) {
+function AddModalContent({ params, movies, rooms, onClose, onSuccess, onAddDraft, getAdminToken, validate, M, R, endOf }) {
   const [movieId, setMovieId] = useState(params.movieId || movies[0]?.id || 1);
   const [roomId, setRoomId] = useState(params.roomId || rooms[0]?.id || 1);
   const [date, setDate] = useState(params.date || todayStr());
@@ -1960,15 +2716,39 @@ function AddModalContent({ params, movies, rooms, onClose, onSuccess, getAdminTo
     }));
   }, [times, date, roomId, movieId, fmt, lang]);
 
-  const handleSubmit = async () => {
+  const handleAddToDraft = () => {
     if (candidates.length === 0) return alert('Chọn ít nhất một giờ bắt đầu');
     const ok = candidates.filter(s => validate(s).errs.length === 0);
     if (ok.length === 0) return alert('✕ Không có suất nào hợp lệ (bị xung đột giờ hoặc phòng)');
+    const drafts = ok.map(s => ({
+      ...s,
+      id: 'draft_' + Math.random().toString(36).slice(2, 9),
+      isDraft: true
+    }));
+    onAddDraft?.(drafts);
+  };
+
+  const handleSubmit = async () => {
+    if (candidates.length === 0) return alert('Chọn ít nhất một giờ bắt đầu');
+    
+    // Kiểm tra quy định tạo trước ít nhất 1 ngày
+    const tomorrow = getTomorrowStr();
+    if (date < tomorrow || candidates.some(c => c.date < tomorrow)) {
+      alert('✕ Quy định: Suất chiếu phải được lên lịch trước ít nhất 1 ngày (từ ngày mai trở đi).');
+      return;
+    }
+
+    const ok = candidates.filter(s => validate(s).errs.length === 0);
+    if (ok.length === 0) {
+      const firstErr = validate(candidates[0]).errs[0] || 'Bị xung đột giờ hoặc phòng';
+      return alert(`✕ Không có suất nào hợp lệ: ${firstErr}`);
+    }
 
     setSaving(true);
     const token = getAdminToken?.();
 
     let createdCount = 0;
+    const errorList = [];
     for (const c of ok) {
       if (token) {
         try {
@@ -1984,12 +2764,18 @@ function AddModalContent({ params, movies, rooms, onClose, onSuccess, getAdminTo
           await adminService.createAdminShowtime(token, payload);
           createdCount++;
         } catch (err) {
+          const msg = getApiErrorMessage(err);
           console.warn('Lỗi API create showtime:', err);
+          errorList.push(`Suất lúc ${c.start}: ${msg}`);
         }
       }
     }
 
     setSaving(false);
+    if (errorList.length > 0) {
+      alert(`✕ Không thể tạo suất chiếu:\n\n${errorList.join('\n')}`);
+      return;
+    }
     onSuccess();
   };
 
@@ -2018,7 +2804,7 @@ function AddModalContent({ params, movies, rooms, onClose, onSuccess, getAdminTo
         </div>
         <div className="field">
           <label>Ngày</label>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <input type="date" min={getTomorrowStr()} value={date} onChange={(e) => setDate(e.target.value)} />
         </div>
       </div>
 
@@ -2081,8 +2867,19 @@ function AddModalContent({ params, movies, rooms, onClose, onSuccess, getAdminTo
 
       <div className="acts">
         <button className="btn" onClick={onClose}>Huỷ</button>
+        {onAddDraft && (
+          <button
+            type="button"
+            className="btn"
+            disabled={saving}
+            onClick={handleAddToDraft}
+            style={{ border: '1px dashed #f5b800', color: '#f5b800', background: 'rgba(245,184,0,0.06)' }}
+          >
+            📝 Lưu vào Bản thảo
+          </button>
+        )}
         <button className="btn primary" disabled={saving} onClick={handleSubmit}>
-          {saving ? 'Đang gửi API...' : 'Tạo suất chiếu'}
+          {saving ? 'Đang gửi API...' : 'Tạo & Lưu ngay'}
         </button>
       </div>
     </div>
@@ -2142,7 +2939,7 @@ function CopyModalContent({ date, shows, onClose, onSuccess, getAdminToken, vali
         </div>
         <div className="field">
           <label>Đến ngày</label>
-          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          <input type="date" min={getTomorrowStr()} value={to} onChange={(e) => setTo(e.target.value)} />
         </div>
       </div>
 
@@ -2297,6 +3094,185 @@ function AutoModalContent({ date, rooms, movies, onClose, onSuccess, getAdminTok
         <button className="btn" onClick={onClose}>Huỷ</button>
         <button className="btn primary" disabled={saving} onClick={doAuto}>
           {saving ? 'Đang xếp lịch...' : 'Xếp lịch'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+/* ================= PREVIEW PRICES MODAL COMPONENT ================= */
+
+function PreviewPricesModalContent({
+  previewData,
+  loading,
+  draftCount,
+  onClose,
+  onSaveAll,
+  isSaving
+}) {
+  const formatVnd = (value) => {
+    if (value === null || value === undefined || value === '') return '0đ';
+    return `${Number(value).toLocaleString('vi-VN')}đ`;
+  };
+
+  const hasMissingAudience = previewData.some(p => p.audiencePriceMissing);
+
+  return (
+    <div className="modal" style={{ maxWidth: '960px', width: '95vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--line)', paddingBottom: '12px', marginBottom: '14px' }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 800, color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>👁️</span>
+            <span>Xem Trước Bảng Giá Vé ({draftCount} suất bản thảo)</span>
+          </h3>
+          <p style={{ margin: '4px 0 0 0', fontSize: '12px', color: 'var(--muted)' }}>
+            Ma trận giá vé được Catalog Service tự động tính toán (Giá gốc phòng + Phụ thu đối tượng) trước khi lưu vào CSDL.
+          </p>
+        </div>
+        <button
+          onClick={onClose}
+          style={{ background: 'transparent', border: 'none', color: 'var(--muted)', fontSize: '18px', cursor: 'pointer', padding: '4px 8px' }}
+        >
+          ✕
+        </button>
+      </div>
+
+      <div style={{ overflowY: 'auto', flex: 1, paddingRight: '4px' }}>
+        {loading ? (
+          <div style={{ padding: '60px', textAlign: 'center', color: 'var(--muted)' }}>
+            <div style={{ fontSize: '32px', marginBottom: '12px' }}>🔄</div>
+            <div style={{ fontSize: '14px', fontWeight: 700, color: '#fff' }}>Đang tính toán ma trận giá vé từ Catalog Service...</div>
+            <p style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>Đang áp dụng phụ thu Trẻ em, Học sinh/Sinh viên và Người lớn theo cụm rạp.</p>
+          </div>
+        ) : previewData.length === 0 ? (
+          <div style={{ padding: '40px', textAlign: 'center', color: 'var(--muted)' }}>
+            <p>Không có dữ liệu xem trước.</p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {hasMissingAudience && (
+              <div style={{ background: 'rgba(245, 184, 0, 0.12)', border: '1px solid rgba(245, 184, 0, 0.35)', padding: '10px 14px', borderRadius: '8px', fontSize: '12px', color: '#f5b800' }}>
+                ⚠️ <strong>Cảnh báo:</strong> Cụm rạp chưa cấu hình đầy đủ phụ thu cả 3 nhóm đối tượng (Trẻ em, HSSV, Người lớn). Vui lòng cấu hình tại tab <strong>Quản lý Bảng giá</strong> để giá vé bán ra chính xác nhất.
+              </div>
+            )}
+
+            {previewData.map((item, idx) => {
+              const startStr = item.startTime ? item.startTime.replace('T', ' ').slice(11, 16) : '';
+              const endStr = item.endTime ? item.endTime.replace('T', ' ').slice(11, 16) : '';
+              const dateStr = item.startTime ? item.startTime.split('T')[0] : '';
+
+              return (
+                <div
+                  key={idx}
+                  style={{
+                    background: '#12161c',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+                  }}
+                >
+                  {/* Slot Header */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '8px', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '10px', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ background: 'var(--primary)', color: '#000', fontWeight: 900, padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>
+                        #{idx + 1}
+                      </span>
+                      <strong style={{ fontSize: '15px', color: '#fff' }}>{item.movieTitle}</strong>
+                      <span style={{ fontSize: '12px', color: 'var(--muted)' }}>• {item.roomName} ({item.cinemaName})</span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#f5b800', fontWeight: 700 }}>
+                      📅 {dateStr} • ⏰ {startStr} – {endStr}
+                    </div>
+                  </div>
+
+                  {/* Surcharges Summary */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '12px', fontSize: '11.5px', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '6px' }}>
+                    <span style={{ color: 'var(--muted)' }}>Phụ thu rạp áp dụng:</span>
+                    <span style={{ color: '#38bdf8' }}>Trẻ em: +{formatVnd(item.childAdditional)}</span>
+                    <span style={{ color: '#34d399' }}>HSSV: +{formatVnd(item.studentAdditional)}</span>
+                    <span style={{ color: '#fbbf24' }}>Người lớn: +{formatVnd(item.adultAdditional)}</span>
+                  </div>
+
+                  {/* Pricing Matrix Table */}
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', color: 'var(--muted)', fontSize: '11px', textTransform: 'uppercase' }}>
+                          <th style={{ padding: '6px 10px' }}>Loại ghế</th>
+                          <th style={{ padding: '6px 10px', textAlign: 'right' }}>Giá gốc phòng</th>
+                          <th style={{ padding: '6px 10px', textAlign: 'center', color: '#38bdf8' }}>Trẻ Em (CHILD)</th>
+                          <th style={{ padding: '6px 10px', textAlign: 'center', color: '#34d399' }}>HSSV (STUDENT)</th>
+                          <th style={{ padding: '6px 10px', textAlign: 'center', color: '#fbbf24' }}>Người Lớn (ADULT)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <td style={{ padding: '8px 10px', fontWeight: 700, color: '#fff' }}>Ghế Thường (STANDARD)</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'monospace' }}>{formatVnd(item.roomStandardPrice)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 800, color: '#38bdf8' }}>{formatVnd(item.childStandardPrice)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 800, color: '#34d399' }}>{formatVnd(item.studentStandardPrice)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 800, color: '#fbbf24' }}>{formatVnd(item.adultStandardPrice)}</td>
+                        </tr>
+                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <td style={{ padding: '8px 10px', fontWeight: 700, color: '#f5b800' }}>Ghế VIP</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'monospace' }}>{formatVnd(item.roomVipPrice)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 800, color: '#38bdf8' }}>{formatVnd(item.childVipPrice)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 800, color: '#34d399' }}>{formatVnd(item.studentVipPrice)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 800, color: '#fbbf24' }}>{formatVnd(item.adultVipPrice)}</td>
+                        </tr>
+                        <tr>
+                          <td style={{ padding: '8px 10px', fontWeight: 700, color: '#ec4899' }}>Ghế Đôi (COUPLE - Cặp vé)</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: 'var(--muted)', fontFamily: 'monospace' }}>{formatVnd(item.roomCouplePrice)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 800, color: '#38bdf8' }}>
+                            <div>{formatVnd(item.childChildCouplePrice)}</div>
+                            <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 400 }}>2 Trẻ em</div>
+                          </td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 800, color: '#34d399' }}>
+                            <div>{formatVnd(item.studentStudentCouplePrice)}</div>
+                            <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 400 }}>2 HSSV</div>
+                          </td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 800, color: '#fbbf24' }}>
+                            <div>{formatVnd(item.adultAdultCouplePrice)}</div>
+                            <div style={{ fontSize: '10px', color: 'var(--muted)', fontWeight: 400 }}>2 Người lớn</div>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {item.warnings && item.warnings.length > 0 && (
+                    <div style={{ marginTop: '10px', padding: '6px 10px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '4px', fontSize: '11px', color: '#fca5a5' }}>
+                      {item.warnings.map((w, wi) => (
+                        <div key={wi}>⚠️ {w}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Modal Footer Actions */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid var(--line)', paddingTop: '14px', marginTop: '14px' }}>
+        <button
+          type="button"
+          className="btn"
+          onClick={onClose}
+        >
+          Đóng
+        </button>
+        <button
+          type="button"
+          className="btn primary"
+          onClick={onSaveAll}
+          disabled={isSaving || previewData.length === 0}
+          style={{ padding: '8px 20px', fontWeight: 800 }}
+        >
+          {isSaving ? 'Đang lưu vào hệ thống...' : `💾 Xác nhận & Lưu tất cả (${draftCount} suất)`}
         </button>
       </div>
     </div>

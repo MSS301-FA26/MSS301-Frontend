@@ -22,7 +22,8 @@ import { validateNoSingleSeatGap, validateOrphanSeats } from '../../utils/seatVa
 export { validateNoSingleSeatGap, validateOrphanSeats };
 
 // Cấu hình thời gian giữ ghế chuẩn 10 phút (Rule 17)
-const HOLD_DURATION_SECONDS = 10 * 60;
+// Cấu hình thời gian giữ ghế chuẩn 3 phút theo Backend refactor
+const HOLD_DURATION_SECONDS = 3 * 60;
 const CONCESSIONS_PAGE_SIZE = 6;
 const TICKET_TYPES = [
   { type: 'ADULT', label: 'Người lớn', age: 30, priceKey: 'adultStandardPrice', helper: 'Vé tiêu chuẩn dành cho người lớn' },
@@ -407,6 +408,16 @@ export default function BookingPage() {
     return () => { cancelled = true; };
   }, [id, currentRole]);
 
+  // Nếu truy cập /book mà chưa có showtimeId thì điều hướng sang trang 4 bước /showtimes
+  useEffect(() => {
+    const preferId = searchParams.get('showtimeId');
+    const isResuming = Boolean(searchParams.get('resumeBookingId'));
+    const targetMovieId = movie?.backendId || movie?.id || id;
+    if (!preferId && !isResuming && targetMovieId) {
+      navigate(`/showtimes?movieId=${targetMovieId}`, { replace: true });
+    }
+  }, [searchParams, id, movie?.backendId, movie?.id, navigate]);
+
   useEffect(() => {
     if (!movie || isMovieBookable) return;
     if (movie.isUpcoming && movie.status !== 'SCHEDULED' && movie.status !== 'NOW_SHOWING') {
@@ -422,6 +433,7 @@ export default function BookingPage() {
   const [seatMapData, setSeatMapData] = useState(null);
   const [isLoadingSeatMap, setIsLoadingSeatMap] = useState(false);
   const [selectedDate, setSelectedDate] = useState('');
+  const [selectedCinemaFilter, setSelectedCinemaFilter] = useState('ALL');
 
   // Selected seats (with inline ticketType selection)
   const [selectedSeats, setSelectedSeats] = useState([]);
@@ -647,8 +659,13 @@ export default function BookingPage() {
         
         if (!isResuming) {
           setSelectedDate(date);
-          setSelectedShowtime(null);
-          setBookingStep('schedule');
+          if (preferred) {
+            setSelectedShowtime(preferred);
+            setBookingStep('seats');
+          } else {
+            setSelectedShowtime(null);
+            setBookingStep('schedule');
+          }
         }
       } else {
         if (!searchParams.get('resumeBookingId')) {
@@ -839,6 +856,18 @@ export default function BookingPage() {
   }, [selectedShowtime?.id]);
 
   // Derived: Hiển thị 7 ngày liên tiếp tính từ hôm nay và các ngày có suất chiếu khả dụng
+  const availableCinemas = useMemo(() => {
+    const map = new Map();
+    (showtimesList || []).forEach(st => {
+      const cId = st.cinemaId || st.cinema?.id;
+      const cName = st.cinemaName || st.cinema?.name || (cId ? `Rạp #${cId}` : 'CineAI Cinema');
+      if (cId && !map.has(String(cId))) {
+        map.set(String(cId), { id: cId, name: cName });
+      }
+    });
+    return Array.from(map.values());
+  }, [showtimesList]);
+
   const dateOptions = useMemo(() => {
     const today = new Date();
     const datesSet = new Set();
@@ -2021,6 +2050,50 @@ export default function BookingPage() {
               ) : (
                 <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] gap-4 items-start">
                   {/* 1. CHỌN NGÀY CHIẾU (ĐƯA LÊN ĐẦU TRANG - KHÔNG CUỘN NGANG) */}
+              {/* CHỌN CỤM RẠP (CINEMA SELECTION) */}
+              {availableCinemas.length > 0 && (
+                <div className="rounded-none border border-white/10 bg-neutral-950 p-3 space-y-2 shadow-md">
+                  <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-6 w-6 rounded-none bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                        <Building2 className="w-3.5 h-3.5" />
+                      </div>
+                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">Chọn Cụm Rạp</h3>
+                    </div>
+                    <span className="text-[10px] text-amber-400 font-mono font-semibold">
+                      {selectedCinemaFilter === 'ALL' ? 'Tất cả rạp' : (availableCinemas.find(c => String(c.id) === String(selectedCinemaFilter))?.name || 'Đã chọn rạp')}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCinemaFilter('ALL')}
+                      className={`px-3 py-1.5 text-xs font-bold border rounded-none transition ${
+                        selectedCinemaFilter === 'ALL'
+                          ? 'bg-amber-400 text-black border-amber-300 font-black shadow-md'
+                          : 'bg-neutral-900 text-neutral-300 border-white/10 hover:border-amber-400/40'
+                      }`}
+                    >
+                      Tất cả cụm rạp ({availableCinemas.length})
+                    </button>
+                    {availableCinemas.map(c => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => setSelectedCinemaFilter(String(c.id))}
+                        className={`px-3 py-1.5 text-xs font-bold border rounded-none transition ${
+                          String(selectedCinemaFilter) === String(c.id)
+                            ? 'bg-amber-400 text-black border-amber-300 font-black shadow-md'
+                            : 'bg-neutral-900 text-neutral-300 border-white/10 hover:border-amber-400/40'
+                        }`}
+                      >
+                        {c.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div id="schedule-section" className="xl:row-span-2 rounded-none border border-white/10 bg-neutral-950 p-3 space-y-2.5 shadow-md scroll-mt-24 sm:scroll-mt-28">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pt-0.5 pb-2">
                   <div className="flex items-center gap-2">

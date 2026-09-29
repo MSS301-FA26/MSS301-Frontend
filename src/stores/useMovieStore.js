@@ -75,6 +75,23 @@ export const useMovieStore = create((set, get) => ({
   })),
   setFoodCatalog: (foodCatalog) => set({ foodCatalog }),
 
+
+  setSelectedCinema: (selectedCinema) => set({ selectedCinema }),
+  fetchPublicCinemas: async () => {
+    try {
+      const data = await movieService.getPublicCinemas();
+      const list = Array.isArray(data) ? data : (data?.items || data?.content || []);
+      set({ cinemasList: list });
+      if (!get().selectedCinema && list.length > 0) {
+        set({ selectedCinema: list[0] });
+      }
+      return list;
+    } catch (err) {
+      console.warn('Failed to fetch public cinemas:', err);
+      return [];
+    }
+  },
+
   fetchPublicCinema: async ({ force = false } = {}) => {
     const cachedCinema = force ? null : getFreshCache(movieStoreCache.publicCinema);
     if (cachedCinema) {

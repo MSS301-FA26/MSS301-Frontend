@@ -39,6 +39,42 @@ export const hasBackendStaffAccess = (accessToken, user = null) => {
   return roleValues.includes('STAFF') || roleValues.includes('ROLE_STAFF');
 };
 
+export const isAdmin = (user) => {
+  if (!user) return false;
+  if (ADMIN_ACCESS_OVERRIDE) return true;
+  const roles = [user.role, ...(Array.isArray(user.roles) ? user.roles : [])]
+    .map((r) => String(r || '').toUpperCase());
+  return roles.includes('ADMIN') || roles.includes('ROLE_ADMIN');
+};
+
+export const isManager = (user) => {
+  if (!user) return false;
+  const roles = [user.role, ...(Array.isArray(user.roles) ? user.roles : [])]
+    .map((r) => String(r || '').toUpperCase());
+  return !isAdmin(user) && (roles.includes('MANAGER') || roles.includes('ROLE_MANAGER'));
+};
+
+export const isStaff = (user) => {
+  if (!user) return false;
+  const roles = [user.role, ...(Array.isArray(user.roles) ? user.roles : [])]
+    .map((r) => String(r || '').toUpperCase());
+  return !isAdmin(user) && !isManager(user) && (roles.includes('STAFF') || roles.includes('ROLE_STAFF'));
+};
+
+export const isCustomer = (user) => {
+  return !isAdmin(user) && !isManager(user) && !isStaff(user);
+};
+
+export const canManageGlobalCatalog = (user) => isAdmin(user);
+export const canManageCinemaOperations = (user) => isAdmin(user) || isManager(user);
+export const canCheckIn = (user) => isAdmin(user) || isManager(user) || isStaff(user);
+
+export const getAssignedCinemaId = (user) => {
+  if (!user) return null;
+  return user.cinemaId ? Number(user.cinemaId) : null;
+};
+
+
 const resolveRole = (roles = []) => {
   const normalized = roles.map((role) => String(role).toUpperCase());
   if (ADMIN_ACCESS_OVERRIDE || normalized.includes('ADMIN') || normalized.includes('ROLE_ADMIN')) return 'admin';
@@ -224,7 +260,19 @@ const performRequest = async (path, { method = 'GET', body, token, timeout } = {
     return unwrapResponse(response);
   } catch (requestError) {
     const status = requestError?.response?.status;
-    if (!(hadToken && (status === 401 || status === 403))) {
+
+    // Phase 1: 403 Forbidden must NEVER trigger token refresh or logout
+    if (status === 403) {
+      const forbiddenError = normalizeAxiosError(requestError);
+      forbiddenError.status = 403;
+      if (!forbiddenError.message || forbiddenError.message === 'Đã có lỗi xảy ra.') {
+        forbiddenError.message = 'Bạn không có quyền thực hiện thao tác này.';
+      }
+      throw forbiddenError;
+    }
+
+    // 401 Unauthorized: Attempt token refresh
+    if (!(hadToken && status === 401)) {
       throw normalizeAxiosError(requestError);
     }
 
