@@ -13,6 +13,7 @@ import { movieService } from '../../services/movieService';
 import { recommendationService, pickRecExplanation } from '../../services/recommendationService';
 import { chatService, clearStoredConversationId } from '../../services/chatService';
 import Snowfall from 'react-snowfall';
+import QuickBookingBar from '../../components/common/QuickBookingBar';
 const extractYoutubeId = (url = '') => {
   const trimmed = url.trim();
   if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
@@ -445,6 +446,11 @@ export default function HomeView({ onSelectMovie, onBookMovie, onTabChange, movi
       </div>
 
       {/* ── SECTIONS CONTAINER ── */}
+            {/* ── GALAXY QUICK BUY BAR (Mua Vé Nhanh Chuẩn Galaxy) ── */}
+      <div className="-mt-12 mb-8 mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 relative z-30">
+        <QuickBookingBar />
+      </div>
+
       <div className="space-y-20 px-4 sm:px-8 lg:px-12 xl:px-16 mx-auto max-w-[1400px]">
 
       {/* 2. NOW PLAYING GRID */}

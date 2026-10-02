@@ -39,6 +39,42 @@ export const hasBackendStaffAccess = (accessToken, user = null) => {
   return roleValues.includes('STAFF') || roleValues.includes('ROLE_STAFF');
 };
 
+export const isAdmin = (user) => {
+  if (!user) return false;
+  if (ADMIN_ACCESS_OVERRIDE) return true;
+  const roles = [user.role, ...(Array.isArray(user.roles) ? user.roles : [])]
+    .map((r) => String(r || '').toUpperCase());
+  return roles.includes('ADMIN') || roles.includes('ROLE_ADMIN');
+};
+
+export const isManager = (user) => {
+  if (!user) return false;
+  const roles = [user.role, ...(Array.isArray(user.roles) ? user.roles : [])]
+    .map((r) => String(r || '').toUpperCase());
+  return !isAdmin(user) && (roles.includes('MANAGER') || roles.includes('ROLE_MANAGER'));
+};
+
+export const isStaff = (user) => {
+  if (!user) return false;
+  const roles = [user.role, ...(Array.isArray(user.roles) ? user.roles : [])]
+    .map((r) => String(r || '').toUpperCase());
+  return !isAdmin(user) && !isManager(user) && (roles.includes('STAFF') || roles.includes('ROLE_STAFF'));
+};
+
+export const isCustomer = (user) => {
+  return !isAdmin(user) && !isManager(user) && !isStaff(user);
+};
+
+export const canManageGlobalCatalog = (user) => isAdmin(user);
+export const canManageCinemaOperations = (user) => isAdmin(user) || isManager(user);
+export const canCheckIn = (user) => isAdmin(user) || isManager(user) || isStaff(user);
+
+export const getAssignedCinemaId = (user) => {
+  if (!user) return null;
+  return user.cinemaId ? Number(user.cinemaId) : null;
+};
+
+
 const resolveRole = (roles = []) => {
   const normalized = roles.map((role) => String(role).toUpperCase());
   if (ADMIN_ACCESS_OVERRIDE || normalized.includes('ADMIN') || normalized.includes('ROLE_ADMIN')) return 'admin';
@@ -74,6 +110,7 @@ export const normalizeUser = (user, roles = user?.roles || [], accessToken = nul
 
   return {
     ...user,
+    cinemaId: user?.cinemaId ?? tokenPayload?.cinemaId ?? null,
     roles: resolvedRoles,
     name: user.fullName || user.name || user.email,
     role: resolveRole(resolvedRoles),
@@ -135,11 +172,27 @@ const isAccessTokenExpired = (accessToken, accessTokenExpiresAt) => {
 const createApiError = (payload, status) => {
   const fieldErrors = payload?.fieldErrors
     ? Object.values(payload.fieldErrors).flat().join(', ')
-    : Array.isArray(payload?.errors)
+    : Array.isArray(payload?.errors) && payload.errors.length > 0
       ? payload.errors.map((error) => error.message || `${error.field}: invalid`).join(', ')
       : '';
-  const error = new Error(fieldErrors || payload?.message || `Request failed (${status || 'unknown'})`);
+  let rawMsg = fieldErrors || payload?.message || `Request failed (${status || 'unknown'})`;
+
+  // Chuyển đổi thông báo lỗi thân thiện cho các lỗi xung đột (409 Conflict)
+  if (status === 409 || String(rawMsg).toLowerCase().includes('already exists')) {
+    if (String(rawMsg).toLowerCase().includes('room name already exists')) {
+      rawMsg = 'Tên phòng chiếu đã tồn tại trong rạp này. Vui lòng chọn tên khác.';
+    } else if (String(rawMsg).toLowerCase().includes('room already has seats')) {
+      rawMsg = 'Phòng chiếu này đã có sơ đồ ghế.';
+    } else if (String(rawMsg).toLowerCase().includes('overlapping showtime')) {
+      rawMsg = 'Phòng chiếu đã có suất chiếu trùng thời gian.';
+    } else if (String(rawMsg).toLowerCase().includes('already exists')) {
+      rawMsg = 'Dữ liệu đã tồn tại trong hệ thống (409 Xung đột dữ liệu).';
+    }
+  }
+
+  const error = new Error(rawMsg);
   error.status = status;
+  error.response = { data: payload, status };
   return error;
 };
 
@@ -207,7 +260,19 @@ const performRequest = async (path, { method = 'GET', body, token, timeout } = {
     return unwrapResponse(response);
   } catch (requestError) {
     const status = requestError?.response?.status;
-    if (!(hadToken && (status === 401 || status === 403))) {
+
+    // Phase 1: 403 Forbidden must NEVER trigger token refresh or logout
+    if (status === 403) {
+      const forbiddenError = normalizeAxiosError(requestError);
+      forbiddenError.status = 403;
+      if (!forbiddenError.message || forbiddenError.message === 'Đã có lỗi xảy ra.') {
+        forbiddenError.message = 'Bạn không có quyền thực hiện thao tác này.';
+      }
+      throw forbiddenError;
+    }
+
+    // 401 Unauthorized: Attempt token refresh
+    if (!(hadToken && status === 401)) {
       throw normalizeAxiosError(requestError);
     }
 

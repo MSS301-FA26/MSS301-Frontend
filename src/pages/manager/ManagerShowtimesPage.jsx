@@ -7,6 +7,23 @@ import { useManagerCinema } from '../../context/ManagerCinemaContext';
 import { getStoredAuth, request } from '../../services/authService';
 import { useUiStore } from '../../stores/useUiStore';
 
+const getTomorrowStr = () => {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
+const getApiErrorMessage = (err, fallback = 'Có lỗi xảy ra khi lưu suất chiếu.') => {
+  if (!err) return fallback;
+  const data = err?.response?.data;
+  if (Array.isArray(data?.errors) && data.errors.length > 0) {
+    return data.errors.map(e => e.message || `${e.field}: không hợp lệ`).join('; ');
+  }
+  if (data?.message) return data.message;
+  return err?.message || fallback;
+};
+
 export default function ManagerShowtimesPage() {
   const { selectedCinemaId, selectedCinema } = useManagerCinema();
   const showToast = useUiStore((state) => state.showToast);
@@ -97,7 +114,7 @@ export default function ManagerShowtimesPage() {
     setFormData({
       movieId: initialMovie,
       roomId: initialRoom,
-      startTime: localIsoTime,
+      startTime: `${getTomorrowStr()}T09:00`,
       price: 85000
     });
     if (initialRoom) {
@@ -155,7 +172,7 @@ export default function ManagerShowtimesPage() {
       setModalOpen(false);
       loadShowtimes();
     } catch (err) {
-      showToast(err.message || 'Lỗi khi lưu suất chiếu (có thể bị trùng lịch)', 'error');
+      showToast(getApiErrorMessage(err), 'error');
     } finally {
       setSaving(false);
     }
