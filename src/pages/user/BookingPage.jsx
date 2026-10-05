@@ -408,19 +408,7 @@ export default function BookingPage() {
     return () => { cancelled = true; };
   }, [id, currentRole]);
 
-<<<<<<< HEAD
   // Không có showtimeId: bắt đầu tại bước chọn suất chiếu ngay trong trang book.
-=======
-  // Nếu truy cập /book mà chưa có showtimeId thì điều hướng sang trang 4 bước /showtimes
-  useEffect(() => {
-    const preferId = searchParams.get('showtimeId');
-    const isResuming = Boolean(searchParams.get('resumeBookingId'));
-    const targetMovieId = movie?.backendId || movie?.id || id;
-    if (!preferId && !isResuming && targetMovieId) {
-      navigate(`/showtimes?movieId=${targetMovieId}`, { replace: true });
-    }
-  }, [searchParams, id, movie?.backendId, movie?.id, navigate]);
->>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
 
   useEffect(() => {
     if (!movie || isMovieBookable) return;
@@ -652,7 +640,6 @@ export default function BookingPage() {
     if (!targetMovieId || isNaN(targetMovieId)) return;
 
     let cancelled = false;
-<<<<<<< HEAD
     const preferId = searchParams.get('showtimeId');
     const isResuming = Boolean(searchParams.get('resumeBookingId'));
     if (isResuming) return;
@@ -693,26 +680,6 @@ export default function BookingPage() {
           const list = await fetchShowtimes(targetMovieId);
           if (cancelled) return;
           stData = list.find(st => String(st.id) === String(preferId) || String(st.showtimeId) === String(preferId));
-=======
-    fetchShowtimes(targetMovieId).then(list => {
-      if (cancelled) return;
-      if (list && list.length > 0) {
-        const preferId = searchParams.get('showtimeId');
-        const isResuming = Boolean(searchParams.get('resumeBookingId'));
-        const preferred = preferId ? list.find(st => String(st.id) === String(preferId) || String(st.showtimeId) === String(preferId)) : null;
-        const first = preferred || list[0];
-        const date = first.startTime?.split('T')[0] || '';
-        
-        if (!isResuming) {
-          setSelectedDate(date);
-          if (preferred) {
-            setSelectedShowtime(preferred);
-            setBookingStep('seats');
-          } else {
-            setSelectedShowtime(null);
-            setBookingStep('schedule');
-          }
->>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
         }
 
         if (!stData) {
@@ -2052,102 +2019,6 @@ export default function BookingPage() {
       <div className={`grid grid-cols-1 lg:grid-cols-12 ${bookingStep !== 'combos' ? 'gap-4' : 'gap-6'} items-start`}>
         <div className={`${bookingStep !== 'combos' ? 'lg:col-span-9' : 'lg:col-span-8'} space-y-4`}>
 
-<<<<<<< HEAD
-=======
-          {/* =========================================================================
-              VIEW 1: LỊCH CHIẾU (SCHEDULE VIEW)
-              ========================================================================= */}
-          {bookingStep === 'schedule' && (
-            <div className="space-y-3.5">
-              {!isLoadingShowtimes && showtimesList.length === 0 ? (
-                <div className="rounded-2xl border border-white/10 bg-neutral-950 p-8 sm:p-12 text-center space-y-5 shadow-xl">
-                  <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mx-auto shadow-inner">
-                    <CalendarX className="w-8 h-8" />
-                  </div>
-                  <div className="space-y-2 max-w-md mx-auto">
-                    <h3 className="text-lg font-serif font-black text-white uppercase tracking-wider">
-                      Hiện Không Có Suất Chiếu
-                    </h3>
-                    <p className="text-xs text-neutral-400 font-sans leading-relaxed">
-                      Phim <span className="text-amber-300 font-semibold">"{movie?.title || 'này'}"</span> hiện chưa có lịch chiếu hoặc các suất chiếu đã kết thúc. Quý khách vui lòng chọn phim khác đang chiếu hoặc quay lại sau.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-center gap-3 pt-3">
-                    <button
-                      type="button"
-                      onClick={() => navigate('/explore')}
-                      className="px-6 py-3 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-black text-xs font-bold font-sans uppercase tracking-widest rounded-lg shadow-lg shadow-amber-500/20 transition flex items-center gap-2"
-                    >
-                      <Film className="w-4 h-4" /> Khám phá phim khác
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/movies/${movie?.backendId || movie?.id || id}`)}
-                      className="px-5 py-3 bg-neutral-900 hover:bg-neutral-800 text-white border border-white/15 text-xs font-bold font-sans uppercase tracking-wider rounded-lg transition"
-                    >
-                      Xem chi tiết phim
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 xl:grid-cols-[220px_minmax(0,1fr)] gap-4 items-start">
-                  {/* 1. CHỌN NGÀY CHIẾU (ĐƯA LÊN ĐẦU TRANG - KHÔNG CUỘN NGANG) */}
-              {/* CHỌN CỤM RẠP (CINEMA SELECTION) */}
-              {availableCinemas.length > 0 && (
-                <div className="rounded-none border border-white/10 bg-neutral-950 p-3 space-y-2 shadow-md">
-                  <div className="flex items-center justify-between border-b border-white/10 pb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="h-6 w-6 rounded-none bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
-                        <Building2 className="w-3.5 h-3.5" />
-                      </div>
-                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">Chọn Cụm Rạp</h3>
-                    </div>
-                    <span className="text-[10px] text-amber-400 font-mono font-semibold">
-                      {selectedCinemaFilter === 'ALL' ? 'Tất cả rạp' : (availableCinemas.find(c => String(c.id) === String(selectedCinemaFilter))?.name || 'Đã chọn rạp')}
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedCinemaFilter('ALL')}
-                      className={`px-3 py-1.5 text-xs font-bold border rounded-none transition ${
-                        selectedCinemaFilter === 'ALL'
-                          ? 'bg-amber-400 text-black border-amber-300 font-black shadow-md'
-                          : 'bg-neutral-900 text-neutral-300 border-white/10 hover:border-amber-400/40'
-                      }`}
-                    >
-                      Tất cả cụm rạp ({availableCinemas.length})
-                    </button>
-                    {availableCinemas.map(c => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => setSelectedCinemaFilter(String(c.id))}
-                        className={`px-3 py-1.5 text-xs font-bold border rounded-none transition ${
-                          String(selectedCinemaFilter) === String(c.id)
-                            ? 'bg-amber-400 text-black border-amber-300 font-black shadow-md'
-                            : 'bg-neutral-900 text-neutral-300 border-white/10 hover:border-amber-400/40'
-                        }`}
-                      >
-                        {c.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div id="schedule-section" className="xl:row-span-2 rounded-none border border-white/10 bg-neutral-950 p-3 space-y-2.5 shadow-md scroll-mt-24 sm:scroll-mt-28">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pt-0.5 pb-2">
-                  <div className="flex items-center gap-2">
-                    <div className="h-6 w-6 rounded-none bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
-                      <Calendar className="w-3.5 h-3.5" />
-                    </div>
-                    <div>
-                      <h3 className="text-xs font-bold text-white uppercase tracking-wider">1. Chọn Ngày Chiếu</h3>
-                      <p className="text-[10px] text-neutral-400">Xem lịch các ngày sắp chiếu (không hiển thị ngày quá khứ)</p>
-                    </div>
-                  </div>
->>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
 
 
           {/* =========================================================================
