@@ -57,27 +57,32 @@ export const useUiStore = create((set, get) => ({
       clearToastTimer();
     }
   },
-  showToast: (text, durationMs = 4500, action = null, tone = 'success') => {
+  showToast: (text, durationMs = 3000, action = null, tone = 'success') => {
     let nextDuration = durationMs;
     let nextAction = action;
     let nextTone = tone;
 
     if (typeof durationMs === 'string') {
       nextTone = durationMs;
-      nextDuration = 4500;
+      nextDuration = (nextTone === 'error' || nextTone === 'sad') ? 4000 : 3000;
       nextAction = null;
     }
 
     if (nextTone === 'error') nextTone = 'sad';
 
     if (!Number.isFinite(Number(nextDuration)) || Number(nextDuration) <= 0) {
-      nextDuration = 4500;
+      nextDuration = (nextTone === 'error' || nextTone === 'sad') ? 4000 : 3000;
     }
+
+    // Strip leading checkmark/icon characters from text
+    const cleanText = typeof text === 'string'
+      ? text.replace(/^[✓✔✗xX!ℹ️\s]+/, '').trim()
+      : text;
 
     set({
       toast: {
         id: Date.now(),
-        text,
+        text: cleanText,
         durationMs: Number(nextDuration),
         remainingMs: Number(nextDuration),
         action: nextAction,

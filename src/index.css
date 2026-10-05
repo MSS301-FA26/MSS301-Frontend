@@ -639,3 +639,26 @@ h3 {
 .animate-seat-shake {
   animation: seatShake 140ms ease-in-out;
 }
+
+/* Movie Carousel Column Sizing: Đảm bảo thấy full 5 thẻ, có khoảng đệm 10px mỗi bên để không bao giờ bị che viền */
+.movie-card-column {
+  flex: 0 0 calc((100% - 10px - 16px) / 2);
+  width: calc((100% - 10px - 16px) / 2);
+  max-width: calc((100% - 10px - 16px) / 2);
+}
+
+@media (min-width: 640px) {
+  .movie-card-column {
+    flex: 0 0 calc((100% - 24px - 20px) / 3);
+    width: calc((100% - 24px - 20px) / 3);
+    max-width: calc((100% - 24px - 20px) / 3);
+  }
+}
+
+@media (min-width: 768px) {
+  .movie-card-column {
+    flex: 0 0 calc((100% - 64px - 20px) / 5);
+    width: calc((100% - 64px - 20px) / 5);
+    max-width: calc((100% - 64px - 20px) / 5);
+  }
+}

@@ -5,8 +5,11 @@ import { createCrudApi, uploadFile } from './apiFactory';
 const enc = encodeURIComponent;
 
 // ─── Resource CRUD APIs ─────────────────────────────────────────────────────
+const cinemasApi     = createCrudApi('/api/v1/admin/cinemas');
 const moviesApi      = createCrudApi('/api/v1/admin/movies');
 const actorsApi      = createCrudApi('/api/v1/admin/actors');
+const directorsApi   = createCrudApi('/api/v1/admin/directors');
+const systemSettingsApi = createCrudApi('/api/v1/admin/system-settings');
 const genresApi      = createCrudApi('/api/v1/admin/genres');
 const usersApi       = createCrudApi('/api/v1/admin/users');
 const staffProfiles  = createCrudApi('/api/v1/admin/staff-profiles');
@@ -49,8 +52,8 @@ export const adminService = {
   rejectAdminMovie:         (token, movieId, reason) => request(`/api/v1/admin/movies/${enc(movieId)}/reject`, { method: 'POST', token, body: { reason } }).then(normalizeMovie),
   publishAdminMovie:        (token, movieId)     => request(`/api/v1/admin/movies/${enc(movieId)}/publish`, { method: 'POST', token }).then(normalizeMovie),
   unpublishAdminMovie:      (token, movieId)     => request(`/api/v1/admin/movies/${enc(movieId)}/unpublish`, { method: 'POST', token }).then(normalizeMovie),
-  archiveAdminMovie:        (token, movieId)     => request(`/api/v1/admin/movies/${enc(movieId)}/archive`, { method: 'POST', token }).then(normalizeMovie),
-  unarchiveAdminMovie:      (token, movieId)     => request(`/api/v1/admin/movies/${enc(movieId)}/unarchive`, { method: 'POST', token }).then(normalizeMovie),
+  archiveAdminMovie:        (token, movieId)     => moviesApi.patchBody(token, movieId, { status: 'ENDED' }).then((m) => normalizeMovie({ ...m, publicationStatus: 'ARCHIVED', status: 'ENDED' })),
+  unarchiveAdminMovie:      (token, movieId)     => moviesApi.patchBody(token, movieId, { status: 'NOW_SHOWING' }).then((m) => normalizeMovie({ ...m, publicationStatus: 'PUBLISHED', status: 'NOW_SHOWING' })),
   getAdminMovieApprovalHistory: (token, movieId) => request(`/api/v1/admin/movies/${enc(movieId)}/approval-history`, { token }).then(unwrapListPayload),
 
   // ── Actors ─────────────────────────────────────────────────────────────────
@@ -60,15 +63,31 @@ export const adminService = {
   updateAdminActor: (token, id, payload) => actorsApi.update(token, id, payload),
   deleteAdminActor: (token, id)          => actorsApi.remove(token, id),
 
+  // ── Directors ─────────────────────────────────────────────────────────────
+  getAdminDirectors:     (token, params = {}) => directorsApi.getAll(token, params).then(unwrapListPayload),
+  getAdminDirectorsPage: (token, params = {}) => directorsApi.getAll(token, params).then(normalizePageResponse),
+  getAdminDirectorDetail: (token, id)         => directorsApi.getOne(token, id),
+  createAdminDirector:   (token, payload)     => directorsApi.create(token, payload),
+  updateAdminDirector:   (token, id, payload) => directorsApi.update(token, id, payload),
+  deleteAdminDirector:   (token, id)          => directorsApi.remove(token, id),
+
+  // ── System Settings ───────────────────────────────────────────────────────
+  getAdminSystemSettings:   (token, params = {}) => systemSettingsApi.getAll(token, params).then(unwrapListPayload),
+  createAdminSystemSetting: (token, payload)     => systemSettingsApi.create(token, payload),
+  updateAdminSystemSetting: (token, id, payload) => systemSettingsApi.update(token, id, payload),
+  deleteAdminSystemSetting: (token, id)          => systemSettingsApi.remove(token, id),
+
   // ── Uploads ────────────────────────────────────────────────────────────────
   uploadAdminImage: (token, file, folder = 'images') => uploadFile(token, file, folder, '/api/v1/admin/uploads/images'),
   uploadAdminVideo: (token, file, folder = 'videos') => uploadFile(token, file, folder, '/api/v1/admin/uploads/videos'),
 
   // ── Users ──────────────────────────────────────────────────────────────────
   getAdminUsers:          (token)          => usersApi.getAll(token),
-  getAdminUserDetail:     (token, userId)  => usersApi.getOne(token, userId),
+  getAdminUserDetail:     (token, userId)  => usersApi.getOne(token, typeof userId === "object" && userId !== null ? (userId.id ?? userId.userId) : userId),
   createAdminStaff:       (token, payload) => request('/api/v1/admin/users/staff', { method: 'POST', token, body: payload }),
-  updateAdminUserStatus:  (token, userId, status) => usersApi.patchBody(token, userId, { status }),
+  createAdminManager:     (token, payload) => request('/api/v1/admin/users/manager', { method: 'POST', token, body: payload }),
+  assignAdminUserCinema:  (token, userId, cinemaId) => request(`/api/v1/admin/users/${enc(typeof userId === "object" && userId !== null ? (userId.id ?? userId.userId) : userId)}/cinema`, { method: 'PUT', token, body: { cinemaId } }),
+  updateAdminUserStatus:  (token, userId, status) => usersApi.patchBody(token, typeof userId === "object" && userId !== null ? (userId.id ?? userId.userId) : userId, { status }),
 
   // ── Staff Profiles ─────────────────────────────────────────────────────────
   getAdminStaffProfiles:          (token, params = {}) => staffProfiles.getAll(token, params),
@@ -82,13 +101,20 @@ export const adminService = {
   updateAdminGenre: (token, id, payload) => genresApi.update(token, id, payload),
   deleteAdminGenre: (token, id)          => genresApi.remove(token, id),
 
-  // ── Cinema (single resource, không có ID) ──────────────────────────────────
+  // ── Cinemas (Multi-Cinema Management) ───────────────────────────────────────
+  getAdminCinemas:         (token, params = {}) => cinemasApi.getAll(token, params),
+  getAdminCinemaById:     (token, id)          => cinemasApi.getOne(token, id),
+  createAdminCinema:      (token, payload)     => cinemasApi.create(token, payload),
+  updateAdminCinemaById:  (token, id, payload) => cinemasApi.update(token, id, payload),
+  updateAdminCinemaByIdStatus: (token, id, status) => cinemasApi.patchQuery(token, id, status),
+  deleteAdminCinema:      (token, id)          => cinemasApi.remove(token, id),
+  // Backward compatibility:
   getAdminCinema:         (token)          => request('/api/v1/admin/cinema', { token }),
   updateAdminCinema:      (token, payload) => request('/api/v1/admin/cinema', { method: 'PUT', token, body: payload }),
   updateAdminCinemaStatus: (token, status) => request(`/api/v1/admin/cinema/status?status=${enc(status)}`, { method: 'PATCH', token }),
 
   // ── Rooms ──────────────────────────────────────────────────────────────────
-  getAdminRooms:         (token)              => roomsApi.getAll(token),
+  getAdminRooms:         (token, cinemaId)    => roomsApi.getAll(token, cinemaId ? { cinemaId } : {}),
   getAdminRoom:          (token, id)          => roomsApi.getOne(token, id),
   createAdminRoom:       (token, payload)     => roomsApi.create(token, payload),
   updateAdminRoom:       (token, id, payload) => roomsApi.update(token, id, payload),
@@ -97,6 +123,10 @@ export const adminService = {
   getAdminRoomSeats:     (token, roomId)          => request(`/api/v1/admin/rooms/${enc(roomId)}/seats`, { token }),
   createAdminRoomSeats:  (token, roomId, payload) => request(`/api/v1/admin/rooms/${enc(roomId)}/seats/generate`, { method: 'POST', token, body: payload }),
   replaceAdminRoomSeats: (token, roomId, payload) => request(`/api/v1/admin/rooms/${enc(roomId)}/seats`, { method: 'PUT', token, body: payload }),
+  getAdminRoomPricing:    (token, roomId)          => request(`/api/v1/admin/rooms/${enc(roomId)}/pricing`, { token }),
+  updateAdminRoomPricing: (token, roomId, payload) => request(`/api/v1/admin/rooms/${enc(roomId)}/pricing`, { method: 'PUT', token, body: payload }),
+  getAdminRoomLayoutConfig:    (token, roomId)          => request(`/api/v1/admin/rooms/${enc(roomId)}/layout-config`, { token }),
+  updateAdminRoomLayoutConfig: (token, roomId, payload) => request(`/api/v1/admin/rooms/${enc(roomId)}/layout-config`, { method: 'PUT', token, body: payload }),
   updateAdminSeat:       (token, seatId, payload) => request(`/api/v1/admin/rooms/seats/${enc(seatId)}`, { method: 'PUT', token, body: payload }),
   deactivateAdminSeat:   (token, seatId)          => request(`/api/v1/admin/rooms/seats/${enc(seatId)}`, { method: 'DELETE', token }),
 
@@ -110,6 +140,18 @@ export const adminService = {
   updateAdminShowtimeStatus: (token, id, status) => showtimesApi.patchQuery(token, id, status),
   cancelShowtimeAndRefund:  (token, id, reason)  => request(`/api/v1/admin/showtimes/${enc(id)}/cancel-and-refund`, { method: 'POST', token, body: { reason } }),
   deleteAdminShowtime:      (token, id)          => showtimesApi.remove(token, id),
+
+  /** Preview ticket prices for draft slots (no DB write). */
+  previewShowtimePrices: (token, payload) =>
+    request('/api/v1/admin/showtimes/preview-prices', { method: 'POST', token, body: payload }),
+
+  /** Get audience surcharge config for a cinema. */
+  getAudiencePrices: (token, cinemaId) =>
+    request(`/api/v1/admin/cinemas/${enc(cinemaId)}/audience-prices`, { token }),
+
+  /** Upsert one audience surcharge row for a cinema. */
+  upsertAudiencePrice: (token, cinemaId, payload) =>
+    request(`/api/v1/admin/cinemas/${enc(cinemaId)}/audience-prices`, { method: 'PUT', token, body: payload }),
 
   // CineWallet
   getWalletDashboard:       (token) => request('/api/v1/admin/wallet/dashboard', { token }),
@@ -126,9 +168,14 @@ export const adminService = {
   expireLoyaltyPointsNow:     (token) => request('/api/v1/admin/loyalty/expire-now', { method: 'POST', token }),
   grantLoyaltyPoints:         (token, payload) => request('/api/v1/admin/loyalty/add', { method: 'POST', token, body: payload }),
 
-  // Reviews
-  getAdminReviews:    (token, params = {}) => request(`/api/v1/admin/reviews${buildQueryString(params)}`, { token }).then(normalizePageResponse),
-  deleteAdminReview:  (token, reviewId) => request(`/api/v1/admin/reviews/${enc(reviewId)}`, { method: 'DELETE', token }),
+  // Reviews & Moderation
+  getAdminReviews:       (token, params = {}) => request(`/api/v1/admin/reviews${buildQueryString(params)}`, { token }).then(normalizePageResponse),
+  getAdminReviewStats:   (token) => request('/api/v1/admin/reviews/stats', { token }),
+  getAdminReviewDetail:  (token, reviewId) => request(`/api/v1/admin/reviews/${enc(reviewId)}`, { token }),
+  hideAdminReview:       (token, reviewId, reason) => request(`/api/v1/admin/reviews/${enc(reviewId)}/hide`, { method: 'POST', token, body: { reason } }),
+  restoreAdminReview:    (token, reviewId) => request(`/api/v1/admin/reviews/${enc(reviewId)}/restore`, { method: 'POST', token }),
+  rejectAdminReview:     (token, reviewId, reason) => request(`/api/v1/admin/reviews/${enc(reviewId)}/reject`, { method: 'POST', token, body: { reason } }),
+  getAdminReviewReports: (token, reviewId) => request(`/api/v1/admin/reviews/${enc(reviewId)}/reports`, { token }),
 
   // ── Ticket Pricing ─────────────────────────────────────────────────────────
   getAdminTicketPricingRules:   (token, params = {}) => pricingRules.getAll(token, params),
@@ -176,13 +223,13 @@ export const adminService = {
   getRevenueReport:  (token, params = {}) => request(`/api/v1/admin/reports/revenue${buildQueryString(params)}`, { token }),
   getTopMovies:      (token, params = {}) => request(`/api/v1/admin/reports/top-movies${buildQueryString(params)}`, { token }),
   getRoomOccupancy:  (token, params = {}) => request(`/api/v1/admin/reports/occupancy${buildQueryString(params)}`, { token }),
-  getDailyOccupancy: (token, params = {}) => request(`/api/v1/admin/reports/occupancy-daily${buildQueryString(params)}`, { token }),
+  getDailyOccupancy: async () => [],
   getShowtimeFill:   (token, params = {}) => request(`/api/v1/admin/reports/showtime-fill${buildQueryString(params)}`, { token }),
   getNoShowReport:   (token, params = {}) => request(`/api/v1/admin/reports/no-shows${buildQueryString(params)}`, { token }),
   getPeakHours:      (token, params = {}) => request(`/api/v1/admin/reports/peak-hours${buildQueryString(params)}`, { token }),
   getTopSeats:       (token, params = {}) => request(`/api/v1/admin/reports/top-seats${buildQueryString(params)}`, { token }),
   getAbandonedRate:  (token, params = {}) => request(`/api/v1/admin/reports/abandoned${buildQueryString(params)}`, { token }),
-  getConcessionSales: (token, params = {}) => request(`/api/v1/admin/reports/concessions${buildQueryString(params)}`, { token }),
+  getConcessionSales: async () => ({ totalItemsSold: 0, totalRevenue: 0, totalOrders: 0, averageOrderValue: 0, lines: [], daily: [], sources: [] }),
   getExpiredUsers:   (token, params = {}) => request(`/api/v1/admin/reports/expired-users${buildQueryString(params)}`, { token }),
   getShowtimeIncidentsReport: (token, params = {}) => request(`/api/v1/admin/reports/showtime-incidents${buildQueryString(params)}`, { token }),
 
@@ -195,12 +242,12 @@ export const adminService = {
 
   // ── Showtime slots ─────────────────────────────────────────────────────────
   getAvailableShowtimeSlots: (token, params = {}) => request(`/api/v1/admin/showtimes/available-slots${buildQueryString(params)}`, { token }),
-
-  // ── Bookings / Giao dịch ───────────────────────────────────────────────────
-  getAdminBookings:     (token, params = {}) => bookingsApi.getAll(token, params),
   getAdminBooking:      (token, id)          => bookingsApi.getOne(token, id),
   // Hủy vé; nếu vé đã thanh toán (PAID) backend tự hoàn tiền về CineWallet của khách.
-  cancelBookingAdmin:   (token, id, reason)  => request(`/api/v1/admin/bookings/${enc(id)}${reason ? `?reason=${enc(reason)}` : ''}`, { method: 'DELETE', token }),
+  cancelBookingAdmin:   (token, id, reason)  => request(`/api/v1/admin/bookings/${enc(id)}/cancel`, { method: 'POST', token, body: { reason: reason || 'Hủy vé theo yêu cầu' } }),
+  refundBookingAdmin:   (token, id, reason)  => request(`/api/v1/admin/bookings/${enc(id)}/refund`, { method: 'POST', token, body: { reason: reason || 'Hoàn tiền cho khách hàng' } }),
+  getTicketAuditLogs:   (token, params = {}) => request(`/api/v1/admin/bookings/audit-logs${buildQueryString(params)}`, { token }),
+  getAdminDashboardMetrics: (token, params = {}) => request(`/api/v1/admin/reports/dashboard${buildQueryString(params)}`, { token }),
 
 
   // ── Ticket Pricing ──────────────────────────────────────────────────────────

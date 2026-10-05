@@ -1,19 +1,22 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
-  Plus, Trash2, Edit3, ShieldAlert, FileText, Database,
+  Plus, Trash2, Edit3, Shield, ShieldAlert, FileText, Database,
   Calendar, Users, DollarSign, Activity, AlertCircle, CheckCircle2,
   Search, Sliders, ChevronDown, Check, RefreshCw, Layers, ShoppingBag,
   BarChart2, Clock, Film, Play, Eye, EyeOff, TrendingUp, Info, Tags, Tag, LogOut, MessageSquare, Wallet,
-  Menu, MapPin, User
+  Menu, MapPin, User, Building2, Clapperboard
 } from 'lucide-react';
-import { expireAuthSession, getStoredAuth, hasBackendAdminAccess } from '../../services/authService';
+import { expireAuthSession, getStoredAuth, hasBackendAdminAccess, hasBackendManagerAccess } from '../../services/authService';
 import { adminService } from '../../services/adminService';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useUiStore } from '../../stores/useUiStore';
 import AdminOverviewPanel from './overview/AdminOverviewPanel';
 import AdminMoviesPanel from './catalog/AdminMoviesPanel';
+import AdminDirectorsPanel from './catalog/AdminDirectorsPanel';
+import AdminPricingPanel from './cinema/AdminPricingPanel';
+import AdminSystemSettingsPanel from './system/AdminSystemSettingsPanel';
 import AdminGenresPanel from './catalog/AdminGenresPanel';
 import AdminActorsPanel from './catalog/AdminActorsPanel';
 import AdminFoodsPanel from './catalog/AdminFoodsPanel';
@@ -26,6 +29,7 @@ import AdminWalletPanel from './system/AdminWalletPanel';
 import AdminCinemaPanel from './cinema/AdminCinemaPanel';
 import AdminRoomsPanel from './cinema/AdminRoomsPanel';
 import AdminTicketsPanel from './cinema/AdminTicketsPanel';
+import AdminHeroBannerPanel from './marketing/AdminHeroBannerPanel';
 
 import AdminAuditPanel from './system/AdminAuditPanel';
 import AdminStatsPanel from './overview/AdminStatsPanel';
@@ -35,12 +39,11 @@ import AdminShowtimeIncidentsPanel from './cinema/AdminShowtimeIncidentsPanel';
 function NavItem({ icon: Icon, label, active, onClick, indent = false, badge = null }) {
   return (
     <button type="button" onClick={onClick}
-      className={`w-full flex items-center gap-2 py-[7px] text-[11.5px] font-medium transition-all duration-100 border-l-2 ${
-        indent ? 'pl-6 pr-3' : 'pl-3 pr-3'
-      } ${active
-        ? 'text-amber-400 bg-gradient-to-r from-amber-500/[0.09] to-transparent border-amber-500'
-        : 'text-neutral-100 hover:text-white hover:bg-white/[0.02] border-transparent'
-      }`}
+      className={`w-full flex items-center gap-2 py-[7px] text-[11.5px] font-medium transition-all duration-100 border-l-2 ${indent ? 'pl-6 pr-3' : 'pl-3 pr-3'
+        } ${active
+          ? 'text-amber-400 bg-gradient-to-r from-amber-500/[0.09] to-transparent border-amber-500'
+          : 'text-neutral-100 hover:text-white hover:bg-white/[0.02] border-transparent'
+        }`}
     >
       <Icon className={`h-[13px] w-[13px] shrink-0 ${active ? 'text-amber-400' : 'text-neutral-300'}`} />
       <span className="truncate leading-snug">{label}</span>
@@ -64,43 +67,48 @@ function NavSectionLabel({ children }) {
 
 const SECTION_TITLE = {
   overview: 'Tổng quan hệ thống', movies: 'Thư viện phim', genres: 'Thể loại phim',
-  actors: 'Diễn viên', foods: 'Bắp nước / F&B', rooms: 'Phòng chiếu & ghế',
-
+  actors: 'Diễn viên', directors: 'Đạo diễn', foods: 'Bắp nước / F&B', rooms: 'Phòng chiếu & ghế', pricing: 'Bảng giá vé', settings: 'Cấu hình hệ thống',
+  'hero-banners': 'Quản lý Hero Banner',
   showtimes: 'Điều phối lịch chiếu', tickets: 'Quản lý vé', transactions: 'Giao dịch',
   'showtime-incidents': 'Báo cáo sự cố & hoàn tiền', 'fnb-report': 'Báo cáo F&B',
-  statistics: 'Thống kê mua bán', audit: 'Audit log', users: 'Quản lý người dùng',
-  reviews: 'Đánh giá', loyalty: 'Quản lý điểm', cinewallet: 'CineWallet', cinema: 'Thông tin rạp',
+  statistics: 'Thống kê mua bán', audit: 'Audit log', users: 'Quản lý người dùng', staff: 'Nhân viên cụm rạp',
+  reviews: 'Đánh giá phim', loyalty: 'Quản lý điểm', cinewallet: 'CineWallet', cinema: 'Hệ thống cụm rạp',
 };
 
 const getNavGroup = (section) => {
-  if (['genres', 'actors', 'movies'].includes(section)) return 'movies';
+  if (['genres', 'actors', 'directors', 'movies'].includes(section)) return 'movies';
+  if (['hero-banners'].includes(section)) return 'marketing';
   if (['foods', 'fnb-report'].includes(section)) return 'fnb';
-  if (['rooms', 'showtimes', 'tickets', 'transactions', 'showtime-incidents'].includes(section)) return 'cinema';
+  if (['cinema', 'rooms', 'showtimes', 'pricing', 'tickets', 'transactions', 'showtime-incidents'].includes(section)) return 'cinema';
   if (['statistics', 'audit'].includes(section)) return 'insights';
-  if (['users', 'loyalty', 'reviews', 'cinewallet'].includes(section)) return 'system';
+  if (['users', 'staff', 'loyalty', 'reviews', 'cinewallet', 'settings'].includes(section)) return 'system';
   return null;
 };
 
 const ADMIN_SECTIONS = new Set([
   'overview',
+  'hero-banners',
   'genres',
   'actors',
+  'directors',
   'movies',
   'foods',
   'fnb-report',
+  'cinema',
   'rooms',
-
   'showtimes',
+  'pricing',
   'showtime-incidents',
   'tickets',
   'transactions',
   'statistics',
   'audit',
   'users',
+  'staff',
   'reviews',
   'loyalty',
   'cinewallet',
-  'cinema',
+  'settings',
 ]);
 
 const normalizeAdminSection = (section) => (ADMIN_SECTIONS.has(section) ? section : 'overview');
@@ -118,7 +126,9 @@ export default function AdminDashboard({
   onSectionChange = () => { },
   onFoodCatalogChanged = () => { },
   isAdmin = false,
-  currentUser = null
+  isManager = true,
+  currentUser = null,
+  basePath = '/admin'
 }) {
   const navigate = useNavigate();
   const toggleAdminSidebar = useUiStore((state) => state.toggleAdminSidebar);
@@ -130,6 +140,7 @@ export default function AdminDashboard({
   const [openNavGroup, setOpenNavGroup] = useState(getNavGroup(normalizeAdminSection(initialSection)));
   const [activeChartPoint, setActiveChartPoint] = useState(6);
   const [collapsedTooltip, setCollapsedTooltip] = useState(null); // { key: 'logo'|tab, y: number }
+  const [heroBannerInitialMovieId, setHeroBannerInitialMovieId] = useState(null);
   // Create state for movies so the dashboard can add/update them
   const [searchQuery, setSearchQuery] = useState('');
   const [filmFilter, setFilmFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'UPCOMING'
@@ -177,6 +188,7 @@ export default function AdminDashboard({
   const [editingMovie, setEditingMovie] = useState(null); // null means adding a new one
   const [showMovieForm, setShowMovieForm] = useState(false);
   const [isMovieSaving, setIsMovieSaving] = useState(false);
+  const [movieFormError, setMovieFormError] = useState(null);
   const [formData, setFormData] = useState(buildDefaultMovieForm);
 
   // State to add a screening schedule
@@ -230,7 +242,7 @@ export default function AdminDashboard({
   const [isStaffCreating, setIsStaffCreating] = useState(false);
 
   React.useEffect(() => {
-    if (!isAdmin || activeTab !== 'movies') return undefined;
+    if ((!isAdmin && !isManager) || activeTab !== 'movies') return undefined;
 
     const token = getAdminToken(false);
     if (!token) {
@@ -379,7 +391,9 @@ export default function AdminDashboard({
       setFoodItems(Array.isArray(items) ? items : []);
       setFoodCombos(Array.isArray(combos) ? combos : []);
     } catch (error) {
-      showToast(error.message || 'Không thể tải danh sách bắp nước từ BE.');
+      const msg = error.message || (targetMovieId ? 'Không thể cập nhật phim.' : 'Không thể tạo phim mới.');
+      setMovieFormError(msg);
+      showToast(msg, 6000, null, 'sad');
     } finally {
       setIsFoodLoading(false);
     }
@@ -499,8 +513,8 @@ export default function AdminDashboard({
       return null;
     }
 
-    if (!hasBackendAdminAccess(accessToken, user)) {
-      if (notify) showToast('Tài khoản hiện tại không có quyền ADMIN. Vui lòng đăng nhập bằng tài khoản admin để dùng trang quản trị.', 5500, null, 'sad');
+    if (!hasBackendAdminAccess(accessToken, user) && !hasBackendManagerAccess(accessToken, user)) {
+      if (notify) showToast('Tài khoản hiện tại không có quyền quản trị. Vui lòng đăng nhập lại.', 5500, null, 'sad');
       return null;
     }
 
@@ -533,11 +547,14 @@ export default function AdminDashboard({
     }
   };
 
-  const changeAdminSection = (section) => {
+  const changeAdminSection = (section, options = {}) => {
     const nextSection = normalizeAdminSection(section);
+    if (options?.createWithMovieId) {
+      setHeroBannerInitialMovieId(options.createWithMovieId);
+    }
     setActiveTab(nextSection);
     onSectionChange(nextSection);
-    window.history.replaceState(null, '', `/admin/${nextSection}`);
+    window.history.replaceState(null, '', `${basePath}/${nextSection}`);
   };
 
   const validateGenreForm = () => {
@@ -646,16 +663,29 @@ export default function AdminDashboard({
     }
   };
 
-  const handleSelectAdminUser = async (userId) => {
+  const handleSelectAdminUser = async (userOrId) => {
+    if (!userOrId) {
+      setSelectedAdminUser(null);
+      return;
+    }
+
+    const userId = typeof userOrId === 'object' ? (userOrId.id ?? userOrId.userId) : userOrId;
+
+    if (typeof userOrId === 'object' && userOrId.id) {
+      setSelectedAdminUser(userOrId);
+    }
+
     const token = getAdminToken();
-    if (!token) return;
+    if (!token || !userId) return;
 
     setIsUserDetailLoading(true);
     try {
       const user = await adminService.getAdminUserDetail(token, userId);
-      setSelectedAdminUser(user);
+      if (user) {
+        setSelectedAdminUser(user);
+      }
     } catch (error) {
-      showToast(error.message || 'Không thể tải chi tiết người dùng.');
+      showToast(error.message || 'Kh�ng th? t?i chi ti?t ngu?i d�ng.');
     } finally {
       setIsUserDetailLoading(false);
     }
@@ -711,29 +741,33 @@ export default function AdminDashboard({
   };
 
   React.useEffect(() => {
-    const nextSection = normalizeAdminSection(initialSection);
+    let nextSection = normalizeAdminSection(initialSection);
+    if (!isAdmin && nextSection === 'cinema') {
+      nextSection = 'overview';
+    }
     setActiveTab(nextSection);
     setOpenNavGroup(getNavGroup(nextSection));
     if (nextSection !== initialSection) {
       onSectionChange(nextSection);
-      window.history.replaceState(null, '', `/admin/${nextSection}`);
+      window.history.replaceState(null, '', `${basePath}/${nextSection}`);
     }
-  }, [initialSection]);
-
+  }, [initialSection, isAdmin, basePath]);
   React.useEffect(() => {
-    if (activeTab === 'genres' || activeTab === 'movies') {
+    if (activeTab === 'genres') {
       fetchGenres();
-    }
-    if (activeTab === 'movies') {
-      fetchActors('', 0, 100, false);
-    }
-    if (activeTab === 'foods') {
+    } else if (activeTab === 'foods') {
       fetchFoods();
-    }
-    if (activeTab === 'users') {
+    } else if (activeTab === 'users') {
       fetchAdminUsers();
     }
   }, [activeTab]);
+
+  React.useEffect(() => {
+    if (showMovieForm) {
+      if (genres.length === 0) fetchGenres();
+      if (actors.length === 0) fetchActors('', 0, 100, false);
+    }
+  }, [showMovieForm]);
 
   React.useEffect(() => {
     if (activeTab !== 'actors') return undefined;
@@ -909,38 +943,99 @@ export default function AdminDashboard({
     });
   };
 
-  // Real headline metrics from /api/v1/admin/reports (last 30 days) — replaces the old simulated numbers.
-  const [overviewMetrics, setOverviewMetrics] = useState({ revenue: 0, tickets: 0, fillRate: 0 });
+  // Quản lý thông tin rạp phân công cho Manager / Hệ thống rạp cho Admin
+  const [assignedCinema, setAssignedCinema] = useState(null);
+
+  const userRole = (currentUser?.role || currentUser?.roles?.[0] || '').toUpperCase();
+  const isEffectiveAdmin = isAdmin || userRole.includes('ADMIN');
+  const isEffectiveManager = !isEffectiveAdmin && (isManager || userRole.includes('MANAGER'));
+
+  // Manager restricted tabs list (RBAC Matrix)
+  const MANAGER_ALLOWED_TABS = [
+    'overview',
+    'rooms',
+    'showtimes',
+    'pricing',
+    'showtime-incidents',
+    'tickets',
+    'staff',
+    'fnb-report',
+    'statistics'
+  ];
+
+  useEffect(() => {
+    if (isEffectiveManager && !MANAGER_ALLOWED_TABS.includes(activeTab)) {
+      changeAdminSection('overview');
+    }
+  }, [activeTab, isEffectiveManager]);
+
   useEffect(() => {
     const token = getAdminToken(false);
-    if (!token) return undefined;
+    if (!token) return;
     let cancelled = false;
-    const to = new Date().toISOString().slice(0, 10);
-    const fromDate = new Date();
-    fromDate.setDate(fromDate.getDate() - 30);
-    const from = fromDate.toISOString().slice(0, 10);
-    Promise.all([
-      adminService.getRevenueReport(token, { from, to }),
-      adminService.getRoomOccupancy(token, { from, to })
-    ])
-      .then(([revenue, rooms]) => {
+    adminService.getAdminCinemas(token)
+      .then((res) => {
         if (cancelled) return;
-        const occupancyList = Array.isArray(rooms) ? rooms : [];
-        const avgFill = occupancyList.length
-          ? occupancyList.reduce((acc, room) => acc + (room.occupancyRate || 0), 0) / occupancyList.length
-          : 0;
-        setOverviewMetrics({
-          revenue: Number(revenue?.totalRevenue || 0),
-          tickets: Number(revenue?.totalTicketsSold || 0),
-          fillRate: Math.round(avgFill * 10) / 10
-        });
+        const list = Array.isArray(res) ? res : (res?.items || res?.content || []);
+        if (list && list.length > 0) {
+          const target = currentUser?.cinemaId
+            ? (list.find((c) => String(c.id) === String(currentUser.cinemaId)) || list[0])
+            : list[0];
+          setAssignedCinema(target);
+        }
       })
-      .catch(() => { /* keep zeros — cards render real (empty) data, never fake numbers */ });
+      .catch((e) => {
+        console.warn('Lỗi lấy thông tin cụm rạp phân công:', e);
+      });
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [currentUser?.cinemaId]);
+
+  // Real headline metrics from /api/v1/admin/reports/dashboard — lấy đúng theo rạp phân công
+  const [overviewMetrics, setOverviewMetrics] = useState({ revenue: 0, tickets: 0, fillRate: 0 });
+  useEffect(() => {
+    if (activeTab !== 'overview') return undefined;
+    const token = getAdminToken(false);
+    if (!token) return undefined;
+    let cancelled = false;
+    const cid = isManager ? (assignedCinema?.id || currentUser?.cinemaId) : null;
+    const params = cid ? { cinemaId: cid } : {};
+
+    adminService.getAdminDashboardMetrics(token, params)
+      .then((metrics) => {
+        if (cancelled) return;
+        setOverviewMetrics({
+          revenue: Number(metrics?.totalRevenue || 0),
+          tickets: Number(metrics?.totalPaidTickets || 0),
+          fillRate: Math.round(Number(metrics?.occupancyRate || 0) * 10) / 10
+        });
+      })
+      .catch(() => {
+        const to = new Date().toISOString().slice(0, 10);
+        const fromDate = new Date();
+        fromDate.setDate(fromDate.getDate() - 30);
+        const from = fromDate.toISOString().slice(0, 10);
+        Promise.all([
+          adminService.getRevenueReport(token, { from, to, ...(cid ? { cinemaId: cid } : {}) }).catch(() => null),
+          adminService.getRoomOccupancy(token, { from, to, ...(cid ? { cinemaId: cid } : {}) }).catch(() => null)
+        ]).then(([revenue, rooms]) => {
+          if (cancelled) return;
+          const occupancyList = Array.isArray(rooms) ? rooms : [];
+          const avgFill = occupancyList.length
+            ? occupancyList.reduce((acc, room) => acc + (room.occupancyRate || 0), 0) / occupancyList.length
+            : 0;
+          setOverviewMetrics({
+            revenue: Number(revenue?.totalRevenue || 0),
+            tickets: Number(revenue?.totalTicketsSold || 0),
+            fillRate: Math.round(avgFill * 10) / 10
+          });
+        }).catch(() => { });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, assignedCinema?.id, currentUser?.cinemaId, isManager]);
   const totalBookingsCount = overviewMetrics.tickets;
   const calculatedRevenue = overviewMetrics.revenue;
   const averageFillRate = overviewMetrics.fillRate;
@@ -1055,6 +1150,7 @@ export default function AdminDashboard({
   };
 
   const populateMovieForm = (movie) => {
+    setMovieFormError(null);
     const defaultForm = buildDefaultMovieForm();
     const genreIds = resolveGenreIdsForMovie(movie);
     const genreNames = genreIds.length
@@ -1202,9 +1298,17 @@ export default function AdminDashboard({
       mainActorIds: (formData.mainActorIds || []).map(Number).filter(Number.isFinite)
     };
 
+    const isUpdating = Boolean(targetMovieId);
+    if (isUpdating && editingMovie?.status && editingMovie.status !== 'UPCOMING') {
+      const statusText = editingMovie.status === 'NOW_SHOWING' ? 'Đang chiếu (NOW_SHOWING)' : editingMovie.status === 'ENDED' ? 'Đã kết thúc (ENDED)' : editingMovie.status;
+      const warningMsg = `Chỉ phim sắp chiếu mới có thể cập nhật. Phim hiện tại đang ở trạng thái "${statusText}".`;
+      setMovieFormError(warningMsg);
+      showToast(warningMsg, 6000, null, 'sad');
+      return;
+    }
+
     setIsMovieSaving(true);
     try {
-      const isUpdating = Boolean(targetMovieId);
       const savedMovie = isUpdating
         ? await adminService.updateAdminMovie(token, targetMovieId, payload)
         : await adminService.createAdminMovie(token, payload);
@@ -1428,7 +1532,7 @@ export default function AdminDashboard({
     }
 
     setShowtimeSuccessMessage(`Kích hoạt thành công suất chiếu mới của tác phẩm: ${targetMovie.title}`);
-    addAuditLog('Phát phối suất chiếu mới', `${targetMovie.title} tại ${publicCinema?.name || 'rạp chiếu'}`);
+    addAuditLog('Phát phối suất chiếu mới', `${targetMovie.title} tại ${assignedCinema?.name || publicCinema?.name || 'rạp chiếu'}`);
 
     setTimeout(() => {
       setShowtimeSuccessMessage('');
@@ -1493,6 +1597,8 @@ export default function AdminDashboard({
     showMovieForm,
     setShowMovieForm,
     isMovieSaving,
+    movieFormError,
+    setMovieFormError,
     formData,
     setFormData,
     newShowtime,
@@ -1619,22 +1725,31 @@ export default function AdminDashboard({
     setMoviesList,
     bookedTickets,
     setBookedTickets,
-    publicCinema,
+    publicCinema: (isManager && assignedCinema) ? assignedCinema : publicCinema,
+    assignedCinema,
+    selectedCinemaId: isManager ? (assignedCinema?.id || currentUser?.cinemaId) : null,
     onCinemaChanged,
     onSelectMovie,
     showToast,
     initialSection,
     onSectionChange,
     onFoodCatalogChanged,
+    heroBannerInitialMovieId,
+    setHeroBannerInitialMovieId,
     isAdmin,
+    isManager,
     currentUser
   };
 
   const adminPanels = {
     overview: AdminOverviewPanel,
+    'hero-banners': AdminHeroBannerPanel,
     movies: AdminMoviesPanel,
     genres: AdminGenresPanel,
     actors: AdminActorsPanel,
+    directors: AdminDirectorsPanel,
+    pricing: AdminPricingPanel,
+    settings: AdminSystemSettingsPanel,
     foods: AdminFoodsPanel,
     'fnb-report': AdminFnbReportPanel,
     showtimes: AdminShowtimesPanel,
@@ -1644,6 +1759,7 @@ export default function AdminDashboard({
     statistics: AdminStatsPanel,
     audit: AdminAuditPanel,
     users: AdminUsersPanel,
+    staff: AdminUsersPanel,
     reviews: AdminReviewsPanel,
     cinewallet: AdminWalletPanel,
     loyalty: AdminLoyaltyPanel,
@@ -1659,9 +1775,8 @@ export default function AdminDashboard({
 
       {/* LEFT: SIDEBAR (full height) */}
       <div
-        className={`shrink-0 h-full flex flex-col border-r border-white/[0.15] bg-[#181818] transition-[width] duration-300 ${
-          sidebarCollapsed ? 'w-[52px]' : 'w-[240px] overflow-hidden'
-        }`}
+        className={`shrink-0 h-full flex flex-col border-r border-white/[0.15] bg-[#181818] transition-[width] duration-300 ${sidebarCollapsed ? 'w-[52px]' : 'w-[240px] overflow-hidden'
+          }`}
         id="admin-sidebar-bar"
       >
         {/* Logo */}
@@ -1679,7 +1794,7 @@ export default function AdminDashboard({
                 CINE<span className="text-amber-400">PREMIER</span>
               </span>
               <span className="text-[8px] font-mono uppercase leading-tight tracking-[0.3em] text-neutral-300">
-                Admin Console
+                {isEffectiveAdmin ? 'Admin Console' : 'Cinema Manager'}
               </span>
             </div>
           )}
@@ -1689,8 +1804,25 @@ export default function AdminDashboard({
         <div className={`flex-1 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${sidebarCollapsed ? '' : 'overflow-x-hidden'}`}>
           {sidebarCollapsed ? (
             <div className="py-3 flex flex-col items-center">
-              {[
+              {(isEffectiveManager ? [
                 { icon: Activity, tab: 'overview', sound: 440 },
+                null,
+                { icon: Clapperboard, tab: 'hero-banners', sound: 462 },
+                null,
+                { icon: Layers, tab: 'rooms', sound: 470 },
+                { icon: Calendar, tab: 'showtimes', sound: 480 },
+                { icon: DollarSign, tab: 'pricing', sound: 475 },
+                { icon: AlertCircle, tab: 'showtime-incidents', sound: 486 },
+                { icon: FileText, tab: 'tickets', sound: 492 },
+                null,
+                { icon: Shield, tab: 'staff', sound: 512 },
+                null,
+                { icon: BarChart2, tab: 'fnb-report', sound: 486 },
+                { icon: BarChart2, tab: 'statistics', sound: 505 },
+              ] : [
+                { icon: Activity, tab: 'overview', sound: 440 },
+                null,
+                { icon: Clapperboard, tab: 'hero-banners', sound: 462 },
                 null,
                 { icon: Tags, tab: 'genres', sound: 470 },
                 { icon: Users, tab: 'actors', sound: 465 },
@@ -1699,9 +1831,10 @@ export default function AdminDashboard({
                 { icon: ShoppingBag, tab: 'foods', sound: 478 },
                 { icon: BarChart2, tab: 'fnb-report', sound: 486 },
                 null,
-                null,
+                { icon: Building2, tab: 'cinema', sound: 465 },
                 { icon: Layers, tab: 'rooms', sound: 470 },
                 { icon: Calendar, tab: 'showtimes', sound: 480 },
+                { icon: DollarSign, tab: 'pricing', sound: 475 },
                 { icon: AlertCircle, tab: 'showtime-incidents', sound: 486 },
                 { icon: FileText, tab: 'tickets', sound: 492 },
                 { icon: FileText, tab: 'transactions', sound: 500 },
@@ -1710,10 +1843,12 @@ export default function AdminDashboard({
                 { icon: ShieldAlert, tab: 'audit', sound: 508 },
                 null,
                 { icon: Users, tab: 'users', sound: 510 },
+                { icon: Shield, tab: 'staff', sound: 512 },
                 { icon: MessageSquare, tab: 'reviews', sound: 515 },
                 { icon: DollarSign, tab: 'loyalty', sound: 520 },
                 { icon: Wallet, tab: 'cinewallet', sound: 525 },
-              ].map((item, index) => item === null ? (
+                { icon: Sliders, tab: 'settings', sound: 530 }
+              ]).map((item, index) => item === null ? (
                 <div key={`div-${index}`} className="w-6 h-px bg-white/[0.06] my-1.5" />
               ) : (
                 <div key={item.tab} className="w-full flex justify-center mb-0.5">
@@ -1722,9 +1857,8 @@ export default function AdminDashboard({
                     onClick={() => { playPulseSound(item.sound, 'sine', 0.05); changeAdminSection(item.tab); }}
                     onMouseEnter={(e) => setCollapsedTooltip({ key: item.tab, y: e.currentTarget.getBoundingClientRect().top + 18 })}
                     onMouseLeave={() => setCollapsedTooltip(null)}
-                    className={`h-9 w-9 flex items-center justify-center border-l-2 transition-all duration-100 ${
-                      activeTab === item.tab ? 'bg-amber-500/[0.09] text-amber-400 border-amber-500' : 'text-neutral-500 hover:text-neutral-200 hover:bg-white/[0.02] border-transparent'
-                    }`}
+                    className={`h-9 w-9 flex items-center justify-center border-l-2 transition-all duration-100 ${activeTab === item.tab ? 'bg-amber-500/[0.09] text-amber-400 border-amber-500' : 'text-neutral-500 hover:text-neutral-200 hover:bg-white/[0.02] border-transparent'
+                      }`}
                   >
                     <item.icon className="h-[13px] w-[13px]" />
                   </button>
@@ -1736,13 +1870,13 @@ export default function AdminDashboard({
               {/* Profile card */}
               <div className="mx-3 mt-3 mb-1 bg-gradient-to-b from-[#111111] to-[#090909] border border-white/[0.03] p-2.5 flex items-center gap-2">
                 <div className="h-7 w-7 shrink-0 border border-amber-500/30 bg-amber-500/[0.07] flex items-center justify-center">
-                  <span className="text-[12px] font-black italic font-serif text-amber-400">{isAdmin ? 'A' : 'S'}</span>
+                  <span className="text-[12px] font-black italic font-serif text-amber-400">{isEffectiveAdmin ? 'A' : 'M'}</span>
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-[11px] font-semibold text-white truncate leading-tight">
-                    {isAdmin ? 'Quản trị viên' : (currentUser?.name || 'Nhân viên')}
+                    {isEffectiveAdmin ? 'Quản trị viên' : (currentUser?.fullName || currentUser?.name || 'Quản lý cụm rạp')}
                   </p>
-                  <p className="text-[8px] text-neutral-300 font-mono leading-tight tracking-wider">CP-99210-{isAdmin ? 'ADMIN' : 'STAFF'}</p>
+                  <p className="text-[8px] text-neutral-300 font-mono leading-tight tracking-wider truncate">{isEffectiveAdmin ? 'CP-99210-ADMIN' : (assignedCinema?.name || ('Rạp #' + currentUser?.cinemaId))}</p>
                 </div>
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
               </div>
@@ -1750,33 +1884,60 @@ export default function AdminDashboard({
               {/* Flat nav with section labels */}
               <nav className="pb-4">
                 <NavSectionLabel>Tổng quan</NavSectionLabel>
-                <NavItem icon={Activity} label="Tổng quan hệ thống" active={activeTab === 'overview'} onClick={() => { playPulseSound(440, 'sine', 0.05); changeAdminSection('overview'); }} />
+                <NavItem icon={Activity} label={isEffectiveManager ? "Tổng quan cụm rạp" : "Tổng quan hệ thống"} active={activeTab === 'overview'} onClick={() => { playPulseSound(440, 'sine', 0.05); changeAdminSection('overview'); }} />
 
-                <NavSectionLabel>Quản lý phim</NavSectionLabel>
-                <NavItem indent icon={Tags} label="Thể loại phim" active={activeTab === 'genres'} onClick={() => { playPulseSound(470, 'sine', 0.05); changeAdminSection('genres'); }} />
-                <NavItem indent icon={Users} label="Diễn viên" active={activeTab === 'actors'} onClick={() => { playPulseSound(465, 'sine', 0.05); changeAdminSection('actors'); }} />
-                <NavItem indent icon={Film} label="Thư viện phim" active={activeTab === 'movies'} onClick={() => { playPulseSound(460, 'sine', 0.05); changeAdminSection('movies'); }} />
+                <NavSectionLabel>Nội dung &amp; Marketing</NavSectionLabel>
+                <NavItem indent icon={Clapperboard} label="Hero Banner" active={activeTab === 'hero-banners'} onClick={() => { playPulseSound(462, 'sine', 0.05); changeAdminSection('hero-banners'); }} />
 
-                <NavSectionLabel>Bắp nước / F&amp;B</NavSectionLabel>
-                <NavItem indent icon={ShoppingBag} label="Quản lý bắp nước" active={activeTab === 'foods'} onClick={() => { playPulseSound(478, 'sine', 0.05); changeAdminSection('foods'); }} />
-                <NavItem indent icon={BarChart2} label="Báo cáo F&B" active={activeTab === 'fnb-report'} onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('fnb-report'); }} />
+                {isEffectiveAdmin && (
+                  <>
+                    <NavSectionLabel>Quản lý phim</NavSectionLabel>
+                    <NavItem indent icon={Tags} label="Thể loại phim" active={activeTab === 'genres'} onClick={() => { playPulseSound(470, 'sine', 0.05); changeAdminSection('genres'); }} />
+                    <NavItem indent icon={Users} label="Diễn viên" active={activeTab === 'actors'} onClick={() => { playPulseSound(465, 'sine', 0.05); changeAdminSection('actors'); }} />
+                    <NavItem indent icon={Film} label="Thư viện phim" active={activeTab === 'movies'} onClick={() => { playPulseSound(460, 'sine', 0.05); changeAdminSection('movies'); }} />
+                  </>
+                )}
 
-                <NavSectionLabel>Quản lý rạp</NavSectionLabel>
+                <NavSectionLabel>{isEffectiveManager ? "Vận hành rạp" : "Quản lý rạp"}</NavSectionLabel>
+                {isEffectiveAdmin && (
+                  <NavItem indent icon={Building2} label="Hệ thống cụm rạp" active={activeTab === 'cinema'} onClick={() => { playPulseSound(465, 'sine', 0.05); changeAdminSection('cinema'); }} />
+                )}
                 <NavItem indent icon={Layers} label="Phòng chiếu & ghế" active={activeTab === 'rooms'} onClick={() => { playPulseSound(470, 'sine', 0.05); changeAdminSection('rooms'); }} />
                 <NavItem indent icon={Calendar} label="Điều phối lịch chiếu" active={activeTab === 'showtimes'} onClick={() => { playPulseSound(480, 'sine', 0.05); changeAdminSection('showtimes'); }} />
+                <NavItem indent icon={DollarSign} label="Bảng giá vé" active={activeTab === 'pricing'} onClick={() => { playPulseSound(475, 'sine', 0.05); changeAdminSection('pricing'); }} />
                 <NavItem indent icon={AlertCircle} label="Báo cáo sự cố & hoàn tiền" active={activeTab === 'showtime-incidents'} onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('showtime-incidents'); }} />
                 <NavItem indent icon={FileText} label="Quản lý vé" active={activeTab === 'tickets'} onClick={() => { playPulseSound(492, 'sine', 0.05); changeAdminSection('tickets'); }} />
-                <NavItem indent icon={FileText} label="Giao dịch" active={activeTab === 'transactions'} onClick={() => { playPulseSound(500, 'sine', 0.05); changeAdminSection('transactions'); }} />
+                {isEffectiveAdmin && (
+                  <NavItem indent icon={FileText} label="Giao dịch" active={activeTab === 'transactions'} onClick={() => { playPulseSound(500, 'sine', 0.05); changeAdminSection('transactions'); }} />
+                )}
 
-                <NavSectionLabel>Thống kê / Giám sát</NavSectionLabel>
-                <NavItem indent icon={BarChart2} label="Thống kê mua bán" active={activeTab === 'statistics'} onClick={() => { playPulseSound(505, 'sine', 0.05); changeAdminSection('statistics'); }} />
-                <NavItem indent icon={ShieldAlert} label="Audit log" active={activeTab === 'audit'} onClick={() => { playPulseSound(508, 'sine', 0.05); changeAdminSection('audit'); }} />
+                {isEffectiveAdmin && (
+                  <>
+                    <NavSectionLabel>Khách hàng</NavSectionLabel>
+                    <NavItem indent icon={Users} label="Người dùng" active={activeTab === 'users'} onClick={() => { playPulseSound(510, 'sine', 0.05); changeAdminSection('users'); }} />
+                    <NavItem indent icon={MessageSquare} label="Đánh giá phim" active={activeTab === 'reviews'} onClick={() => { playPulseSound(515, 'sine', 0.05); changeAdminSection('reviews'); }} />
+                    <NavItem indent icon={DollarSign} label="Điểm tích lũy" active={activeTab === 'loyalty'} onClick={() => { playPulseSound(520, 'sine', 0.05); changeAdminSection('loyalty'); }} />
+                    <NavItem indent icon={Wallet} label="CineWallet" active={activeTab === 'cinewallet'} onClick={() => { playPulseSound(525, 'sine', 0.05); changeAdminSection('cinewallet'); }} />
+                  </>
+                )}
 
-                <NavSectionLabel>Khách hàng &amp; Nhân sự</NavSectionLabel>
-                <NavItem indent icon={Users} label="Người dùng" active={activeTab === 'users'} onClick={() => { playPulseSound(510, 'sine', 0.05); changeAdminSection('users'); }} />
-                <NavItem indent icon={MessageSquare} label="Đánh giá" active={activeTab === 'reviews'} onClick={() => { playPulseSound(515, 'sine', 0.05); changeAdminSection('reviews'); }} />
-                <NavItem indent icon={DollarSign} label="Điểm tích lũy" active={activeTab === 'loyalty'} onClick={() => { playPulseSound(520, 'sine', 0.05); changeAdminSection('loyalty'); }} />
-                <NavItem indent icon={Wallet} label="CineWallet" active={activeTab === 'cinewallet'} onClick={() => { playPulseSound(525, 'sine', 0.05); changeAdminSection('cinewallet'); }} />
+                <NavSectionLabel>Nhân sự</NavSectionLabel>
+                <NavItem indent icon={Shield} label={isEffectiveManager ? "Nhân viên rạp mình" : "Nhân sự rạp (Staff)"} active={activeTab === 'staff'} onClick={() => { playPulseSound(512, 'sine', 0.05); changeAdminSection('staff'); }} />
+
+                <NavSectionLabel>Báo cáo &amp; F&B</NavSectionLabel>
+                {isEffectiveAdmin && (
+                  <NavItem indent icon={ShoppingBag} label="Quản lý bắp nước" active={activeTab === 'foods'} onClick={() => { playPulseSound(478, 'sine', 0.05); changeAdminSection('foods'); }} />
+                )}
+                <NavItem indent icon={BarChart2} label="Báo cáo F&B" active={activeTab === 'fnb-report'} onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('fnb-report'); }} />
+                <NavItem indent icon={BarChart2} label={isEffectiveManager ? "Doanh thu rạp" : "Thống kê mua bán"} active={activeTab === 'statistics'} onClick={() => { playPulseSound(505, 'sine', 0.05); changeAdminSection('statistics'); }} />
+
+                {isEffectiveAdmin && (
+                  <>
+                    <NavSectionLabel>Hệ thống &amp; Giám sát</NavSectionLabel>
+                    <NavItem indent icon={ShieldAlert} label="Audit log" active={activeTab === 'audit'} onClick={() => { playPulseSound(508, 'sine', 0.05); changeAdminSection('audit'); }} />
+                    <NavItem indent icon={Sliders} label="Cấu hình hệ thống" active={activeTab === 'settings'} onClick={() => { playPulseSound(530, 'sine', 0.05); changeAdminSection('settings'); }} />
+                  </>
+                )}
               </nav>
             </div>
           )}
@@ -1787,13 +1948,26 @@ export default function AdminDashboard({
           {!sidebarCollapsed && (
             <button
               type="button"
-              onClick={() => navigate('/admin/cinema')}
+              onClick={() => isEffectiveAdmin ? navigate('/admin/cinema') : undefined}
               className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/[0.02] border border-transparent hover:border-white/[0.04] transition-colors group"
             >
-              <MapPin className="h-3 w-3 text-neutral-200 shrink-0 group-hover:text-amber-500/60 transition-colors" />
+              <MapPin className="h-3 w-3 text-amber-400 shrink-0 group-hover:text-amber-300 transition-colors" />
               <div className="min-w-0 text-left">
-                <span className="block text-[10px] font-medium text-neutral-200 group-hover:text-neutral-200 truncate transition-colors leading-tight">{publicCinema?.name || 'CineAI Central'}</span>
-                <span className="block text-[7.5px] font-mono text-neutral-200 truncate">{publicCinema?.city || 'Hồ Chí Minh'}</span>
+                {isAdmin ? (
+                  <>
+                    <span className="block text-[10px] font-medium text-neutral-200 group-hover:text-neutral-100 truncate transition-colors leading-tight">Hệ thống CinemaAI</span>
+                    <span className="block text-[7.5px] font-mono text-neutral-400 truncate">Toàn bộ chi nhánh</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="block text-[10px] font-medium text-neutral-200 group-hover:text-neutral-100 truncate transition-colors leading-tight">
+                      {assignedCinema?.name || (currentUser?.cinemaId ? `Rạp #${currentUser.cinemaId}` : 'Chi nhánh của bạn')}
+                    </span>
+                    <span className="block text-[7.5px] font-mono text-neutral-400 truncate">
+                      {assignedCinema?.city || assignedCinema?.address || 'Khu vực quản lý'}
+                    </span>
+                  </>
+                )}
               </div>
             </button>
           )}
@@ -1858,40 +2032,15 @@ export default function AdminDashboard({
           >
             <User className="h-3 w-3 text-neutral-300 shrink-0 group-hover:text-amber-400/60 transition-colors" />
             <span className="text-[10px] font-medium text-neutral-200 group-hover:text-amber-400/70 transition-colors">
-              {isAdmin ? 'Admin' : (currentUser?.name || 'Staff')}
+              {isEffectiveAdmin ? 'Admin' : `${currentUser?.fullName || currentUser?.name || 'Manager'} • ${assignedCinema?.name || 'Chi nhánh của bạn'}`}
             </span>
           </button>
         </div>
 
         {/* Scrollable content */}
         <div className="flex-1 min-w-0 overflow-y-auto bg-[#020202]">
-          <div className="px-5 xl:px-7 py-6 space-y-5">
+          <div className={activeTab === 'showtimes' ? "px-0 xl:px-0 py-6 space-y-5" : "px-5 xl:px-7 py-6 space-y-5"}>
 
-            {/* METRIC CARDS */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" id="corporate-bento-metrics">
-              {[
-                { label: 'Tổng doanh thu', sub: '30 ngày gần nhất', value: `${calculatedRevenue.toLocaleString()}đ`, icon: DollarSign, iconColor: 'text-amber-500', barColor: 'from-amber-500 to-amber-400', barW: '72%' },
-                { label: 'Vé bán ra', sub: '30 ngày gần nhất', value: `${totalBookingsCount}`, unit: 'vé', icon: FileText, iconColor: 'text-emerald-400', barColor: 'from-emerald-500 to-emerald-400', barW: '58%' },
-                { label: 'Lấp đầy rạp', sub: 'Tỉ lệ trung bình', value: `${averageFillRate}`, unit: '%', icon: Activity, iconColor: 'text-blue-400', barColor: 'from-blue-500 to-blue-400', barW: `${Math.min(100, averageFillRate)}%` },
-                { label: 'Thư viện phim', sub: 'Đang hoạt động', value: `${moviesList.length}`, unit: 'phim', icon: Film, iconColor: 'text-violet-400', barColor: 'from-violet-500 to-violet-400', barW: '85%' },
-              ].map(({ label, sub, value, unit, icon: Icon, iconColor, barColor, barW }) => (
-                <div key={label} className="bg-gradient-to-b from-[#0d0d0d] to-[#050505] border border-white/[0.04] p-4 space-y-3 relative overflow-hidden">
-                  <div className="flex justify-between items-start">
-                    <span className="text-[8.5px] tracking-[0.15em] font-extrabold text-neutral-200 uppercase font-mono">{label}</span>
-                    <Icon className={`h-4 w-4 shrink-0 ${iconColor}`} />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-mono font-black text-white leading-none">
-                      {value}{unit && <span className="text-[11px] font-bold text-neutral-300 ml-1">{unit}</span>}
-                    </h2>
-                    <p className="text-[8px] text-neutral-300 font-mono mt-1 uppercase tracking-wider">{sub}</p>
-                  </div>
-                  <div className="h-px bg-neutral-900 overflow-hidden">
-                    <div className={`h-full bg-gradient-to-r ${barColor}`} style={{ width: barW }} />
-                  </div>
-                </div>
-              ))}
-            </div>
 
             {/* ACTIVE PANEL */}
             <AnimatePresence mode="wait">
@@ -1906,378 +2055,394 @@ export default function AdminDashboard({
       <div className="hidden">
         <div className="grid grid-cols-1 lg:grid-cols-[250px_minmax(0,1fr)] gap-5 items-start">
 
-        {/* LEFT COMPONENT: THE DASHBOARD SELECTOR BAR (Cols 3) */}
-        <div className="space-y-4 lg:sticky lg:top-20" id="admin-sidebar-bar">
+          {/* LEFT COMPONENT: THE DASHBOARD SELECTOR BAR (Cols 3) */}
+          <div className="space-y-4 lg:sticky lg:top-20" id="admin-sidebar-bar">
 
-          {/* Active Admin Profile */}
-          <div className="bg-gradient-to-b from-[#0a0a0a] to-[#040404] border border-white/[0.05] p-3 space-y-2.5">
-            <div className="flex items-center space-x-2.5">
-              <div className="h-8 w-8 overflow-hidden rounded-sm border border-amber-500 bg-neutral-900 flex items-center justify-center text-amber-400 font-serif italic text-base font-black">
-                A
+            {/* Active Admin Profile */}
+            <div className="bg-gradient-to-b from-[#0a0a0a] to-[#040404] border border-white/[0.05] p-3 space-y-2.5">
+              <div className="flex items-center space-x-2.5">
+                <div className="h-8 w-8 overflow-hidden rounded-sm border border-amber-500 bg-neutral-900 flex items-center justify-center text-amber-400 font-serif italic text-base font-black">
+                  A
+                </div>
+                <div className="min-w-0">
+                  <h4 className="truncate text-[11px] font-black uppercase text-white tracking-wide">QUẢN TRỊ VIÊN</h4>
+                  <p className="text-[9px] text-neutral-300 font-mono">ID: CP-99210-ADMIN</p>
+                </div>
               </div>
-              <div className="min-w-0">
-                <h4 className="truncate text-[11px] font-black uppercase text-white tracking-wide">QUẢN TRỊ VIÊN</h4>
-                <p className="text-[9px] text-neutral-300 font-mono">ID: CP-99210-ADMIN</p>
+              <div className="h-[1px] bg-white/[0.04]"></div>
+              <div className="flex items-center justify-between text-[10px] font-sans">
+                <span className="text-neutral-300">Môi trường</span>
+                <span className="text-emerald-400 font-mono font-bold flex items-center gap-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span> PRODUCTION
+                </span>
               </div>
             </div>
-            <div className="h-[1px] bg-white/[0.04]"></div>
-            <div className="flex items-center justify-between text-[10px] font-sans">
-              <span className="text-neutral-300">Môi trường</span>
-              <span className="text-emerald-400 font-mono font-bold flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span> PRODUCTION
+
+            {/* Navigation Sidebar List (like image layout) */}
+            <div className="bg-[#070707] border border-white/[0.05] p-3 space-y-1.5 [&_button]:px-2.5 [&_button]:py-2.5 [&_button]:text-[9.5px] [&_svg]:h-3.5 [&_svg]:w-3.5" id="nav-sidebar-items">
+              <span className="text-[7.5px] font-mono uppercase tracking-[0.18em] text-neutral-300 block px-2 pb-1.5 font-black">
+                TỔNG QUAN
               </span>
-            </div>
-          </div>
 
-          {/* Navigation Sidebar List (like image layout) */}
-          <div className="bg-[#070707] border border-white/[0.05] p-3 space-y-1.5 [&_button]:px-2.5 [&_button]:py-2.5 [&_button]:text-[9.5px] [&_svg]:h-3.5 [&_svg]:w-3.5" id="nav-sidebar-items">
-            <span className="text-[7.5px] font-mono uppercase tracking-[0.18em] text-neutral-300 block px-2 pb-1.5 font-black">
-              TỔNG QUAN
-            </span>
+              <button
+                onClick={() => { playPulseSound(440, 'sine', 0.05); changeAdminSection('overview'); }}
+                className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-widest transition-all duration-300 border ${activeTab === 'overview'
+                  ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                  : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                  }`}
+              >
+                <span className="flex items-center space-x-2.5">
+                  <Activity className="h-4 w-4 shrink-0 text-amber-500" />
+                  <span>TỔNG QUAN HỆ THỐNG</span>
+                </span>
+                {activeTab === 'overview' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+              </button>
 
-            <button
-              onClick={() => { playPulseSound(440, 'sine', 0.05); changeAdminSection('overview'); }}
-              className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-widest transition-all duration-300 border ${activeTab === 'overview'
-                ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                }`}
-            >
-              <span className="flex items-center space-x-2.5">
-                <Activity className="h-4 w-4 shrink-0 text-amber-500" />
-                <span>TỔNG QUAN HỆ THỐNG</span>
-              </span>
-              {activeTab === 'overview' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-            </button>
+              <button
+                type="button"
+                onClick={() => setOpenNavGroup(openNavGroup === 'movies' ? null : 'movies')}
+                className={`mt-3 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'movies' ? 'border-amber-500/60 bg-amber-500/[0.14] text-amber-300 shadow-[inset_3px_0_0_rgba(245,158,11,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-amber-500/40 hover:text-white'}`}
+              >
+                <span className="text-xs font-sans font-black uppercase tracking-[0.16em] drop-shadow-sm">Quản lý phim</span>
+                <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'movies' ? 'rotate-180' : ''}`} />
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setOpenNavGroup(openNavGroup === 'movies' ? null : 'movies')}
-              className={`mt-3 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'movies' ? 'border-amber-500/60 bg-amber-500/[0.14] text-amber-300 shadow-[inset_3px_0_0_rgba(245,158,11,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-amber-500/40 hover:text-white'}`}
-            >
-              <span className="text-xs font-sans font-black uppercase tracking-[0.16em] drop-shadow-sm">Quản lý phim</span>
-              <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'movies' ? 'rotate-180' : ''}`} />
-            </button>
-
-            <AnimatePresence initial={false}>
-              {openNavGroup === 'movies' && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="space-y-1.5 overflow-hidden"
-                >
-                  <button
-                    onClick={() => { playPulseSound(470, 'sine', 0.05); changeAdminSection('genres'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'genres'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
+              <AnimatePresence initial={false}>
+                {openNavGroup === 'movies' && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="space-y-1.5 overflow-hidden"
                   >
-                    <span className="flex items-center space-x-2.5">
-                      <Tags className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">THỂ LOẠI PHIM</span>
-                    </span>
-                    {activeTab === 'genres' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
+                    <button
+                      onClick={() => { playPulseSound(470, 'sine', 0.05); changeAdminSection('genres'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'genres'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <Tags className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">THỂ LOẠI PHIM</span>
+                      </span>
+                      {activeTab === 'genres' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
 
-                  <button
-                    onClick={() => { playPulseSound(465, 'sine', 0.05); changeAdminSection('actors'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'actors'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
+                    <button
+                      onClick={() => { playPulseSound(465, 'sine', 0.05); changeAdminSection('actors'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'actors'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <Users className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">DIỄN VIÊN</span>
+                      </span>
+                      {activeTab === 'actors' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
+
+                    <button
+                      onClick={() => { playPulseSound(460, 'sine', 0.05); changeAdminSection('movies'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'movies'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <Film className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">THƯ VIỆN PHIM</span>
+                      </span>
+                      {activeTab === 'movies' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
+
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Bắp nước tách khỏi nhóm phim thành nhóm F&B riêng */}
+              <button
+                type="button"
+                onClick={() => setOpenNavGroup(openNavGroup === 'fnb' ? null : 'fnb')}
+                className={`mt-2 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'fnb' ? 'border-amber-500/60 bg-amber-500/[0.14] text-amber-300 shadow-[inset_3px_0_0_rgba(245,158,11,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-amber-500/40 hover:text-white'}`}
+              >
+                <span className="text-xs font-sans font-black uppercase tracking-[0.16em] drop-shadow-sm">Bắp nước / F&B</span>
+                <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'fnb' ? 'rotate-180' : ''}`} />
+              </button>
+
+              <AnimatePresence initial={false}>
+                {openNavGroup === 'fnb' && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="space-y-1.5 overflow-hidden"
                   >
-                    <span className="flex items-center space-x-2.5">
-                      <Users className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">DIỄN VIÊN</span>
-                    </span>
-                    {activeTab === 'actors' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
+                    <button
+                      onClick={() => { playPulseSound(478, 'sine', 0.05); changeAdminSection('foods'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'foods'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <ShoppingBag className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">QUẢN LÝ BẮP NƯỚC</span>
+                      </span>
+                      {activeTab === 'foods' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
+                    <button
+                      onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('fnb-report'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'fnb-report'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <BarChart2 className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">BÁO CÁO F&amp;B</span>
+                      </span>
+                      {activeTab === 'fnb-report' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-                  <button
-                    onClick={() => { playPulseSound(460, 'sine', 0.05); changeAdminSection('movies'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'movies'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
+              <button
+                type="button"
+                onClick={() => setOpenNavGroup(openNavGroup === 'cinema' ? null : 'cinema')}
+                className={`mt-2 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'cinema' ? 'border-amber-500/60 bg-amber-500/[0.14] text-amber-300 shadow-[inset_3px_0_0_rgba(245,158,11,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-amber-500/40 hover:text-white'}`}
+              >
+                <span className="text-xs font-sans font-black uppercase tracking-[0.16em] drop-shadow-sm">Quản lý rạp</span>
+                <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'cinema' ? 'rotate-180' : ''}`} />
+              </button>
+
+              <AnimatePresence initial={false}>
+                {openNavGroup === 'cinema' && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="space-y-1.5 overflow-hidden"
                   >
-                    <span className="flex items-center space-x-2.5">
-                      <Film className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">THƯ VIỆN PHIM</span>
-                    </span>
-                    {activeTab === 'movies' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() => { playPulseSound(465, 'sine', 0.05); changeAdminSection('cinema'); }}
+                        className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'cinema'
+                          ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                          : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                          }`}
+                      >
+                        <span className="flex items-center space-x-2.5">
+                          <Building2 className="h-4 w-4 shrink-0 text-amber-500" />
+                          <span className="whitespace-nowrap">HỆ THỐNG CỤM RẠP</span>
+                        </span>
+                        {activeTab === 'cinema' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                      </button>
+                    )}
 
-                </motion.div>
-              )}
-            </AnimatePresence>
+                    <button
+                      onClick={() => { playPulseSound(470, 'sine', 0.05); changeAdminSection('rooms'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'rooms'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <Layers className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">PHÒNG CHIẾU & GHẾ</span>
+                      </span>
+                      {activeTab === 'rooms' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
 
-            {/* Bắp nước tách khỏi nhóm phim thành nhóm F&B riêng */}
-            <button
-              type="button"
-              onClick={() => setOpenNavGroup(openNavGroup === 'fnb' ? null : 'fnb')}
-              className={`mt-2 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'fnb' ? 'border-amber-500/60 bg-amber-500/[0.14] text-amber-300 shadow-[inset_3px_0_0_rgba(245,158,11,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-amber-500/40 hover:text-white'}`}
-            >
-              <span className="text-xs font-sans font-black uppercase tracking-[0.16em] drop-shadow-sm">Bắp nước / F&B</span>
-              <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'fnb' ? 'rotate-180' : ''}`} />
-            </button>
 
-            <AnimatePresence initial={false}>
-              {openNavGroup === 'fnb' && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="space-y-1.5 overflow-hidden"
-                >
-                  <button
-                    onClick={() => { playPulseSound(478, 'sine', 0.05); changeAdminSection('foods'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'foods'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
+                    <button
+                      onClick={() => { playPulseSound(480, 'sine', 0.05); changeAdminSection('showtimes'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'showtimes'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <Calendar className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">ĐIỀU PHỐI LỊCH CHIẾU</span>
+                      </span>
+                      {activeTab === 'showtimes' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
+
+                    <button
+                      onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('showtime-incidents'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'showtime-incidents'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">BÁO CÁO SỰ CỐ &amp; HOÀN TIỀN</span>
+                      </span>
+                      {activeTab === 'showtime-incidents' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
+                    <button
+                      onClick={() => { playPulseSound(492, 'sine', 0.05); changeAdminSection('tickets'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'tickets'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <FileText className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">QUẢN LÝ VÉ</span>
+                      </span>
+                      {activeTab === 'tickets' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
+                    <button
+                      onClick={() => { playPulseSound(500, 'sine', 0.05); changeAdminSection('transactions'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'transactions'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <FileText className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">GIAO DỊCH</span>
+                      </span>
+                      {activeTab === 'transactions' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* Nhóm phân tích: thống kê định giá + audit log */}
+              <button
+                type="button"
+                onClick={() => setOpenNavGroup(openNavGroup === 'insights' ? null : 'insights')}
+                className={`mt-2 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'insights' ? 'border-amber-500/60 bg-amber-500/[0.14] text-amber-300 shadow-[inset_3px_0_0_rgba(245,158,11,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-amber-500/40 hover:text-white'}`}
+              >
+                <span className="text-xs font-sans font-black uppercase tracking-[0.15em] drop-shadow-sm">Thống kê/Giám sát</span>
+                <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'insights' ? 'rotate-180' : ''}`} />
+              </button>
+
+              <AnimatePresence initial={false}>
+                {openNavGroup === 'insights' && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="space-y-1.5 overflow-hidden"
                   >
-                    <span className="flex items-center space-x-2.5">
-                      <ShoppingBag className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">QUẢN LÝ BẮP NƯỚC</span>
-                    </span>
-                    {activeTab === 'foods' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-                  <button
-                    onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('fnb-report'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'fnb-report'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
+                    <button
+                      onClick={() => { playPulseSound(505, 'sine', 0.05); changeAdminSection('statistics'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'statistics'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <BarChart2 className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">THỐNG KÊ MUA BÁN</span>
+                      </span>
+                      {activeTab === 'statistics' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
+                    <button
+                      onClick={() => { playPulseSound(508, 'sine', 0.05); changeAdminSection('audit'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'audit'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <ShieldAlert className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">AUDIT LOG</span>
+                      </span>
+                      {activeTab === 'audit' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <button
+                type="button"
+                onClick={() => setOpenNavGroup(openNavGroup === 'system' ? null : 'system')}
+                className={`mt-2 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'system' ? 'border-purple-500/60 bg-purple-500/[0.14] text-purple-300 shadow-[inset_3px_0_0_rgba(168,85,247,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-purple-500/40 hover:text-white'}`}
+              >
+                <span className="text-xs font-sans font-black uppercase tracking-[0.16em] drop-shadow-sm">Khách hàng</span>
+                <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'system' ? 'rotate-180' : ''}`} />
+              </button>
+
+              <AnimatePresence initial={false}>
+                {openNavGroup === 'system' && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="space-y-1.5 overflow-hidden"
                   >
-                    <span className="flex items-center space-x-2.5">
-                      <BarChart2 className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">BÁO CÁO F&amp;B</span>
-                    </span>
-                    {activeTab === 'fnb-report' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                    <button
+                      onClick={() => { playPulseSound(510, 'sine', 0.05); changeAdminSection('users'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'users'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <Users className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">QUẢN LÝ NGƯỜI DÙNG</span>
+                      </span>
+                      {activeTab === 'users' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
 
-            <button
-              type="button"
-              onClick={() => setOpenNavGroup(openNavGroup === 'cinema' ? null : 'cinema')}
-              className={`mt-2 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'cinema' ? 'border-amber-500/60 bg-amber-500/[0.14] text-amber-300 shadow-[inset_3px_0_0_rgba(245,158,11,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-amber-500/40 hover:text-white'}`}
-            >
-              <span className="text-xs font-sans font-black uppercase tracking-[0.16em] drop-shadow-sm">Quản lý rạp</span>
-              <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'cinema' ? 'rotate-180' : ''}`} />
-            </button>
+                    <button
+                      onClick={() => { playPulseSound(515, 'sine', 0.05); changeAdminSection('reviews'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'reviews'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <MessageSquare className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">ĐÁNH GIÁ PHIM</span>
+                      </span>
+                      {activeTab === 'reviews' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
 
-            <AnimatePresence initial={false}>
-              {openNavGroup === 'cinema' && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="space-y-1.5 overflow-hidden"
-                >
-                  <button
-                    onClick={() => { playPulseSound(470, 'sine', 0.05); changeAdminSection('rooms'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'rooms'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <Layers className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">PHÒNG CHIẾU & GHẾ</span>
-                    </span>
-                    {activeTab === 'rooms' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
+                    <button
+                      onClick={() => { playPulseSound(520, 'sine', 0.05); changeAdminSection('loyalty'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'loyalty'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <DollarSign className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">QUẢN LÝ ĐIỂM</span>
+                      </span>
+                      {activeTab === 'loyalty' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
 
+                    <button
+                      onClick={() => { playPulseSound(525, 'sine', 0.05); changeAdminSection('cinewallet'); }}
+                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'cinewallet'
+                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                        }`}
+                    >
+                      <span className="flex items-center space-x-2.5">
+                        <Wallet className="h-4 w-4 shrink-0 text-amber-500" />
+                        <span className="whitespace-nowrap">CINEWALLET</span>
+                      </span>
+                      {activeTab === 'cinewallet' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                    </button>
 
-                  <button
-                    onClick={() => { playPulseSound(480, 'sine', 0.05); changeAdminSection('showtimes'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'showtimes'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <Calendar className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">ĐIỀU PHỐI LỊCH CHIẾU</span>
-                    </span>
-                    {activeTab === 'showtimes' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
-                  <button
-                    onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('showtime-incidents'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'showtime-incidents'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">BÁO CÁO SỰ CỐ &amp; HOÀN TIỀN</span>
-                    </span>
-                    {activeTab === 'showtime-incidents' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-                  <button
-                    onClick={() => { playPulseSound(492, 'sine', 0.05); changeAdminSection('tickets'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'tickets'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <FileText className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">QUẢN LÝ VÉ</span>
-                    </span>
-                    {activeTab === 'tickets' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-                  <button
-                    onClick={() => { playPulseSound(500, 'sine', 0.05); changeAdminSection('transactions'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'transactions'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <FileText className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">GIAO DỊCH</span>
-                    </span>
-                    {activeTab === 'transactions' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
+              <div className="h-[1px] bg-neutral-900 my-3"></div>
 
-            {/* Nhóm phân tích: thống kê định giá + audit log */}
-            <button
-              type="button"
-              onClick={() => setOpenNavGroup(openNavGroup === 'insights' ? null : 'insights')}
-              className={`mt-2 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'insights' ? 'border-amber-500/60 bg-amber-500/[0.14] text-amber-300 shadow-[inset_3px_0_0_rgba(245,158,11,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-amber-500/40 hover:text-white'}`}
-            >
-              <span className="text-xs font-sans font-black uppercase tracking-[0.15em] drop-shadow-sm">Thống kê/Giám sát</span>
-              <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'insights' ? 'rotate-180' : ''}`} />
-            </button>
-
-            <AnimatePresence initial={false}>
-              {openNavGroup === 'insights' && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="space-y-1.5 overflow-hidden"
-                >
-                  <button
-                    onClick={() => { playPulseSound(505, 'sine', 0.05); changeAdminSection('statistics'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'statistics'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <BarChart2 className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">THỐNG KÊ MUA BÁN</span>
-                    </span>
-                    {activeTab === 'statistics' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-                  <button
-                    onClick={() => { playPulseSound(508, 'sine', 0.05); changeAdminSection('audit'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'audit'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <ShieldAlert className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">AUDIT LOG</span>
-                    </span>
-                    {activeTab === 'audit' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <button
-              type="button"
-              onClick={() => setOpenNavGroup(openNavGroup === 'system' ? null : 'system')}
-              className={`mt-2 flex w-full items-center justify-between border-2 px-4 py-4 transition ${openNavGroup === 'system' ? 'border-purple-500/60 bg-purple-500/[0.14] text-purple-300 shadow-[inset_3px_0_0_rgba(168,85,247,0.9)]' : 'border-white/10 bg-black/70 text-neutral-300 hover:border-purple-500/40 hover:text-white'}`}
-            >
-              <span className="text-xs font-sans font-black uppercase tracking-[0.16em] drop-shadow-sm">Khách hàng</span>
-              <ChevronDown className={`!h-4 !w-4 transition-transform duration-300 ${openNavGroup === 'system' ? 'rotate-180' : ''}`} />
-            </button>
-
-            <AnimatePresence initial={false}>
-              {openNavGroup === 'system' && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="space-y-1.5 overflow-hidden"
-                >
-                  <button
-                    onClick={() => { playPulseSound(510, 'sine', 0.05); changeAdminSection('users'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'users'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <Users className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">QUẢN LÝ NGƯỜI DÙNG</span>
-                    </span>
-                    {activeTab === 'users' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-
-                  <button
-                    onClick={() => { playPulseSound(515, 'sine', 0.05); changeAdminSection('reviews'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'reviews'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <MessageSquare className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">ĐÁNH GIÁ</span>
-                    </span>
-                    {activeTab === 'reviews' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-
-                  <button
-                    onClick={() => { playPulseSound(520, 'sine', 0.05); changeAdminSection('loyalty'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'loyalty'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <DollarSign className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">QUẢN LÝ ĐIỂM</span>
-                    </span>
-                    {activeTab === 'loyalty' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-
-                  <button
-                    onClick={() => { playPulseSound(525, 'sine', 0.05); changeAdminSection('cinewallet'); }}
-                    className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'cinewallet'
-                      ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                      : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                      }`}
-                  >
-                    <span className="flex items-center space-x-2.5">
-                      <Wallet className="h-4 w-4 shrink-0 text-amber-500" />
-                      <span className="whitespace-nowrap">CINEWALLET</span>
-                    </span>
-                    {activeTab === 'cinewallet' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                  </button>
-
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            <div className="h-[1px] bg-neutral-900 my-3"></div>
-
-            {/* Quick action: Làm mới trang */}
-            {/* <button
+              {/* Quick action: Làm mới trang */}
+              {/* <button
               onClick={() => {
                 playPulseSound(300, 'sine', 0.15);
                 showToast("Hệ thống: Rời khỏi phiên làm việc Quản trị viên.");
@@ -2288,73 +2453,73 @@ export default function AdminDashboard({
               <RefreshCw className="h-3.5 w-3.5 text-rose-500 animate-spin-slow" />
               <span>LÀM MỚI TRANG</span>
             </button> */}
+            </div>
+
+
           </div>
 
+          {/* RIGHT COMPONENT: MAIN VIEW DETAILS (Cols 9) */}
+          <div className="min-w-0 space-y-6">
 
+            {/* 2. CORPORATE CORE BENTO METRICS */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" id="corporate-bento-metrics">
+
+              {/* Metric Card 1 */}
+              <div className="bg-gradient-to-b from-[#0c0c0c] to-[#040404] border border-white/[0.05] p-5 space-y-2.5 relative overflow-hidden shadow-md">
+                <div className="flex justify-between items-start">
+                  <span className="text-[9px] tracking-wider font-extrabold text-neutral-300 uppercase font-sans">Tổng doanh thu liên kết</span>
+                  <div className="p-1 bg-amber-500/10 text-amber-500"><DollarSign className="h-4 w-4" /></div>
+                </div>
+                <div>
+                  <h2 className="text-lg sm:text-xl font-mono font-black text-white">{calculatedRevenue.toLocaleString()}đ</h2>
+                </div>
+              </div>
+
+              {/* Metric Card 2 */}
+              <div className="bg-gradient-to-b from-[#0c0c0c] to-[#040404] border border-white/[0.05] p-5 space-y-2.5 relative overflow-hidden shadow-md">
+                <div className="flex justify-between items-start">
+                  <span className="text-[9px] tracking-wider font-extrabold text-neutral-300 uppercase font-sans">Sản lượng vé xuất xưởng</span>
+                  <div className="p-1 bg-emerald-500/10 text-emerald-400"><FileText className="h-4 w-4" /></div>
+                </div>
+                <div>
+                  <h2 className="text-lg sm:text-xl font-mono font-black text-white">{totalBookingsCount} vé</h2>
+                </div>
+              </div>
+
+              {/* Metric Card 3 */}
+              <div className="bg-gradient-to-b from-[#0c0c0c] to-[#040404] border border-white/[0.05] p-5 space-y-2.5 relative overflow-hidden shadow-md">
+                <div className="flex justify-between items-start">
+                  <span className="text-[9px] tracking-wider font-extrabold text-neutral-300 uppercase font-sans">Hệ số lấp đầy rạp</span>
+                  <div className="p-1 bg-blue-500/10 text-blue-400"><Activity className="h-4 w-4" /></div>
+                </div>
+                <div>
+                  <h2 className="text-lg sm:text-xl font-mono font-black text-white">{averageFillRate}%</h2>
+                </div>
+              </div>
+
+              {/* Metric Card 4 */}
+              <div className="bg-gradient-to-b from-[#0c0c0c] to-[#040404] border border-white/[0.05] p-5 space-y-2.5 relative overflow-hidden shadow-md">
+                <div className="flex justify-between items-start">
+                  <span className="text-[9px] tracking-wider font-extrabold text-neutral-300 uppercase font-sans">Thư viện phát hành</span>
+                  <div className="p-1 bg-purple-500/10 text-purple-400"><Film className="h-4 w-4" /></div>
+                </div>
+                <div>
+                  <h2 className="text-lg sm:text-xl font-mono font-black text-white">{moviesList.length} phim</h2>
+                </div>
+              </div>
+
+            </div>
+
+
+
+            {/* TAB SCREENS EXECUTOR */}
+            <div>
+              <AnimatePresence mode="wait">
+                <ActiveAdminPanel key={activeTab} ctx={adminCtx} />
+              </AnimatePresence>
+            </div>
+          </div>
         </div>
-
-        {/* RIGHT COMPONENT: MAIN VIEW DETAILS (Cols 9) */}
-        <div className="min-w-0 space-y-6">
-
-          {/* 2. CORPORATE CORE BENTO METRICS */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" id="corporate-bento-metrics">
-
-            {/* Metric Card 1 */}
-            <div className="bg-gradient-to-b from-[#0c0c0c] to-[#040404] border border-white/[0.05] p-5 space-y-2.5 relative overflow-hidden shadow-md">
-              <div className="flex justify-between items-start">
-                <span className="text-[9px] tracking-wider font-extrabold text-neutral-300 uppercase font-sans">Tổng doanh thu liên kết</span>
-                <div className="p-1 bg-amber-500/10 text-amber-500"><DollarSign className="h-4 w-4" /></div>
-              </div>
-              <div>
-                <h2 className="text-lg sm:text-xl font-mono font-black text-white">{calculatedRevenue.toLocaleString()}đ</h2>
-              </div>
-            </div>
-
-            {/* Metric Card 2 */}
-            <div className="bg-gradient-to-b from-[#0c0c0c] to-[#040404] border border-white/[0.05] p-5 space-y-2.5 relative overflow-hidden shadow-md">
-              <div className="flex justify-between items-start">
-                <span className="text-[9px] tracking-wider font-extrabold text-neutral-300 uppercase font-sans">Sản lượng vé xuất xưởng</span>
-                <div className="p-1 bg-emerald-500/10 text-emerald-400"><FileText className="h-4 w-4" /></div>
-              </div>
-              <div>
-                <h2 className="text-lg sm:text-xl font-mono font-black text-white">{totalBookingsCount} vé</h2>
-              </div>
-            </div>
-
-            {/* Metric Card 3 */}
-            <div className="bg-gradient-to-b from-[#0c0c0c] to-[#040404] border border-white/[0.05] p-5 space-y-2.5 relative overflow-hidden shadow-md">
-              <div className="flex justify-between items-start">
-                <span className="text-[9px] tracking-wider font-extrabold text-neutral-300 uppercase font-sans">Hệ số lấp đầy rạp</span>
-                <div className="p-1 bg-blue-500/10 text-blue-400"><Activity className="h-4 w-4" /></div>
-              </div>
-              <div>
-                <h2 className="text-lg sm:text-xl font-mono font-black text-white">{averageFillRate}%</h2>
-              </div>
-            </div>
-
-            {/* Metric Card 4 */}
-            <div className="bg-gradient-to-b from-[#0c0c0c] to-[#040404] border border-white/[0.05] p-5 space-y-2.5 relative overflow-hidden shadow-md">
-              <div className="flex justify-between items-start">
-                <span className="text-[9px] tracking-wider font-extrabold text-neutral-300 uppercase font-sans">Thư viện phát hành</span>
-                <div className="p-1 bg-purple-500/10 text-purple-400"><Film className="h-4 w-4" /></div>
-              </div>
-              <div>
-                <h2 className="text-lg sm:text-xl font-mono font-black text-white">{moviesList.length} phim</h2>
-              </div>
-            </div>
-
-          </div>
-
-
-
-          {/* TAB SCREENS EXECUTOR */}
-          <div>
-            <AnimatePresence mode="wait">
-              <ActiveAdminPanel key={activeTab} ctx={adminCtx} />
-            </AnimatePresence>
-          </div>
-        </div>
-      </div>
       </div>
     </div>
   );

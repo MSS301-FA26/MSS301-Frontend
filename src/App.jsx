@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Toaster } from 'sonner';
+import Toast from './components/common/Toast';
 import AppRoutes from './routes/AppRoutes';
 import { useAuthStore } from './stores/useAuthStore';
 import { useMovieStore } from './stores/useMovieStore';
@@ -57,13 +57,19 @@ function MovieBootstrap() {
 }
 
 function ScrollToTop() {
-  const { pathname, search } = useLocation();
+  const { pathname } = useLocation();
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-  }, [pathname, search]);
+  }, [pathname]);
 
   return null;
+}
+
+function GlobalToast() {
+  const toast = useUiStore((state) => state.toast);
+  const setToast = useUiStore((state) => state.setToast);
+  return <Toast toast={toast} onClose={() => setToast(null)} />;
 }
 
 export default function App() {
@@ -72,15 +78,7 @@ export default function App() {
       <ScrollToTop />
       <AuthBootstrap />
       <MovieBootstrap />
-      <Toaster
-        position="top-right"
-        theme="dark"
-        richColors={false}
-        expand
-        visibleToasts={3}
-        className="cine-sonner-center"
-        toastOptions={{ duration: 6000 }}
-      />
+      <GlobalToast />
       <AppRoutes />
     </>
   );

@@ -41,7 +41,7 @@ export default function UserLayout({ children }) {
     if (p.startsWith('/admin')) return 'admin';
     if (p.startsWith('/movies')) return 'explore';
     if (p === '/concessions') return 'concessions';
-    if (p === '/showtimes') return 'showtimes';
+    if (p === '/showtimes' || p === '/book') return 'showtimes';
     if (p === '/tickets') return 'my-tickets';
     if (p === '/watchlist') return 'wishlist';
     if (p === '/profile') return 'profile';
@@ -61,8 +61,7 @@ export default function UserLayout({ children }) {
   if (isBackoffice) {
     return (
       <div className="h-screen overflow-hidden w-full bg-[#0d0f14] text-white selection:bg-amber-400 selection:text-white">
-        <Toast toast={toast} onClose={() => setToast(null)} />
-        <main className="h-full">{children}</main>
+                <main className="h-full">{children}</main>
         <AuthModal
           isOpen={showOTP}
           onClose={() => setShowOTP(false)}
@@ -75,8 +74,7 @@ export default function UserLayout({ children }) {
 
   return (
     <div className="min-h-screen overflow-x-clip w-full max-w-full bg-black text-white selection:bg-amber-400 selection:text-white">
-      <Toast toast={toast} onClose={() => setToast(null)} />
-      <div className="min-h-screen overflow-x-clip w-full max-w-full flex flex-col justify-between">
+            <div className="min-h-screen overflow-x-clip w-full max-w-full flex flex-col justify-between">
         <div>
           <Header
             activeTab={activeTab}
@@ -88,7 +86,7 @@ export default function UserLayout({ children }) {
               setMovieDateFilter('');
               setSelectedGenreId('');
               setMoviePagination(prev => ({ ...prev, page: 0 }));
-              if (location.pathname !== '/movies') navigate('/movies');
+              navigate(`/movies?q=${encodeURIComponent(q)}`);
             }}
             cinema={publicCinema}
             onManageCinema={() => navigate('/admin/cinema')}
@@ -145,7 +143,7 @@ export default function UserLayout({ children }) {
                         </div>
                         <div className="flex flex-col items-end gap-1.5">
                           {!mv.isUpcoming ? (
-                            <button onClick={() => { navigate(`/movies/${mv.id}/book`); setShowWatchlist(false); }} className="bg-white hover:bg-neutral-200 text-black px-3 py-1.5 text-[9.5px] uppercase tracking-wider font-sans font-extrabold transition">Đặt vé</button>
+                            <button onClick={() => { navigate(`/movies/${mv.backendId || mv.id}`, { state: { scrollToShowtimes: true } }); setShowWatchlist(false); }} className="bg-white hover:bg-neutral-200 text-black px-3 py-1.5 text-[9.5px] uppercase tracking-wider font-sans font-extrabold transition">Đặt vé</button>
                           ) : (
                             <span className="border border-white/10 text-neutral-300 py-1 px-2.5 font-bold text-[8.5px] uppercase tracking-wider">Upcoming</span>
                           )}

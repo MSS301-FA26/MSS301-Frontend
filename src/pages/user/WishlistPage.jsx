@@ -7,8 +7,7 @@ import { useUiStore } from '../../stores/useUiStore';
 export default function WishlistView() {
   const navigate = useNavigate();
   const { watchlist, handleToggleWatchlist: onToggleWatchlist } = useMovies();
-  const showToast = useUiStore((state) => state.showToast);
-  const onBookMovie = (movie) => navigate(`/movies/${movie.id}/book`);
+  const onBookMovie = (movie) => navigate(`/movies/${movie?.backendId || movie?.movieId || movie?.id}`, { state: { scrollToShowtimes: true } });
   const onSelectMovie = (id) => navigate(`/movies/${id}`);
   const [filter, setFilter] = useState('ALL');
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);

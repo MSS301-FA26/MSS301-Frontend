@@ -47,7 +47,7 @@ export const useMovieStore = create((set, get) => ({
   moviesList: [],
   moviePagination: {
     page: 0,
-    size: 10,
+    size: 100,
     totalPages: 1,
     totalElements: 0,
   },
@@ -74,6 +74,23 @@ export const useMovieStore = create((set, get) => ({
     bookedTickets: typeof bookedTickets === 'function' ? bookedTickets(state.bookedTickets) : bookedTickets
   })),
   setFoodCatalog: (foodCatalog) => set({ foodCatalog }),
+
+
+  setSelectedCinema: (selectedCinema) => set({ selectedCinema }),
+  fetchPublicCinemas: async () => {
+    try {
+      const data = await movieService.getPublicCinemas();
+      const list = Array.isArray(data) ? data : (data?.items || data?.content || []);
+      set({ cinemasList: list });
+      if (!get().selectedCinema && list.length > 0) {
+        set({ selectedCinema: list[0] });
+      }
+      return list;
+    } catch (err) {
+      console.warn('Failed to fetch public cinemas:', err);
+      return [];
+    }
+  },
 
   fetchPublicCinema: async ({ force = false } = {}) => {
     const cachedCinema = force ? null : getFreshCache(movieStoreCache.publicCinema);
@@ -265,12 +282,11 @@ export const useMovieStore = create((set, get) => ({
         await wishlistService.removeWishlist(accessToken, backendMovieId);
         showToast('Da xoa phim khoi watchlist.');
       } else {
-        await wishlistService.addWishlist(accessToken, backendMovieId);
-        showToast('Da them phim vao watchlist.');
+        await wishlistService.addWishlist(accessToken, backendMovieId, movie);
+        showToast('Đã thêm phim vào watchlist.');
       }
-    } catch (error) {
+    } catch {
       set({ watchlist: previous });
-      showToast(error.message || 'Khong the dong bo watchlist voi backend.', 4500, null, 'sad');
     }
   }
 }));

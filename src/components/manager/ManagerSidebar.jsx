@@ -1,9 +1,9 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard, Film, Calendar, Layers,
-  ShoppingBag, Ticket, Users, BarChart3,
-  ShieldAlert, Building2, LogOut, ChevronDown, Check
+  LayoutDashboard, Calendar, Layers,
+  Ticket, Users, BarChart3,
+  DollarSign, Building2, LogOut
 } from 'lucide-react';
 import { useManagerCinema } from '../../context/ManagerCinemaContext';
 import { useAuthStore } from '../../stores/useAuthStore';
@@ -11,19 +11,17 @@ import { useUiStore } from '../../stores/useUiStore';
 
 const NAV_ITEMS = [
   { to: '/manager/overview', label: 'Tổng quan vận hành', icon: LayoutDashboard },
-  { to: '/manager/movies', label: 'Phim & Đề xuất sửa', icon: Film },
-  { to: '/manager/showtimes', label: 'Quản lý suất chiếu', icon: Calendar },
-  { to: '/manager/rooms', label: 'Phòng chiếu & Ghế', icon: Layers },
-  { to: '/manager/inventory', label: 'Kho bắp nước (F&B)', icon: ShoppingBag },
-  { to: '/manager/bookings', label: 'Vé & Check-in', icon: Ticket },
   { to: '/manager/staff', label: 'Nhân viên cụm rạp', icon: Users },
+  { to: '/manager/rooms', label: 'Phòng chiếu & Ghế', icon: Layers },
+  { to: '/manager/showtimes', label: 'Quản lý suất chiếu', icon: Calendar },
+  { to: '/manager/pricing', label: 'Bảng giá vé rạp', icon: DollarSign },
+  { to: '/manager/bookings', label: 'Vé & Check-in', icon: Ticket },
   { to: '/manager/reports', label: 'Báo cáo doanh thu', icon: BarChart3 },
-  { to: '/manager/audit-logs', label: 'Nhật ký Audit Log', icon: ShieldAlert },
 ];
 
 export default function ManagerSidebar() {
   const navigate = useNavigate();
-  const { cinemas, selectedCinemaId, setSelectedCinemaId, selectedCinema } = useManagerCinema();
+  const { selectedCinema, loading } = useManagerCinema();
   const currentUser = useAuthStore((state) => state.currentUser);
   const handleLogout = useAuthStore((state) => state.handleLogout);
   const showToast = useUiStore((state) => state.showToast);
@@ -46,30 +44,22 @@ export default function ManagerSidebar() {
         </div>
       </div>
 
-      {/* Cinema Selector Card */}
+      {/* Cinema Badge Card (Fixed to currentUser.cinemaId) */}
       <div className="p-3 border-b border-white/[0.08] bg-black/20">
         <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-400 mb-1.5 flex items-center gap-1">
           <Building2 className="w-3 h-3 text-amber-400" />
           Rạp đang quản lý
         </label>
-        {cinemas.length > 0 ? (
-          <div className="relative">
-            <select
-              value={selectedCinemaId}
-              onChange={(e) => setSelectedCinemaId(e.target.value)}
-              className="w-full bg-[#1c1c1c] text-neutral-200 border border-white/[0.12] rounded-lg px-2.5 py-2 text-xs font-semibold focus:outline-none focus:border-amber-400 transition-colors appearance-none cursor-pointer pr-8"
-            >
-              {cinemas.map((c) => (
-                <option key={c.id} value={c.id} className="bg-neutral-900 text-white">
-                  {c.name} ({c.city || 'Chi nhánh'})
-                </option>
-              ))}
-            </select>
-            <ChevronDown className="w-3.5 h-3.5 text-neutral-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          </div>
-        ) : (
-          <p className="text-xs text-rose-300 italic">Chưa được phân công rạp nào.</p>
-        )}
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 font-semibold text-xs">
+          <span className="truncate">
+            {loading ? 'Đang tải rạp...' : selectedCinema?.name || (currentUser?.cinemaId ? `Rạp #${currentUser.cinemaId}` : 'Chưa phân công')}
+          </span>
+          {selectedCinema?.city && (
+            <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-200">
+              {selectedCinema.city}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Navigation Links */}
