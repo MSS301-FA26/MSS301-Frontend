@@ -15,7 +15,6 @@ import { useAuthStore } from '../../stores/useAuthStore';
 import { useUiStore } from '../../stores/useUiStore';
 import { getStoredAuth, unwrapListPayload } from '../../services/authService';
 import { movieService } from '../../services/movieService';
-<<<<<<< HEAD
 import { loyaltyService } from '../../services/loyaltyService';
 import { chatService } from '../../services/chatService';
 import { heroBannerService } from '../../services/heroBannerService';
@@ -240,12 +239,6 @@ const CURATED_FOODS = [
   }
 ];
 
-=======
-import { recommendationService, pickRecExplanation } from '../../services/recommendationService';
-import { chatService, clearStoredConversationId } from '../../services/chatService';
-import Snowfall from 'react-snowfall';
-import QuickBookingBar from '../../components/common/QuickBookingBar';
->>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
 const extractYoutubeId = (url = '') => {
   const trimmed = url.trim();
   if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) return trimmed;
@@ -842,7 +835,6 @@ export default function HomePage({
       {/* Main Content Layout Container (Max-width: 1240px, Spacing: 72–84px) */}
       <div className="mx-auto max-w-[1240px] px-4 sm:px-6 lg:px-8 space-y-16 sm:space-y-20 pb-20">
 
-<<<<<<< HEAD
         {/* ========================================================
             3. PHIM ĐANG CHIẾU (NOW SHOWING)
         {/* ========================================================
@@ -856,96 +848,6 @@ export default function HomePage({
                 <span className="h-2 w-2 rounded-full bg-[#F7C600] animate-pulse shadow-[0_0_10px_rgba(247,198,0,0.8)]" />
                 <span className="text-[11px] font-black uppercase tracking-[0.18em] text-[#F7C600]">
                   PHÒNG VÉ CINEPREMIER
-=======
-      {/* ── SECTIONS CONTAINER ── */}
-            {/* ── GALAXY QUICK BUY BAR (Mua Vé Nhanh Chuẩn Galaxy) ── */}
-      <div className="-mt-12 mb-8 mx-auto max-w-5xl px-4 sm:px-6 lg:px-8 relative z-30">
-        <QuickBookingBar />
-      </div>
-
-      <div className="space-y-20 px-4 sm:px-8 lg:px-12 xl:px-16 mx-auto max-w-[1400px]">
-
-      {/* 2. NOW PLAYING GRID */}
-      <section id="now-playing-section">
-        <div className="section-heading">
-          <h2 className="section-title">Phim Đang Chiếu</h2>
-          <p className="section-subtitle">Các tác phẩm đang chiếu tại rạp</p>
-        </div>
-
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => scrollNowPlaying(-1)}
-            aria-label="Phim trước"
-            className="absolute -left-4 top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 items-center justify-center text-white/70 hover:text-white transition sm:-left-8"
-          >
-            <ChevronLeft className="h-6 w-6" />
-          </button>
-
-          <div ref={nowPlayingRef} id="now-playing-grid"
-            className="flex gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {nowPlaying.map((movie) => (
-              <div key={movie.id} className="snap-start shrink-0 w-[185px] sm:w-[220px] lg:w-[calc((100%-3.75rem)/5)]">
-                <MovieCard movie={movie} onSelect={onSelectMovie} onBook={onBookMovie}
-                  isWatchlisted={isMovieWatchlisted(movie)} onToggleWatchlist={handleToggleWatchlist} />
-              </div>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => scrollNowPlaying(1)}
-            aria-label="Phim sau"
-            className="absolute -right-4 top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 items-center justify-center text-white/70 hover:text-white transition sm:-right-8"
-          >
-            <ChevronRight className="h-6 w-6" />
-          </button>
-        </div>
-        <div className="mt-10 flex justify-center">
-          <button onClick={() => onTabChange('explore')} className="section-cta-btn">Xem Thêm</button>
-        </div>
-      </section>
-
-      {/* 4. UPCOMING RELEASES */}
-      <section id="upcoming-section">
-        <div className="section-heading">
-          <h2 className="section-title">Phim Sắp Chiếu VIP</h2>
-          <p className="section-subtitle">Lưu trước thời khắc khởi chiếu và đặt chỗ tiên phong</p>
-        </div>
-        <div className="relative">
-          <button type="button" onClick={() => scrollUpcoming(-1)} aria-label="Phim trước"
-            className="absolute -left-4 top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 items-center justify-center text-white/70 hover:text-white transition sm:-left-8">
-            <ChevronLeft className="h-6 w-6" />
-          </button>
-          <div ref={upcomingRef} id="upcoming-grid"
-            className="flex gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {upcoming.map((movie) => (
-              <div key={movie.id} className="snap-start shrink-0 w-[185px] sm:w-[220px] lg:w-[calc((100%-3.75rem)/5)]">
-                <MovieCard movie={movie} onSelect={onSelectMovie} onBook={onBookMovie}
-                  isWatchlisted={isMovieWatchlisted(movie)} onToggleWatchlist={handleToggleWatchlist} />
-              </div>
-            ))}
-          </div>
-          <button type="button" onClick={() => scrollUpcoming(1)} aria-label="Phim sau"
-            className="absolute -right-4 top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 items-center justify-center text-white/70 hover:text-white transition sm:-right-8">
-            <ChevronRight className="h-6 w-6" />
-          </button>
-        </div>
-        <div className="mt-10 flex justify-center">
-          <button onClick={() => onTabChange('explore')} className="section-cta-btn">Xem Thêm</button>
-        </div>
-      </section>
-
-      {/* 3. PERSONALIZED RECOMMENDATIONS */}
-      {isLoggedIn && (personalRecs.length > 0 || publicMovies.length > 0) && (
-        <section id="personalized-highlights-section">
-          <div className="section-heading">
-            {hasAiRecs && (
-              <div className="mb-3 flex items-center justify-center gap-2">
-                <span className="inline-flex items-center gap-1.5 border border-purple-500/40 bg-purple-950/40 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-purple-300">
-                  <BrainCircuit className="h-3.5 w-3.5" />
-                  {isPersonalizedRecs ? 'AI Gợi Ý · Collaborative Filtering' : 'AI Gợi Ý · Dữ Liệu Thực'}
->>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
                 </span>
               </div>
               <h2 className="text-xl sm:text-2xl lg:text-3xl font-black uppercase tracking-tight text-white mt-1">

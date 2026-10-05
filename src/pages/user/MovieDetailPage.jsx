@@ -482,11 +482,7 @@ export default function MovieDetailPage() {
   const handleSelectShowtime = (st, cinemaObj) => {
     const cId = st.cinemaId || cinemaObj?.id;
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-<<<<<<< HEAD
     navigate(`/movies/${detailMovieId}/book?showtimeId=${st.id}&cinemaId=${cId}&date=${selectedDate}`);
-=======
-    navigate(`/showtimes?movieId=${mv.backendId || mv.id}`);
->>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
   };
 
   // Scroll to Showtime Section
@@ -1183,32 +1179,12 @@ export default function MovieDetailPage() {
                 onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80'; }}
               />
 
-<<<<<<< HEAD
               {/* Hover Play Trailer Overlay */}
               {trailerUrl && (
                 <button
                   onClick={() => setShowTrailer(true)}
                   className="absolute inset-0 bg-black/55 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col items-center justify-center gap-2 cursor-pointer text-white"
                   title="Bấm để xem trailer"
-=======
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
-            {/* Left Column: Poster & Rating */}
-            <div className="md:col-span-4 lg:col-span-4 flex flex-col items-center md:items-start space-y-4">
-              <div className="relative w-64 sm:w-72 aspect-[2/3] overflow-hidden rounded-xl border border-white/15 shadow-2xl shadow-black/80 bg-neutral-950 group">
-                <img
-                  src={movie.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80'}
-                  alt={movie.title}
-                  className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                  referrerPolicy="no-referrer"
-                  onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80'; }}
-                />
-
-                {/* Age Rating Badge */}
-                <div
-                  className={`absolute top-3 left-3 px-2 py-0.5 text-[11px] font-black tracking-wider border rounded-md uppercase backdrop-blur-md ${ageInfo.badgeClass}`}
-                  title={ageInfo.desc}
->>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
                 >
                   <div className="w-14 h-14 rounded-full bg-[#F7C600] text-black flex items-center justify-center shadow-2xl transform scale-90 group-hover:scale-100 transition-transform">
                     <Play className="w-6 h-6 fill-black translate-x-0.5" />
@@ -1962,7 +1938,6 @@ export default function MovieDetailPage() {
               </button>
             </div>
 
-<<<<<<< HEAD
             <form onSubmit={handleSubmitReport} className="space-y-4 text-xs">
               <div className="space-y-1.5">
                 <label className="text-xs text-[#B5B5BE] font-bold block">
@@ -1980,64 +1955,6 @@ export default function MovieDetailPage() {
                   <option value="OFF_TOPIC">Lạc đề / Không liên quan đến phim</option>
                   <option value="OTHER">Lý do khác</option>
                 </select>
-=======
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => scrollSimilar(-1)}
-                aria-label="Phim trước"
-                className="absolute -left-3 top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/80 border border-white/20 text-white/80 hover:text-white transition shadow-lg"
-              >
-                <ChevronLeft className="h-5 w-5" />
-              </button>
-
-              <div
-                ref={similarMoviesRef}
-                className="flex gap-4 overflow-x-auto scroll-smooth snap-x snap-mandatory pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-              >
-                {similarMovies.map((rec) => (
-                  <button
-                    key={rec.id ?? rec.movieId}
-                    type="button"
-                    onClick={() => {
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                      navigate(`/movies/${rec.backendId || rec.id}`);
-                    }}
-                    className="snap-start shrink-0 w-36 sm:w-44 group relative text-left bg-neutral-900/60 rounded-xl border border-white/10 hover:border-amber-400/50 transition overflow-hidden cursor-pointer flex flex-col"
-                  >
-                    <div className="aspect-[2/3] w-full overflow-hidden bg-black relative">
-                      {rec.posterUrl ? (
-                        <img
-                          src={rec.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80'}
-                          alt={rec.title}
-                          loading="lazy"
-                          className="h-full w-full object-cover opacity-85 group-hover:opacity-100 group-hover:scale-105 transition duration-500"
-                          onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80'; }}
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-[10px] uppercase tracking-widest text-neutral-600">
-                          Không có poster
-                        </div>
-                      )}
-                      {typeof rec.similarity === 'number' && (
-                        <span className="absolute top-2 right-2 bg-black/85 border border-amber-500/30 px-1.5 py-0.5 text-[9px] font-mono font-bold text-amber-300 rounded">
-                          {Math.round(rec.similarity * 100)}%
-                        </span>
-                      )}
-                    </div>
-                    <div className="p-3 flex-1 flex flex-col justify-between">
-                      <p className="text-xs font-serif font-bold text-white group-hover:text-amber-300 transition line-clamp-2">
-                        {rec.title}
-                      </p>
-                      {rec.reason && (
-                        <p className="mt-1 text-[10px] text-neutral-400 line-clamp-1" title={rec.reason}>
-                          {rec.reason}
-                        </p>
-                      )}
-                    </div>
-                  </button>
-                ))}
->>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
               </div>
 
               <div className="space-y-1.5">
