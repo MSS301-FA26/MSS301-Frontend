@@ -284,8 +284,13 @@ export default function Header({
             {/* TICKET SHAPED BUTTON (MUA VÉ) - Chuẩn hình ticket khuyết 2 đầu tròn, đường nét đứt, không khung */}
             {!isStaffRole && !isManagerRole && (
               <button
+<<<<<<< HEAD
                 onClick={() => { window.scrollTo({ top: 0, behavior: 'instant' }); navigate('/showtimes'); }}
                 className="group relative hidden lg:inline-flex items-center justify-center p-0 bg-transparent border-0 outline-none cursor-pointer transition-transform duration-200 hover:scale-105 active:scale-95 select-none"
+=======
+                onClick={() => onTabChange('showtimes')}
+                className="hidden lg:flex h-9 items-center gap-1.5 bg-yellow-500 hover:bg-yellow-600 px-3.5 text-[10px] font-sans font-extrabold uppercase tracking-[0.12em] text-black transition whitespace-nowrap rounded"
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
                 id="btn-book-now"
                 title="Mua vé xem phim"
               >
@@ -630,6 +635,7 @@ export default function Header({
                 }`}
                 id="nav-showtimes"
               >
+<<<<<<< HEAD
                 <CalendarDays className={`h-3.5 w-3.5 transition-colors ${
                   activeTab === 'showtimes' ? 'text-[#F7C600]' : 'text-neutral-400 group-hover:text-[#F7C600]'
                 }`} />
@@ -641,6 +647,10 @@ export default function Header({
                     transition={{ type: "spring", stiffness: 380, damping: 30 }}
                   />
                 )}
+=======
+                <CalendarDays className="h-3.5 w-3.5 text-amber-400" />
+                <span>LỊCH CHIẾU & MUA VÉ</span>
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
               </button>
 
               {/* ĐƠN CỦA TÔI */}

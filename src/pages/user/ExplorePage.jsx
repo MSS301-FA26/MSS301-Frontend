@@ -29,6 +29,21 @@ export default function ExplorePage() {
     watchlist = [],
     handleToggleWatchlist,
   } = useMovies();
+<<<<<<< HEAD
+=======
+  const onSearchChange = (q) => { setSearchQuery(q); setMoviePagination(prev => ({ ...prev, page: 0 })); };
+  const onDateChange = (d) => { setMovieDateFilter(d); setMoviePagination(prev => ({ ...prev, page: 0 })); };
+  const onPageChange = (page) => setMoviePagination(prev => ({ ...prev, page: page - 1 }));
+  const onSelectMovie = (id) => navigate(`/movies/${id}`);
+  const onBookMovie = (movie) => navigate(`/showtimes?movieId=${movie.backendId || movie.id}`);
+  const isMovieWatchlisted = (movie) => watchlist.some((item) => (
+    String(item.backendId || item.movieId || item.id) === String(movie.backendId || movie.movieId || movie.id)
+  ));
+  const [sortBy, setSortBy] = useState('rating'); // rating, newest, duration
+  const [localPage, setLocalPage] = useState(1);
+  const itemsPerPage = 10; // keep in sync with useMovieStore moviePagination.size
+  const currentPage = pagination ? (Number(pagination.page) || 0) + 1 : localPage;
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
 
   // URL query params
   const paramStatus = searchParams.get('status') || 'now-showing';

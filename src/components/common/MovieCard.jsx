@@ -85,6 +85,7 @@ export default function MovieCard({
       className="group relative flex flex-col select-none transition-transform duration-300 hover:-translate-y-1.5"
       id={`movie-${movie?.backendId || movie?.id}`}
     >
+<<<<<<< HEAD
       {/* 1. Poster Container (Aspect Ratio 2:3 - Bo góc mềm mại rounded-xl, đổ bóng điện ảnh) */}
       <div
         onClick={handleCardClick}
@@ -112,6 +113,42 @@ export default function MovieCard({
               Poster đang cập nhật
             </p>
             <Film className="h-4 w-4 text-neutral-600 mt-2.5" />
+=======
+      {/* Poster */}
+      <div className="relative aspect-[2/3] w-full overflow-hidden bg-neutral-800">
+        <img
+          src={movie.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80'}
+          alt={movie.title}
+          className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
+          referrerPolicy="no-referrer"
+          onError={(e) => {
+            e.target.src = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80';
+          }}
+        />
+
+        {/* Hover overlay */}
+        <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+          <div className="absolute inset-x-4 top-1/2 -translate-y-1/2 flex flex-col gap-2">
+            <button
+              onClick={(e) => { e.stopPropagation(); onSelect(movie.id); }}
+              className="flex items-center justify-center gap-2 w-full border border-white bg-black/80 text-white text-[11px] font-sans uppercase tracking-[0.12em] py-2.5 hover:bg-white hover:text-black transition-all duration-200"
+            >
+              <Play className="h-3 w-3 fill-current" />
+              Chi Tiết Phim
+            </button>
+            {isBookable ? (
+              <button
+                onClick={(e) => { e.stopPropagation(); onBook(movie); }}
+                className="flex items-center justify-center w-full border border-white bg-black/80 text-white text-[11px] font-sans uppercase tracking-[0.12em] py-2.5 hover:bg-white hover:text-black transition-all duration-200"
+              >
+                Đặt Vé Ngay
+              </button>
+            ) : (
+              <div className="w-full text-center border border-white/20 bg-neutral-900/80 text-white text-[11px] uppercase tracking-[0.12em] py-2.5">
+                Sắp Ra Mắt
+              </div>
+            )}
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
           </div>
         )}
 

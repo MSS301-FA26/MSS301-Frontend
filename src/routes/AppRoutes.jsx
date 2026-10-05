@@ -1,5 +1,10 @@
+<<<<<<< HEAD
 import React from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
+=======
+﻿import React from 'react';
+import { Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
 import UserLayout from '../layouts/UserLayout';
 import HomeView from '@/pages/user/HomePage';
 import ExploreView from '@/pages/user/ExplorePage';
@@ -34,6 +39,7 @@ function HomeRoute() {
   const showToast = useUiStore((state) => state.showToast);
 
   const goToTab = (tab) => {
+<<<<<<< HEAD
     const paths = {
       home: '/',
       explore: '/movies',
@@ -44,6 +50,9 @@ function HomeRoute() {
       profile: '/profile',
       policies: '/policies'
     };
+=======
+    const paths = { home: '/', explore: '/movies', showtimes: '/showtimes', 'my-tickets': '/tickets', wishlist: '/watchlist', profile: '/profile', policies: '/policies' };
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
     navigate(paths[tab] || '/');
   };
 
@@ -53,7 +62,12 @@ function HomeRoute() {
     if (!isBookable) {
       showToast('Phim sắp chiếu chưa mở bán vé.');
     }
+<<<<<<< HEAD
     navigate(`/movies/${targetId}`, { state: { scrollToShowtimes: true } });
+=======
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    navigate(`/showtimes?movieId=${movie.backendId || movie.id}`);
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
   };
 
   return (
@@ -207,10 +221,16 @@ export default function AppRoutes() {
       {/* Public / user routes */}
       <Route path="/movies" element={<AppShell><ExploreView /></AppShell>} />
       <Route path="/showtimes" element={<AppShell><ShowtimesPage /></AppShell>} />
+<<<<<<< HEAD
       <Route path="/book" element={<Navigate to="/showtimes" replace />} />
       <Route path="/movies/:id" element={<AppShell><DetailView /></AppShell>} />
       <Route path="/movies/:id/book" element={<AppShell><ProtectedRoute><BookingView /></ProtectedRoute></AppShell>} />
       <Route path="/concessions" element={<AppShell><ConcessionsPage /></AppShell>} />
+=======
+      <Route path="/movies/:id" element={<AppShell><DetailView /></AppShell>} />
+      <Route path="/movies/:id/book" element={<AppShell><ProtectedRoute><BookingView /></ProtectedRoute></AppShell>} />
+      <Route path="/concessions" element={<AppShell><ProtectedRoute><ConcessionsPage /></ProtectedRoute></AppShell>} />
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
       <Route path="/tickets" element={<AppShell><ProtectedRoute><MyOrdersPage /></ProtectedRoute></AppShell>} />
       <Route path="/watchlist" element={isAdminUser ? <Navigate to="/admin/overview" replace /> : isManagerUser ? <Navigate to="/manager/overview" replace /> : isStaffUser ? <Navigate to="/staff" replace /> : <AppShell><ProtectedRoute><WishlistView /></ProtectedRoute></AppShell>} />
       <Route path="/profile" element={<AppShell><ProtectedRoute><ProfileView /></ProtectedRoute></AppShell>} />

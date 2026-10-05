@@ -143,7 +143,11 @@ export default function UserLayout({ children }) {
                         </div>
                         <div className="flex flex-col items-end gap-1.5">
                           {!mv.isUpcoming ? (
+<<<<<<< HEAD
                             <button onClick={() => { navigate(`/movies/${mv.backendId || mv.id}`, { state: { scrollToShowtimes: true } }); setShowWatchlist(false); }} className="bg-white hover:bg-neutral-200 text-black px-3 py-1.5 text-[9.5px] uppercase tracking-wider font-sans font-extrabold transition">Đặt vé</button>
+=======
+                            <button onClick={() => { navigate(`/showtimes?movieId=${mv.backendId || mv.id}`); setShowWatchlist(false); }} className="bg-white hover:bg-neutral-200 text-black px-3 py-1.5 text-[9.5px] uppercase tracking-wider font-sans font-extrabold transition">Đặt vé</button>
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
                           ) : (
                             <span className="border border-white/10 text-neutral-300 py-1 px-2.5 font-bold text-[8.5px] uppercase tracking-wider">Upcoming</span>
                           )}
