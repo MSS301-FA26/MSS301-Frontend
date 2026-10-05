@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -7,7 +8,7 @@ import {
   Search, Sliders, ChevronDown, Check, RefreshCw, Layers, ShoppingBag,
   BarChart2, Clock, MapPin, Film, Play, Eye, EyeOff, Sparkles, TrendingUp, Info, Globe, Tags, ImageUp, Video, X,
   Send, XCircle, History, Archive, ThumbsUp, ThumbsDown, BookOpen, Undo2, Globe2, Shield,
-  ArrowLeft, ArrowRight
+  ArrowLeft, ArrowRight, MessageSquare, Star
 } from 'lucide-react';
 import { adminService } from '../../../services/adminService';
 
@@ -223,6 +224,7 @@ function MovieDatePicker({ value, onChange, minDate, label, hasError = false }) 
 }
 
 export default function AdminMoviesPanel({ ctx }) {
+  const navigate = useNavigate();
   const {
     activeTab,
     setActiveTab,
@@ -839,7 +841,7 @@ export default function AdminMoviesPanel({ ctx }) {
       return false;
     }
     if (!String(formData.bannerUrl || '').trim()) {
-      if (showError) showToast?.('Vui lòng tải lên Banner ngang (tỷ lệ 16:9) của phim.');
+      if (showError) showToast?.('Vui lòng tải lên Banner phim (định dạng chuẩn 1920×600).');
       return false;
     }
     return true;
@@ -2658,7 +2660,7 @@ export default function AdminMoviesPanel({ ctx }) {
                               <div className="space-y-1">
                                 <div className="flex items-center justify-between">
                                   <span className="text-[9px] uppercase tracking-wider text-neutral-300 font-bold block">
-                                    Banner ngang <span className="text-amber-400">*</span>
+                                    Ảnh Banner (1920×600) <span className="text-amber-400">*</span>
                                   </span>
                                   {formData.bannerUrl && (
                                     <span className="text-[8px] font-mono text-emerald-400 bg-emerald-500/10 px-1 py-0.2 rounded-none border border-emerald-500/20">
@@ -2684,10 +2686,10 @@ export default function AdminMoviesPanel({ ctx }) {
                                             <ImageUp className="w-4 h-4" />
                                           </div>
                                           <span className="text-[11px] font-bold text-white group-hover:text-amber-300 transition">
-                                            Tải lên Banner ngang
+                                            Tải lên Banner phim (1920×600)
                                           </span>
-                                          <span className="text-[9px] text-neutral-500 font-mono">
-                                            Tỷ lệ 16:9
+                                          <span className="text-[9px] text-amber-400/90 font-mono">
+                                            Định dạng chuẩn 1920×600 (3.2:1)
                                           </span>
                                         </div>
                                       )}
@@ -2699,7 +2701,7 @@ export default function AdminMoviesPanel({ ctx }) {
                                       />
                                     </label>
                                     {hasAttemptedNextStep && !formData.bannerUrl && (
-                                      <p className="text-[10px] text-rose-400 font-medium pt-1">Bắt buộc tải lên Banner ngang</p>
+                                      <p className="text-[10px] text-rose-400 font-medium pt-1">Bắt buộc tải lên Banner phim (1920×600)</p>
                                     )}
                                   </div>
                                 ) : (
@@ -2720,7 +2722,7 @@ export default function AdminMoviesPanel({ ctx }) {
                                     <img
                                       src={formData.bannerUrl}
                                       alt="Banner phim"
-                                      className="relative z-10 w-full h-full object-cover cursor-pointer transition duration-200 group-hover:scale-[1.02]"
+                                      className="relative z-10 w-full h-full object-cover object-center cursor-pointer transition duration-200 group-hover:scale-[1.02]"
                                       referrerPolicy="no-referrer"
                                       onClick={() => setMediaReviewModal({ type: 'image', url: formData.bannerUrl, title: `Banner: ${formData.title || 'Phim'}` })}
                                       title="Click xem phóng to"
@@ -3051,6 +3053,18 @@ export default function AdminMoviesPanel({ ctx }) {
                             title="Tạo suất chiếu cho phim này"
                           >
                             <Calendar className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (changeAdminSection) {
+                                changeAdminSection('hero-banners', { createWithMovieId: movieId });
+                              }
+                            }}
+                            className="p-1.5 text-amber-300 border border-amber-500/30 bg-amber-500/10 hover:bg-amber-400 hover:text-black transition rounded-none"
+                            title="Đưa lên Hero Banner (Landing Page)"
+                          >
+                            <Sparkles className="h-3.5 w-3.5" />
                           </button>
                           <button
                             type="button"
@@ -3708,6 +3722,41 @@ export default function AdminMoviesPanel({ ctx }) {
                       </div>
                     )}
 
+                    {/* Compact Review card as specified in Section 31 & 32 */}
+                    <div className="bg-neutral-900/60 border border-amber-500/25 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-amber-400">
+                          <MessageSquare className="w-4 h-4 text-amber-400" />
+                          <span>ĐÁNH GIÁ KHÁN GIẢ</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xl font-black text-amber-300 font-mono flex items-center gap-1">
+                            <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+                            {movieDetailModal.voteAverage ? Number(movieDetailModal.voteAverage).toFixed(1) : (movieDetailModal.rating || '—')} / 10
+                          </span>
+                          <span className="text-xs text-neutral-400">
+                            • {movieDetailModal.voteCount || movieDetailModal.totalVotes || 0} lượt đánh giá
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const targetId = movieDetailModal.backendId || movieDetailModal.id;
+                          setMovieDetailModal(null);
+                          if (ctx?.changeAdminSection) {
+                            ctx.changeAdminSection('reviews');
+                          }
+                          navigate(`/admin/reviews?movieId=${targetId}`);
+                        }}
+                        className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs uppercase tracking-wider transition flex items-center justify-center gap-1.5 shrink-0"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                        QUẢN LÝ ĐÁNH GIÁ
+                      </button>
+                    </div>
+
                     {/* Trailer Video Preview */}
                     {movieDetailModal.trailerUrl && (
                       <div className="space-y-2">
@@ -3744,6 +3793,24 @@ export default function AdminMoviesPanel({ ctx }) {
                       >
                         <Edit3 className="w-3.5 h-3.5" /> Chỉnh sửa phim
                       </button>
+
+                      {movieDetailModal.publicationStatus !== 'ARCHIVED' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const target = movieDetailModal;
+                            const targetId = target.backendId ?? target.id;
+                            setMovieDetailModal(null);
+                            if (changeAdminSection) {
+                              changeAdminSection('hero-banners', { createWithMovieId: targetId });
+                            }
+                          }}
+                          className="px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs uppercase tracking-wider rounded-none transition flex items-center gap-1.5 shadow-[0_0_12px_rgba(245,158,11,0.25)]"
+                          title="Đưa phim này lên Hero Banner trang chủ"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" /> Đưa lên Hero
+                        </button>
+                      )}
 
                     </div>
 

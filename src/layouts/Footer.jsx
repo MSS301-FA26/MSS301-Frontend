@@ -1,154 +1,236 @@
-import React, { useState } from 'react';
-import { ArrowRight, MapPin, Phone } from 'lucide-react';
+import React from 'react';
+import { MapPin, Phone, Mail, Shield, Film, Award, ChevronRight } from 'lucide-react';
 
 export default function Footer({ onTabChange = () => { }, cinema = null }) {
-  const [email, setEmail] = useState('');
-  const [subscribed, setSubscribed] = useState(false);
-
-  const handleSubscribe = (e) => {
-    e.preventDefault();
-    if (email) {
-      setSubscribed(true);
-      setEmail('');
-    }
-  };
-
   return (
-    <footer className="mythic-footer border-t border-purple-500/20 bg-gradient-to-b from-purple-950/40 via-black to-black text-neutral-400 py-16 px-4 sm:px-6 lg:px-8">
-      <span className="mythic-footer-symbol mythic-footer-dragon" aria-hidden="true">龍</span>
-      <span className="mythic-footer-symbol mythic-footer-phoenix" aria-hidden="true">鳳</span>
-      <div className="mx-auto max-w-7xl">
-        <div className="grid grid-cols-1 gap-12 md:grid-cols-4">
+    <footer className="relative border-t border-white/[0.08] bg-[#050507] text-neutral-400 pt-12 pb-8 px-4 sm:px-6 lg:px-8">
+      {/* Ambient subtle glow at top border */}
+      <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 h-[1px] w-3/4 bg-gradient-to-r from-transparent via-[#F7C600]/25 to-transparent" />
 
-          {/* Column 1: Info and Brand */}
-          <div className="space-y-5">
-            <div className="flex items-center space-x-3">
-              <div className="border border-purple-300/45 h-10 w-10 flex items-center justify-center text-purple-100 font-serif italic text-lg tracking-widest bg-neutral-950 shadow-[0_0_20px_rgba(168,85,247,0.12)]">
-                C
+      <div className="mx-auto max-w-[1240px]">
+        {/* Main Footer Grid (4 Columns) - Compact padding */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-10 pb-10 border-b border-white/[0.08]">
+
+          {/* COLUMN 1: BRAND IDENTITY */}
+          <div className="space-y-3">
+            <div className="flex items-center space-x-2.5">
+              <div className="h-8 w-8 flex items-center justify-center bg-zinc-950 border border-[#F7C600]/40 rounded-none shadow-[0_0_12px_rgba(247,198,0,0.15)]">
+                <span className="font-serif italic font-black text-base text-[#F7C600]">C</span>
               </div>
-              <span className="font-serif tracking-[0.28em] text-base uppercase text-white">
-                Cine<span className="font-serif italic font-light text-purple-300">Premier</span>
-              </span>
+              <div className="flex flex-col">
+                <span className="font-sans font-black tracking-[0.22em] text-xs text-white uppercase leading-none">
+                  CINE<span className="text-[#F7C600]">PREMIER</span>
+                </span>
+                <span className="text-[7px] font-mono tracking-[0.4em] text-neutral-400 uppercase mt-0.5 leading-none">
+                  STUDIOS
+                </span>
+              </div>
             </div>
-            <p className="max-w-sm text-[12px] leading-6 text-neutral-300 font-sans font-normal">
-              Trải nghiệm chiếu bóng chuẩn mực với hệ thống đặt vé, phòng chiếu IMAX và lịch chiếu được tối ưu cho từng suất phim.
+
+            <p className="text-[11.5px] leading-relaxed text-neutral-400 max-w-sm">
+              Tổ hợp rạp chiếu phim chuẩn quốc tế với phòng chiếu IMAX Laser, Dolby Atmos 360° cùng trải nghiệm ẩm thực điện ảnh thượng hạng.
             </p>
-            {cinema && (
-              <div className="space-y-2 border-l border-purple-400/40 pl-3 text-xs text-neutral-300">
-                <div className="font-black uppercase tracking-wider text-white">{cinema.name}</div>
-                <div className="flex items-start gap-2">
-                  <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-300" />
-                  <span>{[cinema.address, cinema.city].filter(Boolean).join(', ')}</span>
-                </div>
-                {cinema.phone && (
-                  <div className="flex items-center gap-2">
-                    <Phone className="h-3.5 w-3.5 text-purple-300" />
-                    <span>{cinema.phone}</span>
-                  </div>
-                )}
+
+            <div className="pt-1 space-y-1.5 text-[11.5px]">
+              <div className="flex items-center gap-2 text-neutral-300">
+                <Phone className="h-3.5 w-3.5 text-[#F7C600] shrink-0" />
+                <span>Hotline: <strong className="text-white">1900 8888</strong> (08:00 - 23:00)</span>
               </div>
-            )}
+              <div className="flex items-center gap-2 text-neutral-300">
+                <Mail className="h-3.5 w-3.5 text-purple-400 shrink-0" />
+                <span>Email: <strong className="text-white">support@cinepremier.vn</strong></span>
+              </div>
+              <div className="flex items-start gap-2 text-neutral-400 pt-0.5">
+                <MapPin className="h-3.5 w-3.5 text-[#F7C600] shrink-0 mt-0.5" />
+                <span className="leading-snug">{cinema?.name ? `${cinema.name} - ${cinema.address || ''}` : '68 Nguyễn Huệ, Phường Bến Nghé, Quận 1, TP.HCM'}</span>
+              </div>
+            </div>
           </div>
 
-          {/* Column 2: Quick navigation */}
+          {/* COLUMN 2: KHÁM PHÁ ĐIỆN ẢNH */}
           <div>
-            <h3 className="mb-5 border-l-2 border-purple-400 pl-3 text-sm font-sans font-black uppercase tracking-[0.22em] text-white">DANH MỤC CHIẾU BÓNG</h3>
-            <ul className="space-y-3 text-xs uppercase tracking-[0.14em] font-sans font-semibold text-neutral-300">
-              <li className="group flex items-center gap-3"><span className="h-1.5 w-1.5 shrink-0 rotate-45 border border-purple-300/70 bg-purple-400/20 transition group-hover:bg-purple-300 group-hover:shadow-[0_0_10px_rgba(168,85,247,0.7)]" /><span className="cursor-pointer border-b border-transparent pb-0.5 transition-colors duration-250 group-hover:border-purple-300 group-hover:text-purple-200">Phim Đang Chiếu</span></li>
-              <li className="group flex items-center gap-3"><span className="h-1.5 w-1.5 shrink-0 rotate-45 border border-purple-300/70 bg-purple-400/20 transition group-hover:bg-purple-300 group-hover:shadow-[0_0_10px_rgba(168,85,247,0.7)]" /><span className="cursor-pointer border-b border-transparent pb-0.5 transition-colors duration-250 group-hover:border-purple-300 group-hover:text-purple-200">Phim Sắp Chiếu</span></li>
-              <li className="group flex items-center gap-3"><span className="h-1.5 w-1.5 shrink-0 rotate-45 border border-purple-300/70 bg-purple-400/20 transition group-hover:bg-purple-300 group-hover:shadow-[0_0_10px_rgba(168,85,247,0.7)]" /><span className="cursor-pointer border-b border-transparent pb-0.5 transition-colors duration-250 group-hover:border-purple-300 group-hover:text-purple-200">Phòng Chiếu IMAX VIP</span></li>
-              <li className="group flex items-center gap-3"><span className="h-1.5 w-1.5 shrink-0 rotate-45 border border-purple-300/70 bg-purple-400/20 transition group-hover:bg-purple-300 group-hover:shadow-[0_0_10px_rgba(168,85,247,0.7)]" /><span className="cursor-pointer border-b border-transparent pb-0.5 transition-colors duration-250 group-hover:border-purple-300 group-hover:text-purple-200">Lịch Chiếu Toàn Quốc</span></li>
+            <h4 className="text-[12px] font-black uppercase tracking-[0.16em] text-[#F7C600] mb-3 flex items-center gap-1.5">
+              <Film className="h-3.5 w-3.5" />
+              <span>KHÁM PHÁ ĐIỆN ẢNH</span>
+            </h4>
+            <ul className="space-y-2 text-[11.5px] font-medium">
+              <li>
+                <button
+                  type="button"
+                  onClick={() => onTabChange('explore')}
+                  className="hover:text-white transition-colors flex items-center gap-1.5 group"
+                >
+                  <ChevronRight className="h-3 w-3 text-neutral-600 group-hover:text-[#F7C600] transition-colors" />
+                  <span>Phim Đang Chiếu Rạp</span>
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => onTabChange('explore')}
+                  className="hover:text-white transition-colors flex items-center gap-1.5 group"
+                >
+                  <ChevronRight className="h-3 w-3 text-neutral-600 group-hover:text-[#F7C600] transition-colors" />
+                  <span>Phim Sắp Khởi Chiếu</span>
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => onTabChange('showtimes')}
+                  className="hover:text-white transition-colors flex items-center gap-1.5 group"
+                >
+                  <ChevronRight className="h-3 w-3 text-neutral-600 group-hover:text-[#F7C600] transition-colors" />
+                  <span>Lịch Chiếu Toàn Quốc</span>
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => onTabChange('concessions')}
+                  className="hover:text-white transition-colors flex items-center gap-1.5 group"
+                >
+                  <ChevronRight className="h-3 w-3 text-neutral-600 group-hover:text-[#F7C600] transition-colors" />
+                  <span>Thực Đơn Bắp Nước F&B</span>
+                </button>
+              </li>
+              <li>
+                <span className="text-neutral-500 flex items-center gap-1.5">
+                  <ChevronRight className="h-3 w-3 text-neutral-700" />
+                  <span>Phòng Chiếu IMAX 70mm Laser</span>
+                </span>
+              </li>
             </ul>
           </div>
 
-          {/* Column 3: Policy & Support */}
+          {/* COLUMN 3: HỖ TRỢ & CHÍNH SÁCH */}
           <div>
-            <h3 className="mb-5 border-l-2 border-purple-400 pl-3 text-sm font-sans font-black uppercase tracking-[0.22em] text-white">HỖ TRỢ & ĐIỀU CHẾ</h3>
-            <ul className="space-y-3 text-xs uppercase tracking-[0.14em] font-sans font-semibold text-neutral-300">
-              <li className="group flex items-center gap-3"><span className="h-1.5 w-1.5 shrink-0 rotate-45 border border-purple-300/70 bg-purple-400/20 transition group-hover:bg-purple-300 group-hover:shadow-[0_0_10px_rgba(168,85,247,0.7)]" /><span className="cursor-pointer border-b border-transparent pb-0.5 transition-colors duration-250 group-hover:border-purple-300 group-hover:text-purple-200">Liên hệ phòng vé</span></li>
-              <li className="group flex items-center gap-3">
-                <span className="h-1.5 w-1.5 shrink-0 rotate-45 border border-purple-300/70 bg-purple-400/20 transition group-hover:bg-purple-300 group-hover:shadow-[0_0_10px_rgba(168,85,247,0.7)]" />
+            <h4 className="text-[12px] font-black uppercase tracking-[0.16em] text-white mb-3 flex items-center gap-1.5">
+              <Shield className="h-3.5 w-3.5 text-purple-400" />
+              <span>HỖ TRỢ & CHÍNH SÁCH</span>
+            </h4>
+            <ul className="space-y-2 text-[11.5px] font-medium">
+              <li>
                 <button
                   type="button"
                   onClick={() => onTabChange('policies')}
-                  className="cursor-pointer border-b border-transparent pb-0.5 text-left transition-colors duration-250 group-hover:border-purple-300 group-hover:text-purple-200"
+                  className="hover:text-white transition-colors flex items-center gap-1.5 group"
                 >
-                  Chính sách rạp
+                  <ChevronRight className="h-3 w-3 text-neutral-600 group-hover:text-purple-400 transition-colors" />
+                  <span>Quy định đặt vé & hoàn tiền</span>
                 </button>
               </li>
-              <li className="group flex items-center gap-3">
-                <span className="h-1.5 w-1.5 shrink-0 rotate-45 border border-purple-300/70 bg-purple-400/20 transition group-hover:bg-purple-300 group-hover:shadow-[0_0_10px_rgba(168,85,247,0.7)]" />
+              <li>
                 <button
                   type="button"
                   onClick={() => onTabChange('policies')}
-                  className="cursor-pointer border-b border-transparent pb-0.5 text-left transition-colors duration-250 group-hover:border-purple-300 group-hover:text-purple-200"
+                  className="hover:text-white transition-colors flex items-center gap-1.5 group"
                 >
-                  Chính sách bảo mật
+                  <ChevronRight className="h-3 w-3 text-neutral-600 group-hover:text-purple-400 transition-colors" />
+                  <span>Chính sách bảo mật thông tin</span>
                 </button>
               </li>
-              <li className="group flex items-center gap-3">
-                <span className="h-1.5 w-1.5 shrink-0 rotate-45 border border-purple-300/70 bg-purple-400/20 transition group-hover:bg-purple-300 group-hover:shadow-[0_0_10px_rgba(168,85,247,0.7)]" />
+              <li>
                 <button
                   type="button"
                   onClick={() => onTabChange('policies')}
-                  className="cursor-pointer border-b border-transparent pb-0.5 text-left transition-colors duration-250 group-hover:border-purple-300 group-hover:text-purple-200"
+                  className="hover:text-white transition-colors flex items-center gap-1.5 group"
                 >
-                  Điều hành sử dụng vé
+                  <ChevronRight className="h-3 w-3 text-neutral-600 group-hover:text-purple-400 transition-colors" />
+                  <span>Quy định độ tuổi xem phim (T13, T16, T18)</span>
                 </button>
               </li>
-              <li className="group flex items-center gap-3">
-                <span className="h-1.5 w-1.5 shrink-0 rotate-45 border border-purple-300/70 bg-purple-400/20 transition group-hover:bg-purple-300 group-hover:shadow-[0_0_10px_rgba(168,85,247,0.7)]" />
+              <li>
                 <button
                   type="button"
                   onClick={() => onTabChange('policies')}
-                  className="cursor-pointer border-b border-transparent pb-0.5 text-left transition-colors duration-250 group-hover:border-purple-300 group-hover:text-purple-200"
+                  className="hover:text-white transition-colors flex items-center gap-1.5 group"
                 >
-                  Quy chuẩn hoạt động
+                  <ChevronRight className="h-3 w-3 text-neutral-600 group-hover:text-purple-400 transition-colors" />
+                  <span>Quy định phòng chiếu VIP Lounge</span>
                 </button>
               </li>
             </ul>
           </div>
 
-          {/* Column 4: Newsletter sign-up */}
-          <div className="space-y-5">
-            <h3 className="border-l-2 border-purple-400 pl-3 text-sm font-sans font-black uppercase tracking-[0.22em] text-white">THƯ CHIÊU ĐÃI VIP</h3>
-            <p className="text-[10px] text-neutral-300 font-sans font-normal leading-6">Nhập email để nhận thư thông cáo về điện ảnh độc sắc và các quyền lợi thành viên.</p>
-
-            {subscribed ? (
-              <div className="border border-emerald-400/30 bg-emerald-950/20 p-3 text-xs uppercase tracking-wider text-emerald-200">
-                ✓ Thiết lập đăng ký thành công.
-              </div>
-            ) : (
-              <form onSubmit={handleSubscribe} className="relative flex max-w-sm items-center">
-                <input
-                  type="email"
-                  required
-                  placeholder="EMAIL CỦA BẠN..."
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full border border-purple-400/30 bg-[#0A0A0A] py-3 pl-4 pr-12 text-xs tracking-wider text-white uppercase placeholder-neutral-600 transition focus:border-purple-300 focus:outline-none"
-                />
+          {/* COLUMN 4: TÀI KHOẢN & ĐẶC QUYỀN HỘI VIÊN */}
+          <div>
+            <h4 className="text-[12px] font-black uppercase tracking-[0.16em] text-[#F7C600] mb-3 flex items-center gap-1.5">
+              <Award className="h-3.5 w-3.5" />
+              <span>CINEPREMIER CLUB</span>
+            </h4>
+            <ul className="space-y-2 text-[11.5px] font-medium">
+              <li>
                 <button
-                  type="submit"
-                  className="absolute right-1.5 top-1.5 bg-purple-600 text-white hover:bg-purple-500 p-2 transition duration-250"
+                  type="button"
+                  onClick={() => onTabChange('profile')}
+                  className="hover:text-white transition-colors flex items-center gap-1.5 group"
                 >
-                  <ArrowRight className="h-4 w-4" />
+                  <ChevronRight className="h-3 w-3 text-neutral-600 group-hover:text-[#F7C600] transition-colors" />
+                  <span>Đăng ký thành viên mới (Tặng 50K)</span>
                 </button>
-              </form>
-            )}
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => onTabChange('my-tickets')}
+                  className="hover:text-white transition-colors flex items-center gap-1.5 group"
+                >
+                  <ChevronRight className="h-3 w-3 text-neutral-600 group-hover:text-[#F7C600] transition-colors" />
+                  <span>Tra cứu vé điện tử đã mua</span>
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => onTabChange('wishlist')}
+                  className="hover:text-white transition-colors flex items-center gap-1.5 group"
+                >
+                  <ChevronRight className="h-3 w-3 text-neutral-600 group-hover:text-[#F7C600] transition-colors" />
+                  <span>Danh sách phim yêu thích</span>
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => onTabChange('profile')}
+                  className="hover:text-white transition-colors flex items-center gap-1.5 group"
+                >
+                  <ChevronRight className="h-3 w-3 text-neutral-600 group-hover:text-[#F7C600] transition-colors" />
+                  <span>Tích điểm CinePoints & Quà tặng</span>
+                </button>
+              </li>
+            </ul>
+
+            {/* Payment partners badges */}
+            <div className="mt-3.5 pt-3 border-t border-white/[0.08]">
+              <p className="text-[9.5px] font-bold uppercase tracking-wider text-neutral-400 mb-1.5">
+                Phương thức thanh toán
+              </p>
+              <div className="flex flex-wrap items-center gap-1.5 text-[9px] font-mono font-bold text-neutral-300">
+                <span className="rounded-none border border-white/10 bg-white/5 px-1.5 py-0.5">VISA</span>
+                <span className="rounded-none border border-white/10 bg-white/5 px-1.5 py-0.5">MASTERCARD</span>
+                <span className="rounded-none border border-white/10 bg-white/5 px-1.5 py-0.5">NAPAS</span>
+                <span className="rounded-none border border-white/10 bg-white/5 px-1.5 py-0.5 text-pink-400">MOMO</span>
+                <span className="rounded-none border border-white/10 bg-white/5 px-1.5 py-0.5 text-blue-400">ZALOPAY</span>
+              </div>
+            </div>
           </div>
 
         </div>
 
-        {/* Bottom copyright barrier */}
-        <div className="mt-16 border-t border-purple-500/20 pt-8 flex flex-col md:flex-row items-center justify-between text-[10px] uppercase tracking-[0.16em] text-neutral-500">
-          <p>© 2026 CINEPREMIER STUDIOS. ALL RIGHTS RESERVED.</p>
-          <div className="mt-4 md:mt-0 flex space-x-4">
-            <span>Powered by CinePremier Booking Engine</span>
+        {/* Bottom Copyright */}
+        <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11px] text-neutral-400">
+          <p>© 2026 CINEPREMIER STUDIOS. Tất cả quyền được bảo lưu.</p>
+          <div className="flex items-center gap-4 text-neutral-400">
+            <span className="hover:text-white cursor-pointer transition-colors">Điều khoản</span>
             <span>•</span>
-            <span>Thế Điện Ảnh Tinh Hoa</span>
+            <span className="hover:text-white cursor-pointer transition-colors">Bảo mật</span>
+            <span>•</span>
+            <span className="hover:text-white cursor-pointer transition-colors">Phòng vé</span>
           </div>
         </div>
+
       </div>
     </footer>
   );

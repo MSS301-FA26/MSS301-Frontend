@@ -168,9 +168,14 @@ export const adminService = {
   expireLoyaltyPointsNow:     (token) => request('/api/v1/admin/loyalty/expire-now', { method: 'POST', token }),
   grantLoyaltyPoints:         (token, payload) => request('/api/v1/admin/loyalty/add', { method: 'POST', token, body: payload }),
 
-  // Reviews
-  getAdminReviews:    (token, params = {}) => request(`/api/v1/admin/reviews${buildQueryString(params)}`, { token }).then(normalizePageResponse),
-  deleteAdminReview:  (token, reviewId) => request(`/api/v1/admin/reviews/${enc(reviewId)}`, { method: 'DELETE', token }),
+  // Reviews & Moderation
+  getAdminReviews:       (token, params = {}) => request(`/api/v1/admin/reviews${buildQueryString(params)}`, { token }).then(normalizePageResponse),
+  getAdminReviewStats:   (token) => request('/api/v1/admin/reviews/stats', { token }),
+  getAdminReviewDetail:  (token, reviewId) => request(`/api/v1/admin/reviews/${enc(reviewId)}`, { token }),
+  hideAdminReview:       (token, reviewId, reason) => request(`/api/v1/admin/reviews/${enc(reviewId)}/hide`, { method: 'POST', token, body: { reason } }),
+  restoreAdminReview:    (token, reviewId) => request(`/api/v1/admin/reviews/${enc(reviewId)}/restore`, { method: 'POST', token }),
+  rejectAdminReview:     (token, reviewId, reason) => request(`/api/v1/admin/reviews/${enc(reviewId)}/reject`, { method: 'POST', token, body: { reason } }),
+  getAdminReviewReports: (token, reviewId) => request(`/api/v1/admin/reviews/${enc(reviewId)}/reports`, { token }),
 
   // ── Ticket Pricing ─────────────────────────────────────────────────────────
   getAdminTicketPricingRules:   (token, params = {}) => pricingRules.getAll(token, params),

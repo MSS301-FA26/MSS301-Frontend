@@ -1,4 +1,8 @@
+<<<<<<< HEAD
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+=======
 ﻿import React, { useEffect, useState, useMemo, useCallback } from 'react';
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -29,6 +33,7 @@ import AdminWalletPanel from './system/AdminWalletPanel';
 import AdminCinemaPanel from './cinema/AdminCinemaPanel';
 import AdminRoomsPanel from './cinema/AdminRoomsPanel';
 import AdminTicketsPanel from './cinema/AdminTicketsPanel';
+import AdminHeroBannerPanel from './marketing/AdminHeroBannerPanel';
 
 import AdminAuditPanel from './system/AdminAuditPanel';
 import AdminStatsPanel from './overview/AdminStatsPanel';
@@ -67,15 +72,27 @@ function NavSectionLabel({ children }) {
 const SECTION_TITLE = {
   overview: 'Tổng quan hệ thống', movies: 'Thư viện phim', genres: 'Thể loại phim',
   actors: 'Diễn viên', directors: 'Đạo diễn', foods: 'Bắp nước / F&B', rooms: 'Phòng chiếu & ghế', pricing: 'Bảng giá vé', settings: 'Cấu hình hệ thống',
+<<<<<<< HEAD
+  'hero-banners': 'Quản lý Hero Banner',
+  showtimes: 'Điều phối lịch chiếu', tickets: 'Quản lý vé', transactions: 'Giao dịch',
+  'showtime-incidents': 'Báo cáo sự cố & hoàn tiền', 'fnb-report': 'Báo cáo F&B',
+  statistics: 'Thống kê mua bán', audit: 'Audit log', users: 'Quản lý người dùng', staff: 'Nhân viên cụm rạp',
+  reviews: 'Đánh giá phim', loyalty: 'Quản lý điểm', cinewallet: 'CineWallet', cinema: 'Hệ thống cụm rạp',
+=======
 
   showtimes: 'Điều phối lịch chiếu', tickets: 'Quản lý vé', transactions: 'Giao dịch',
   'showtime-incidents': 'Báo cáo sự cố & hoàn tiền', 'fnb-report': 'Báo cáo F&B',
   statistics: 'Thống kê mua bán', audit: 'Audit log', users: 'Quản lý người dùng', staff: 'Nhân viên cụm rạp',
   reviews: 'Đánh giá', loyalty: 'Quản lý điểm', cinewallet: 'CineWallet', cinema: 'Hệ thống cụm rạp',
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
 };
 
 const getNavGroup = (section) => {
   if (['genres', 'actors', 'directors', 'movies'].includes(section)) return 'movies';
+<<<<<<< HEAD
+  if (['hero-banners'].includes(section)) return 'marketing';
+=======
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
   if (['foods', 'fnb-report'].includes(section)) return 'fnb';
   if (['cinema', 'rooms', 'showtimes', 'pricing', 'tickets', 'transactions', 'showtime-incidents'].includes(section)) return 'cinema';
   if (['statistics', 'audit'].includes(section)) return 'insights';
@@ -85,6 +102,7 @@ const getNavGroup = (section) => {
 
 const ADMIN_SECTIONS = new Set([
   'overview',
+  'hero-banners',
   'genres',
   'actors',
   'directors',
@@ -137,6 +155,7 @@ export default function AdminDashboard({
   const [openNavGroup, setOpenNavGroup] = useState(getNavGroup(normalizeAdminSection(initialSection)));
   const [activeChartPoint, setActiveChartPoint] = useState(6);
   const [collapsedTooltip, setCollapsedTooltip] = useState(null); // { key: 'logo'|tab, y: number }
+  const [heroBannerInitialMovieId, setHeroBannerInitialMovieId] = useState(null);
   // Create state for movies so the dashboard can add/update them
   const [searchQuery, setSearchQuery] = useState('');
   const [filmFilter, setFilmFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'UPCOMING'
@@ -543,8 +562,11 @@ export default function AdminDashboard({
     }
   };
 
-  const changeAdminSection = (section) => {
+  const changeAdminSection = (section, options = {}) => {
     const nextSection = normalizeAdminSection(section);
+    if (options?.createWithMovieId) {
+      setHeroBannerInitialMovieId(options.createWithMovieId);
+    }
     setActiveTab(nextSection);
     onSectionChange(nextSection);
     window.history.replaceState(null, '', `${basePath}/${nextSection}`);
@@ -1727,6 +1749,8 @@ export default function AdminDashboard({
     initialSection,
     onSectionChange,
     onFoodCatalogChanged,
+    heroBannerInitialMovieId,
+    setHeroBannerInitialMovieId,
     isAdmin,
     isManager,
     currentUser
@@ -1734,6 +1758,7 @@ export default function AdminDashboard({
 
   const adminPanels = {
     overview: AdminOverviewPanel,
+    'hero-banners': AdminHeroBannerPanel,
     movies: AdminMoviesPanel,
     genres: AdminGenresPanel,
     actors: AdminActorsPanel,
@@ -1795,6 +1820,8 @@ export default function AdminDashboard({
           {sidebarCollapsed ? (
             <div className="py-3 flex flex-col items-center">
               {(isEffectiveManager ? [
+<<<<<<< HEAD
+=======
                 { icon: Activity, tab: 'overview', sound: 440 },
                 null,
                 { icon: Layers, tab: 'rooms', sound: 470 },
@@ -1808,7 +1835,25 @@ export default function AdminDashboard({
                 { icon: BarChart2, tab: 'fnb-report', sound: 486 },
                 { icon: BarChart2, tab: 'statistics', sound: 505 },
               ] : [
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
                 { icon: Activity, tab: 'overview', sound: 440 },
+                null,
+                { icon: Clapperboard, tab: 'hero-banners', sound: 462 },
+                null,
+                { icon: Layers, tab: 'rooms', sound: 470 },
+                { icon: Calendar, tab: 'showtimes', sound: 480 },
+                { icon: DollarSign, tab: 'pricing', sound: 475 },
+                { icon: AlertCircle, tab: 'showtime-incidents', sound: 486 },
+                { icon: FileText, tab: 'tickets', sound: 492 },
+                null,
+                { icon: Shield, tab: 'staff', sound: 512 },
+                null,
+                { icon: BarChart2, tab: 'fnb-report', sound: 486 },
+                { icon: BarChart2, tab: 'statistics', sound: 505 },
+              ] : [
+                { icon: Activity, tab: 'overview', sound: 440 },
+                null,
+                { icon: Clapperboard, tab: 'hero-banners', sound: 462 },
                 null,
                 { icon: Tags, tab: 'genres', sound: 470 },
                 { icon: Users, tab: 'actors', sound: 465 },
@@ -1872,6 +1917,10 @@ export default function AdminDashboard({
                 <NavSectionLabel>Tổng quan</NavSectionLabel>
                 <NavItem icon={Activity} label={isEffectiveManager ? "Tổng quan cụm rạp" : "Tổng quan hệ thống"} active={activeTab === 'overview'} onClick={() => { playPulseSound(440, 'sine', 0.05); changeAdminSection('overview'); }} />
 
+<<<<<<< HEAD
+                <NavSectionLabel>Nội dung &amp; Marketing</NavSectionLabel>
+                <NavItem indent icon={Clapperboard} label="Hero Banner" active={activeTab === 'hero-banners'} onClick={() => { playPulseSound(462, 'sine', 0.05); changeAdminSection('hero-banners'); }} />
+
                 {isEffectiveAdmin && (
                   <>
                     <NavSectionLabel>Quản lý phim</NavSectionLabel>
@@ -1881,6 +1930,17 @@ export default function AdminDashboard({
                   </>
                 )}
 
+=======
+                {isEffectiveAdmin && (
+                  <>
+                    <NavSectionLabel>Quản lý phim</NavSectionLabel>
+                    <NavItem indent icon={Tags} label="Thể loại phim" active={activeTab === 'genres'} onClick={() => { playPulseSound(470, 'sine', 0.05); changeAdminSection('genres'); }} />
+                    <NavItem indent icon={Users} label="Diễn viên" active={activeTab === 'actors'} onClick={() => { playPulseSound(465, 'sine', 0.05); changeAdminSection('actors'); }} />
+                    <NavItem indent icon={Film} label="Thư viện phim" active={activeTab === 'movies'} onClick={() => { playPulseSound(460, 'sine', 0.05); changeAdminSection('movies'); }} />
+                  </>
+                )}
+
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
                 <NavSectionLabel>{isEffectiveManager ? "Vận hành rạp" : "Quản lý rạp"}</NavSectionLabel>
                 {isEffectiveAdmin && (
                   <NavItem indent icon={Building2} label="Hệ thống cụm rạp" active={activeTab === 'cinema'} onClick={() => { playPulseSound(465, 'sine', 0.05); changeAdminSection('cinema'); }} />
@@ -1894,12 +1954,28 @@ export default function AdminDashboard({
                   <NavItem indent icon={FileText} label="Giao dịch" active={activeTab === 'transactions'} onClick={() => { playPulseSound(500, 'sine', 0.05); changeAdminSection('transactions'); }} />
                 )}
 
+<<<<<<< HEAD
+                {isEffectiveAdmin && (
+                  <>
+                    <NavSectionLabel>Khách hàng</NavSectionLabel>
+                    <NavItem indent icon={Users} label="Người dùng" active={activeTab === 'users'} onClick={() => { playPulseSound(510, 'sine', 0.05); changeAdminSection('users'); }} />
+                    <NavItem indent icon={MessageSquare} label="Đánh giá phim" active={activeTab === 'reviews'} onClick={() => { playPulseSound(515, 'sine', 0.05); changeAdminSection('reviews'); }} />
+                    <NavItem indent icon={DollarSign} label="Điểm tích lũy" active={activeTab === 'loyalty'} onClick={() => { playPulseSound(520, 'sine', 0.05); changeAdminSection('loyalty'); }} />
+                    <NavItem indent icon={Wallet} label="CineWallet" active={activeTab === 'cinewallet'} onClick={() => { playPulseSound(525, 'sine', 0.05); changeAdminSection('cinewallet'); }} />
+                  </>
+                )}
+
+                <NavSectionLabel>Nhân sự</NavSectionLabel>
+                <NavItem indent icon={Shield} label={isEffectiveManager ? "Nhân viên rạp mình" : "Nhân sự rạp (Staff)"} active={activeTab === 'staff'} onClick={() => { playPulseSound(512, 'sine', 0.05); changeAdminSection('staff'); }} />
+
+=======
                 <NavSectionLabel>Nhân sự</NavSectionLabel>
                 {isEffectiveAdmin && (
                   <NavItem indent icon={Users} label="Người dùng (Khách hàng)" active={activeTab === 'users'} onClick={() => { playPulseSound(510, 'sine', 0.05); changeAdminSection('users'); }} />
                 )}
                 <NavItem indent icon={Shield} label={isEffectiveManager ? "Nhân viên rạp mình" : "Nhân sự rạp (Staff)"} active={activeTab === 'staff'} onClick={() => { playPulseSound(512, 'sine', 0.05); changeAdminSection('staff'); }} />
 
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
                 <NavSectionLabel>Báo cáo &amp; F&B</NavSectionLabel>
                 {isEffectiveAdmin && (
                   <NavItem indent icon={ShoppingBag} label="Quản lý bắp nước" active={activeTab === 'foods'} onClick={() => { playPulseSound(478, 'sine', 0.05); changeAdminSection('foods'); }} />
@@ -1911,9 +1987,12 @@ export default function AdminDashboard({
                   <>
                     <NavSectionLabel>Hệ thống &amp; Giám sát</NavSectionLabel>
                     <NavItem indent icon={ShieldAlert} label="Audit log" active={activeTab === 'audit'} onClick={() => { playPulseSound(508, 'sine', 0.05); changeAdminSection('audit'); }} />
+<<<<<<< HEAD
+=======
                     <NavItem indent icon={MessageSquare} label="Đánh giá" active={activeTab === 'reviews'} onClick={() => { playPulseSound(515, 'sine', 0.05); changeAdminSection('reviews'); }} />
                     <NavItem indent icon={DollarSign} label="Điểm tích lũy" active={activeTab === 'loyalty'} onClick={() => { playPulseSound(520, 'sine', 0.05); changeAdminSection('loyalty'); }} />
                     <NavItem indent icon={Wallet} label="CineWallet" active={activeTab === 'cinewallet'} onClick={() => { playPulseSound(525, 'sine', 0.05); changeAdminSection('cinewallet'); }} />
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
                     <NavItem indent icon={Sliders} label="Cấu hình hệ thống" active={activeTab === 'settings'} onClick={() => { playPulseSound(530, 'sine', 0.05); changeAdminSection('settings'); }} />
                   </>
                 )}
@@ -2020,31 +2099,6 @@ export default function AdminDashboard({
         <div className="flex-1 min-w-0 overflow-y-auto bg-[#020202]">
           <div className={activeTab === 'showtimes' ? "px-0 xl:px-0 py-6 space-y-5" : "px-5 xl:px-7 py-6 space-y-5"}>
 
-            {/* METRIC CARDS */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" id="corporate-bento-metrics">
-              {[
-                { label: 'Tổng doanh thu', sub: '30 ngày gần nhất', value: `${calculatedRevenue.toLocaleString()}đ`, icon: DollarSign, iconColor: 'text-amber-500', barColor: 'from-amber-500 to-amber-400', barW: '72%' },
-                { label: 'Vé bán ra', sub: '30 ngày gần nhất', value: `${totalBookingsCount}`, unit: 'vé', icon: FileText, iconColor: 'text-emerald-400', barColor: 'from-emerald-500 to-emerald-400', barW: '58%' },
-                { label: 'Lấp đầy rạp', sub: 'Tỉ lệ trung bình', value: `${averageFillRate}`, unit: '%', icon: Activity, iconColor: 'text-blue-400', barColor: 'from-blue-500 to-blue-400', barW: `${Math.min(100, averageFillRate)}%` },
-                { label: 'Thư viện phim', sub: 'Đang hoạt động', value: `${moviesList.length}`, unit: 'phim', icon: Film, iconColor: 'text-violet-400', barColor: 'from-violet-500 to-violet-400', barW: '85%' },
-              ].map(({ label, sub, value, unit, icon: Icon, iconColor, barColor, barW }) => (
-                <div key={label} className="bg-gradient-to-b from-[#0d0d0d] to-[#050505] border border-white/[0.04] p-4 space-y-3 relative overflow-hidden">
-                  <div className="flex justify-between items-start">
-                    <span className="text-[8.5px] tracking-[0.15em] font-extrabold text-neutral-200 uppercase font-mono">{label}</span>
-                    <Icon className={`h-4 w-4 shrink-0 ${iconColor}`} />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-mono font-black text-white leading-none">
-                      {value}{unit && <span className="text-[11px] font-bold text-neutral-300 ml-1">{unit}</span>}
-                    </h2>
-                    <p className="text-[8px] text-neutral-300 font-mono mt-1 uppercase tracking-wider">{sub}</p>
-                  </div>
-                  <div className="h-px bg-neutral-900 overflow-hidden">
-                    <div className={`h-full bg-gradient-to-r ${barColor}`} style={{ width: barW }} />
-                  </div>
-                </div>
-              ))}
-            </div>
 
             {/* ACTIVE PANEL */}
             <AnimatePresence mode="wait">
@@ -2406,7 +2460,11 @@ export default function AdminDashboard({
                     >
                       <span className="flex items-center space-x-2.5">
                         <MessageSquare className="h-4 w-4 shrink-0 text-amber-500" />
+<<<<<<< HEAD
+                        <span className="whitespace-nowrap">ĐÁNH GIÁ PHIM</span>
+=======
                         <span className="whitespace-nowrap">ĐÁNH GIÁ</span>
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
                       </span>
                       {activeTab === 'reviews' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
                     </button>

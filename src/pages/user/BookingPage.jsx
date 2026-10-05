@@ -408,6 +408,9 @@ export default function BookingPage() {
     return () => { cancelled = true; };
   }, [id, currentRole]);
 
+<<<<<<< HEAD
+  // Không có showtimeId: bắt đầu tại bước chọn suất chiếu ngay trong trang book.
+=======
   // Nếu truy cập /book mà chưa có showtimeId thì điều hướng sang trang 4 bước /showtimes
   useEffect(() => {
     const preferId = searchParams.get('showtimeId');
@@ -417,6 +420,7 @@ export default function BookingPage() {
       navigate(`/showtimes?movieId=${targetMovieId}`, { replace: true });
     }
   }, [searchParams, id, movie?.backendId, movie?.id, navigate]);
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
 
   useEffect(() => {
     if (!movie || isMovieBookable) return;
@@ -461,8 +465,8 @@ export default function BookingPage() {
   const [loyaltyPointsInput, setLoyaltyPointsInput] = useState('');
   const [loyaltyConfig, setLoyaltyConfig] = useState(DEFAULT_LOYALTY_CONFIG);
 
-  // Booking & Hold states
-  const [bookingStep, setBookingStep] = useState('schedule'); // 'schedule' | 'seats' | 'combos'
+  // Booking & Hold states (starts directly at seats, since schedule is selected outside)
+  const [bookingStep, setBookingStep] = useState('seats'); // 'seats' | 'combos'
   const [holdBookingId, setHoldBookingId] = useState(null);
   const [holdExpiresAt, setHoldExpiresAt] = useState(null);
   const [holdSecondsLeft, setHoldSecondsLeft] = useState(null);
@@ -648,6 +652,48 @@ export default function BookingPage() {
     if (!targetMovieId || isNaN(targetMovieId)) return;
 
     let cancelled = false;
+<<<<<<< HEAD
+    const preferId = searchParams.get('showtimeId');
+    const isResuming = Boolean(searchParams.get('resumeBookingId'));
+    if (isResuming) return;
+
+    if (!preferId) {
+      showToast('Vui lòng chọn suất chiếu từ trang thông tin phim.');
+      navigate(`/movies/${movie?.backendId || movie?.id || id}`, { replace: true });
+      return;
+    }
+
+    const loadShowtimeAndSeats = async () => {
+      try {
+        setIsLoadingShowtimes(true);
+        const [res, detailRes] = await Promise.allSettled([
+          bookingService.resolveCustomerShowtime(preferId),
+          bookingService.getShowtimeDetail(preferId)
+        ]);
+        if (cancelled) return;
+
+        const resolved = res.status === 'fulfilled' ? (res.value?.data || res.value) : {};
+        const detail = detailRes.status === 'fulfilled' ? (detailRes.value?.data || detailRes.value) : {};
+
+        let stData = null;
+        if (detail?.id || resolved?.showtimeId || resolved?.id) {
+          stData = {
+            ...resolved,
+            ...detail,
+            id: resolved.showtimeId || detail.id || Number(preferId),
+            showtimeId: resolved.showtimeId || detail.id || Number(preferId),
+            roomId: resolved.roomId || detail.roomId,
+            roomName: resolved.roomName || detail.roomName,
+            cinemaId: resolved.cinemaId || detail.cinemaId || searchParams.get('cinemaId'),
+            cinemaName: resolved.cinemaName || detail.cinemaName,
+            basePrice: detail.adultStandardPrice || detail.basePrice || resolved.adultStandardPrice || resolved.startingPrice || 90000,
+            format: resolved.format || detail.format || '2D'
+          };
+        } else {
+          const list = await fetchShowtimes(targetMovieId);
+          if (cancelled) return;
+          stData = list.find(st => String(st.id) === String(preferId) || String(st.showtimeId) === String(preferId));
+=======
     fetchShowtimes(targetMovieId).then(list => {
       if (cancelled) return;
       if (list && list.length > 0) {
@@ -666,18 +712,35 @@ export default function BookingPage() {
             setSelectedShowtime(null);
             setBookingStep('schedule');
           }
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
         }
-      } else {
-        if (!searchParams.get('resumeBookingId')) {
-          setSelectedDate('');
-          setSelectedShowtime(null);
-          setBookingStep('schedule');
+
+        if (!stData) {
+          showToast('Suất chiếu không tồn tại hoặc đã đóng đặt vé online.');
+          navigate(`/movies/${movie?.backendId || movie?.id || id}`, { replace: true });
+          return;
         }
+
+        const dateFromParam = searchParams.get('date');
+        const dateFromStart = stData.startTime?.split('T')[0] || '';
+        setSelectedDate(dateFromParam || dateFromStart);
+        setSelectedShowtime(stData);
+        setBookingStep('seats');
+      } catch (err) {
+        if (!cancelled) {
+          console.warn('BookingPage: load showtime failed:', err);
+          showToast('Không thể tải thông tin suất chiếu.');
+          navigate(`/movies/${movie?.backendId || movie?.id || id}`, { replace: true });
+        }
+      } finally {
+        if (!cancelled) setIsLoadingShowtimes(false);
       }
-    });
+    };
+
+    loadShowtimeAndSeats();
 
     return () => { cancelled = true; };
-  }, [id, movie?.backendId, movie?.id]);
+  }, [id, movie?.backendId, movie?.id, searchParams]);
 
   // Load Resumed Booking (khi bấm "Tiếp tục thanh toán" từ trang /tickets)
   useEffect(() => {
@@ -1056,8 +1119,7 @@ export default function BookingPage() {
   const handleBackToSchedule = async () => {
     await handleReleaseOldHoldIfAny();
     setSelectedSeats([]);
-    setBookingStep('schedule');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    navigate(`/movies/${movie?.backendId || movie?.id || id}`);
   };
 
   // Map seats from seatMapData
@@ -1886,69 +1948,55 @@ export default function BookingPage() {
           </div>
         </div>
 
-        {/* Progress Indicator (Rule LIII) */}
+        {/* Progress Indicator */}
         <div className="flex items-center space-x-1 sm:space-x-1.5 text-[11px] font-semibold uppercase tracking-wider overflow-x-auto py-0.5">
           <button
-            onClick={() => {
-              if (paymentState === 'booking') handleBackToSchedule();
-            }}
-            className={`flex items-center gap-1.5 transition ${
-              bookingStep === 'schedule'
-                ? 'text-amber-400 font-bold'
-                : selectedShowtime
-                  ? 'text-emerald-400'
-                  : 'text-neutral-500'
-            }`}
+            onClick={handleBackToSchedule}
+            className="flex items-center gap-1.5 transition text-neutral-400 hover:text-amber-400 cursor-pointer"
+            title="Quay lại trang chi tiết phim để chọn suất chiếu khác"
           >
-            <span className={`w-4 h-4 rounded-full flex items-center justify-center font-bold text-[9px] ${
-              bookingStep === 'schedule'
-                ? 'bg-amber-500 text-black ring-1.5 ring-amber-400/50'
-                : selectedShowtime
-                  ? 'bg-emerald-500 text-black'
-                  : 'bg-neutral-800 text-neutral-400'
-            }`}>
-              {selectedShowtime && bookingStep !== 'schedule' ? '✓' : '1'}
-            </span>
-            <span>Lịch chiếu</span>
+            <ArrowLeft className="h-3.5 w-3.5" />
+            <span>Đổi suất chiếu</span>
           </button>
           <ChevronRight className="h-2.5 w-2.5 text-neutral-600 shrink-0" />
 
           <button
-            disabled={!selectedShowtime}
             onClick={() => {
-              if (paymentState === 'booking' && selectedShowtime) handleProceedToSeats();
-              else if (paymentState === 'payment_method') {
+              if (paymentState === 'payment_method') {
                 setPaymentState('booking');
+                setBookingStep('seats');
+              } else {
                 setBookingStep('seats');
               }
             }}
-            className={`flex items-center gap-1.5 transition ${
-              selectedSeats.length > 0 && bookingStep !== 'seats' && bookingStep !== 'schedule'
+            className={`flex items-center gap-1.5 transition cursor-pointer ${
+              selectedSeats.length > 0 && bookingStep !== 'seats'
                 ? 'text-emerald-400'
                 : bookingStep === 'seats'
                   ? 'text-amber-400 font-bold'
-                  : 'text-neutral-500 disabled:opacity-30'
+                  : 'text-neutral-500'
             }`}
           >
             <span className={`w-4 h-4 rounded-full flex items-center justify-center font-bold text-[9px] ${
-              selectedSeats.length > 0 && bookingStep !== 'seats' && bookingStep !== 'schedule'
+              selectedSeats.length > 0 && bookingStep !== 'seats'
                 ? 'bg-emerald-500 text-black'
                 : bookingStep === 'seats'
                   ? 'bg-amber-500 text-black ring-1.5 ring-amber-400/50'
                   : 'bg-neutral-800 text-neutral-400'
             }`}>
-              {selectedSeats.length > 0 && bookingStep !== 'seats' && bookingStep !== 'schedule' ? '✓' : '2'}
+              {selectedSeats.length > 0 && bookingStep !== 'seats' ? '✓' : '1'}
             </span>
-            <span>Chọn ghế</span>
+            <span>1. Chọn ghế</span>
           </button>
           <ChevronRight className="h-2.5 w-2.5 text-neutral-600 shrink-0" />
 
           <button
             disabled={selectedSeats.length === 0}
             onClick={() => {
-              if (paymentState === 'booking') setBookingStep('combos');
-              else if (paymentState === 'payment_method') {
+              if (paymentState === 'payment_method') {
                 setPaymentState('booking');
+                setBookingStep('combos');
+              } else {
                 setBookingStep('combos');
               }
             }}
@@ -1956,7 +2004,7 @@ export default function BookingPage() {
               paymentState === 'payment_method' || paymentState === 'payment_success'
                 ? 'text-emerald-400'
                 : bookingStep === 'combos'
-                  ? 'text-amber-400'
+                  ? 'text-amber-400 font-bold'
                   : 'text-neutral-500 disabled:opacity-30'
             }`}
           >
@@ -1964,12 +2012,12 @@ export default function BookingPage() {
               paymentState === 'payment_method' || paymentState === 'payment_success'
                 ? 'bg-emerald-500 text-black'
                 : bookingStep === 'combos'
-                  ? 'bg-amber-500 text-black'
+                  ? 'bg-amber-500 text-black ring-1.5 ring-amber-400/50'
                   : 'bg-neutral-800 text-neutral-400'
             }`}>
-              {paymentState === 'payment_method' || paymentState === 'payment_success' ? '✓' : '3'}
+              {paymentState === 'payment_method' || paymentState === 'payment_success' ? '✓' : '2'}
             </span>
-            <span>Bắp nước</span>
+            <span>2. Bắp nước</span>
           </button>
           <ChevronRight className="h-2.5 w-2.5 text-neutral-600 shrink-0" />
 
@@ -1980,9 +2028,9 @@ export default function BookingPage() {
             }}
             className={`flex items-center gap-1.5 transition ${
               paymentState === 'payment_success'
-                ? 'text-emerald-400'
+                ? 'text-emerald-400 font-bold'
                 : paymentState === 'payment_method'
-                  ? 'text-amber-400'
+                  ? 'text-amber-400 font-bold'
                   : 'text-neutral-500 disabled:opacity-30'
             }`}
           >
@@ -1990,21 +2038,13 @@ export default function BookingPage() {
               paymentState === 'payment_success'
                 ? 'bg-emerald-500 text-black'
                 : paymentState === 'payment_method'
-                  ? 'bg-amber-500 text-black'
+                  ? 'bg-amber-500 text-black ring-1.5 ring-amber-400/50'
                   : 'bg-neutral-800 text-neutral-400'
             }`}>
-              {paymentState === 'payment_success' ? '✓' : '4'}
+              {paymentState === 'payment_success' ? '✓' : '3'}
             </span>
-            <span>Thanh toán</span>
+            <span>3. Thanh toán</span>
           </button>
-          <ChevronRight className="h-2.5 w-2.5 text-neutral-600 shrink-0" />
-
-          <span className={`flex items-center gap-1.5 ${paymentState === 'payment_success' ? 'text-amber-400 font-bold' : 'text-neutral-500'}`}>
-            <span className={`w-4 h-4 rounded-full flex items-center justify-center font-bold text-[9px] ${paymentState === 'payment_success' ? 'bg-amber-500 text-black' : 'bg-neutral-800 text-neutral-400'}`}>
-              5
-            </span>
-            <span>Hoàn tất</span>
-          </span>
         </div>
       </div>
 
@@ -2012,6 +2052,8 @@ export default function BookingPage() {
       <div className={`grid grid-cols-1 lg:grid-cols-12 ${bookingStep !== 'combos' ? 'gap-4' : 'gap-6'} items-start`}>
         <div className={`${bookingStep !== 'combos' ? 'lg:col-span-9' : 'lg:col-span-8'} space-y-4`}>
 
+<<<<<<< HEAD
+=======
           {/* =========================================================================
               VIEW 1: LỊCH CHIẾU (SCHEDULE VIEW)
               ========================================================================= */}
@@ -2105,166 +2147,8 @@ export default function BookingPage() {
                       <p className="text-[10px] text-neutral-400">Xem lịch các ngày sắp chiếu (không hiển thị ngày quá khứ)</p>
                     </div>
                   </div>
+>>>>>>> 994357b939ca99abf48e6008d0d9cb6c51892055
 
-                  <span className="text-[10px] text-amber-400/90 font-mono font-semibold bg-amber-950/30 border border-amber-500/20 px-2 py-0.5 rounded-none">
-                    {dateOptions.length} ngày khả dụng
-                  </span>
-                </div>
-
-                {isLoadingShowtimes ? (
-                  <div className="flex items-center justify-center gap-2 text-neutral-400 text-xs py-4">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500" /> Đang tải lịch chiếu...
-                  </div>
-                ) : dateOptions.length === 0 ? (
-                  <p className="text-xs text-neutral-500 py-3 text-center">Hiện chưa có lịch chiếu cho phim này.</p>
-                ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-1 gap-1.5 w-full pt-1.5">
-                    {dateOptions.map(date => {
-                      const isSelected = selectedDate === date;
-                      const isCurrentDay = isToday(date);
-                      const weekday = formatVietnameseWeekday(date);
-                      const shortWeekday = formatVietnameseShortWeekday(date);
-                      const dayMonth = formatVietnameseDayMonth(date);
-                      const showtimeCount = showtimesList.filter(st => st.startTime?.split('T')[0] === date).length;
-
-                      return (
-                        <button
-                          key={date}
-                          type="button"
-                          onClick={() => handleSelectDate(date)}
-                          className={`w-full py-2 px-0.5 sm:px-1 rounded-none border flex flex-col items-center justify-between transition-all duration-150 group relative select-none ${
-                            isSelected
-                              ? 'bg-gradient-to-b from-amber-400 to-amber-500 text-black border-amber-300 shadow-md shadow-amber-500/25 scale-[1.02] font-black ring-1.5 ring-amber-400/50'
-                              : 'bg-neutral-900/90 text-neutral-300 border-white/10 hover:border-amber-500/40 hover:bg-neutral-850'
-                          }`}
-                        >
-                          {isCurrentDay && (
-                            <span className={`absolute -top-2 px-1 sm:px-1.5 py-0.2 rounded-none text-[7px] sm:text-[8px] font-black uppercase tracking-wider z-10 ${
-                              isSelected ? 'bg-black text-amber-400 border border-amber-400/30' : 'bg-amber-500 text-black shadow'
-                            }`}>
-                              Hôm nay
-                            </span>
-                          )}
-                          <span className={`w-full grid grid-cols-[1fr_auto] items-center gap-x-2 text-[9px] sm:text-[10px] uppercase font-bold tracking-tight leading-tight ${
-                            isSelected ? 'text-black' : 'text-neutral-400 group-hover:text-amber-400'
-                          }`}>
-                            <span className="text-left hidden md:inline">{weekday}</span>
-                            <span className="text-left md:hidden">{shortWeekday}</span>
-                            <span className={`text-[10px] leading-none font-black font-mono scale-[1.8] origin-right ${isSelected ? 'text-black/80' : showtimeCount > 0 ? 'text-amber-400' : 'text-neutral-500'}`}>
-                              {showtimeCount}
-                            </span>
-                          </span>
-                          <span className="w-full grid grid-cols-[1fr_auto] items-end gap-x-2 mt-1">
-                            <span className="text-left text-base font-black font-mono tracking-tight">{dayMonth}</span>
-                            <span className={`text-[9px] font-medium uppercase ${isSelected ? 'text-black/80 font-bold' : 'text-neutral-500'}`}>
-                              suất
-                            </span>
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* 2. CHỌN SUẤT CHIẾU (Showtimes Grid) */}
-              <div className="rounded-none border border-white/10 bg-neutral-950 p-4 sm:p-5 space-y-4 shadow-md">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="h-7 w-7 rounded-none bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400">
-                      <Clock className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-white uppercase tracking-wider">2. Khung Giờ Chiếu</h3>
-                      <p className="text-[11px] text-neutral-400">Giờ bắt đầu — Giờ kết thúc (tính theo thời lượng phim)</p>
-                    </div>
-                  </div>
-
-                  <span className="text-[10.5px] font-mono text-neutral-400 bg-neutral-900 border border-white/10 px-2.5 py-1 rounded-none">
-                    Đóng đặt vé trước 10 phút
-                  </span>
-                </div>
-
-                {groupedShowtimesByFormat.length === 0 ? (
-                  <div className="text-center py-12 space-y-2.5 rounded-none border border-white/5 bg-neutral-900/30 p-6">
-                    <CalendarX className="w-8 h-8 text-neutral-500 mx-auto" />
-                    <p className="text-sm font-semibold text-neutral-300">
-                      Hiện không còn suất chiếu khả dụng trong ngày này.
-                    </p>
-                    <p className="text-xs text-neutral-500">
-                      Vui lòng chọn ngày khác ở danh sách bên cạnh.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {groupedShowtimesByFormat.map(({ formatKey, meta, showtimes }) => (
-                      <div
-                        key={formatKey}
-                        className="rounded-none border border-[#252a32] bg-[#0c0f14] p-3.5 sm:p-4 space-y-3 shadow-sm"
-                      >
-                        {/* Format Category Header */}
-                        <div className="flex items-center justify-between border-b border-[#22272f] pb-2">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-none border ${meta.badgeBg}`}>
-                              {formatKey}
-                            </span>
-                            <span className="text-xs font-bold text-white uppercase tracking-wide">
-                              {meta.label}
-                            </span>
-                            {meta.sublabel && (
-                              <span className="text-[10px] text-neutral-500 hidden sm:inline">
-                                • {meta.sublabel}
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-[10px] font-mono text-amber-400/80 font-semibold">
-                            {showtimes.length} suất
-                          </span>
-                        </div>
-
-                        {/* Showtimes: Compact time-only chips, centered text, breathing room on sides */}
-                        <div className="flex flex-wrap gap-2">
-                          {showtimes.map(st => {
-                            const isSelected = selectedShowtime?.id === st.id;
-                            const startStr = new Date(st.startTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-                            const isBookable = isShowtimeBookable(st);
-
-                            return (
-                              <button
-                                key={st.id}
-                                type="button"
-                                disabled={!isBookable}
-                                onClick={() => { if (isBookable) handleSelectShowtime(st); }}
-                                className={`group relative rounded-none border transition-all duration-150 cursor-pointer flex items-center justify-center ${
-                                  !isBookable
-                                    ? 'border-[#22262d] bg-[#0f1216]/60 text-neutral-600 cursor-not-allowed opacity-40'
-                                    : isSelected
-                                      ? 'border-[#f5b800] bg-[#f5b800]/15 text-[#f5b800] ring-1 ring-[#f5b800]/60 shadow-[0_0_12px_rgba(245,184,0,0.2)]'
-                                      : 'border-[#282d35] bg-[#11151b] hover:border-[#f5b800]/60 hover:bg-[#181d26] text-neutral-200 hover:text-white hover:-translate-y-0.5 hover:shadow-[0_4px_12px_rgba(245,184,0,0.1)]'
-                                }`}
-                                style={{ height: '38px', paddingLeft: '14px', paddingRight: '14px' }}
-                              >
-                                <span className={`font-mono font-black tracking-tight text-sm leading-none ${
-                                  !isBookable ? 'line-through' : ''
-                                }`}>
-                                  {startStr}
-                                </span>
-                                {isSelected && (
-                                  <span className="ml-1.5 text-[10px] font-black text-[#f5b800]">✓</span>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
           {/* =========================================================================
               VIEW 2: CHỌN GHẾ (SEAT MAP SCREEN)
@@ -3102,48 +2986,6 @@ export default function BookingPage() {
             </div>
           </div>
 
-          {/* If bookingStep === 'schedule' */}
-          {bookingStep === 'schedule' ? (
-            <div className="space-y-3.5 pt-0.5">
-              {/* Highlights & Policy */}
-              <div className="space-y-1.5 text-[11px] text-neutral-400 border-t border-white/10 pt-2.5">
-                <div className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span>Ghế đôi bán nguyên cặp, dành cho 2 người</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span>Giữ ghế 3 phút sau khi chọn vị trí</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span>Nhận vé điện tử QR ngay sau thanh toán</span>
-                </div>
-              </div>
-
-              {/* Primary Action CTA Button */}
-              <div className="pt-1">
-                <button
-                  type="button"
-                  disabled={!selectedShowtime || !isShowtimeBookable(selectedShowtime)}
-                  onClick={handleProceedToSeats}
-                  className="w-full py-3 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-black font-extrabold uppercase tracking-wider text-xs rounded-xl shadow-lg shadow-amber-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                >
-                  <Armchair className="w-4 h-4" />
-                  <span>TIẾP TỤC CHỌN GHẾ</span>
-                  <ArrowRight className="w-4 h-4" />
-                </button>
-                {!selectedShowtime && (
-                  <p className="text-[10px] text-neutral-500 text-center mt-1.5">
-                    {showtimesList.length === 0
-                      ? '* Phim hiện chưa có suất chiếu khả dụng'
-                      : '* Vui lòng chọn ngày và khung giờ chiếu ở bên trái'}
-                  </p>
-                )}
-              </div>
-            </div>
-          ) : (
-            <>
               {/* Selected Seats Summary (Rule 16) */}
               <div className="space-y-3 border-b border-white/10 pb-4">
                 <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-amber-500">
@@ -3319,8 +3161,6 @@ export default function BookingPage() {
                   Bỏ qua bắp nước & Thanh toán ngay →
                 </button>
               )}
-            </>
-          )}
         </div>
       </div>
 

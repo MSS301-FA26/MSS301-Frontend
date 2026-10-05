@@ -32,7 +32,7 @@ export const normalizeMovie = (movie = {}, fallback = {}) => {
   const status = normalizeMovieStatus(movie) || normalizeMovieStatus(fallback);
   const id = movie.id ?? movie.movieId ?? movie.slug ?? movie.code ?? fallback.id;
   const ratings = movie.ratings || {};
-  const overall = Number(movie.rating ?? movie.averageRating ?? ratings.overall ?? fallback.ratings?.overall ?? 8.8);
+  const overall = Number(movie.rating ?? movie.averageRating ?? ratings.overall ?? fallback.ratings?.overall ?? 0);
   const statusFromFlags = (movie.isUpcoming ?? fallback.isUpcoming) ? 'UPCOMING' : 'NOW_SHOWING';
   const effectiveStatus = status || statusFromFlags;
   const isUpcoming = ['UPCOMING', 'COMING_SOON', 'SCHEDULED', 'DRAFT'].includes(effectiveStatus);
@@ -47,8 +47,8 @@ export const normalizeMovie = (movie = {}, fallback = {}) => {
     englishTitle: movie.englishTitle || movie.originalTitle || movie.subTitle || movie.titleEn || fallback.englishTitle || movie.title || movie.name || 'CinePremier Feature',
     genre: normalizeGenres(movie),
     synopsis: movie.synopsis || movie.description || movie.overview || movie.content || fallback.synopsis || 'Thong tin noi dung phim dang duoc cap nhat.',
-    duration: Number(movie.duration ?? movie.durationMinutes ?? movie.runningTime ?? fallback.duration ?? 100),
-    ageRating: movie.ageRating || movie.ratingLabel || movie.ageLimit || fallback.ageRating || 'P',
+    duration: Number(movie.duration ?? movie.durationMinutes ?? movie.runningTime ?? fallback.duration ?? 0),
+    ageRating: movie.ageRating || movie.ratingLabel || movie.ageLimit || fallback.ageRating || '',
     posterUrl: movie.posterUrl || movie.poster || movie.posterImageUrl || movie.imageUrl || movie.thumbnailUrl || fallback.posterUrl || 'https://res.cloudinary.com/dmcodhbcc/image/upload/v1784275470/cinemams/posters/placeholder.jpg',
     bannerUrl: movie.bannerUrl || movie.avatarUrl || movie.backdropUrl || movie.coverUrl || movie.bannerImageUrl || fallback.bannerUrl || movie.posterUrl || fallback.posterUrl || 'https://res.cloudinary.com/dmcodhbcc/image/upload/v1784275470/cinemams/posters/placeholder.jpg',
     releaseDate: movie.releaseDate || movie.premiereDate || movie.startDate || fallback.releaseDate || 'Dang cap nhat',
@@ -123,6 +123,8 @@ export const normalizeMoviePageResponse = (payload) => {
 };
 
 export const movieService = {
+  getMovies: (params = {}) => request(`/api/v1/movies${buildQueryString(params)}`)
+    .then(normalizeMovieListResponse),
   searchMovies: (params = {}) => request(`/api/v1/movies${buildQueryString(params)}`)
     .then(normalizeMovieListResponse),
   searchMoviesPage: (params = {}) => request(`/api/v1/movies${buildQueryString(params)}`)
@@ -133,6 +135,7 @@ export const movieService = {
   getActorDetail: (actorId) => request(`/api/v1/actors/${encodeURIComponent(actorId)}`),
   getMoviesByActor: (actorId) => request(`/api/v1/actors/${encodeURIComponent(actorId)}/movies`)
     .then(normalizeMovieListResponse),
+  getActivePromotions: () => request('/api/v1/promotions/active').then(unwrapListPayload),
   getGenres: () => request('/api/v1/genres'),
   getFoodItems: () => request('/api/v1/foods/items').then(unwrapListPayload),
   getFoodCombos: () => request('/api/v1/foods/combos').then(unwrapListPayload),

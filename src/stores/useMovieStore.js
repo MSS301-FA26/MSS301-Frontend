@@ -47,7 +47,7 @@ export const useMovieStore = create((set, get) => ({
   moviesList: [],
   moviePagination: {
     page: 0,
-    size: 10,
+    size: 100,
     totalPages: 1,
     totalElements: 0,
   },
@@ -282,12 +282,11 @@ export const useMovieStore = create((set, get) => ({
         await wishlistService.removeWishlist(accessToken, backendMovieId);
         showToast('Da xoa phim khoi watchlist.');
       } else {
-        await wishlistService.addWishlist(accessToken, backendMovieId);
-        showToast('Da them phim vao watchlist.');
+        await wishlistService.addWishlist(accessToken, backendMovieId, movie);
+        showToast('Đã thêm phim vào watchlist.');
       }
-    } catch (error) {
+    } catch {
       set({ watchlist: previous });
-      showToast(error.message || 'Khong the dong bo watchlist voi backend.', 4500, null, 'sad');
     }
   }
 }));
