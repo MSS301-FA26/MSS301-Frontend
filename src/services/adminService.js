@@ -138,8 +138,14 @@ export const adminService = {
   createAdminShowtimesBulk: (token, payload)     => request('/api/v1/admin/showtimes/bulk', { method: 'POST', token, body: payload }),
   updateAdminShowtime:      (token, id, payload) => showtimesApi.update(token, id, payload),
   updateAdminShowtimeStatus: (token, id, status) => showtimesApi.patchQuery(token, id, status),
-  cancelShowtimeAndRefund:  (token, id, reason)  => request(`/api/v1/admin/showtimes/${enc(id)}/cancel-and-refund`, { method: 'POST', token, body: { reason } }),
+    cancelShowtimeAdmin:      (token, id, reason)  => request(`/api/v1/admin/showtimes/${enc(id)}/cancel?reason=${enc(reason || 'Sự cố kỹ thuật phòng chiếu')}`, { method: 'POST', token, body: { reason } }),
+  cancelShowtimeAndRefund:  (token, id, reason)  => request(`/api/v1/admin/showtimes/${enc(id)}/cancel?reason=${enc(reason || 'Sự cố kỹ thuật phòng chiếu')}`, { method: 'POST', token, body: { reason } }),
   deleteAdminShowtime:      (token, id)          => showtimesApi.remove(token, id),
+  getShowtimeBookingSummary: (token, showtimeId) => request(`/api/v1/admin/bookings/showtimes/${enc(showtimeId)}/summary`, { token }),
+  getShowtimesTicketCounts: (token, showtimeIds = []) => {
+    if (!showtimeIds || showtimeIds.length === 0) return Promise.resolve({});
+    return request(`/api/v1/admin/bookings/showtimes/counts?showtimeIds=${showtimeIds.join(',')}`, { token });
+  },
 
   /** Preview ticket prices for draft slots (no DB write). */
   previewShowtimePrices: (token, payload) =>

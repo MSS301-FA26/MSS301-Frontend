@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+﻿import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -757,7 +757,7 @@ export default function AdminDashboard({
       fetchGenres();
     } else if (activeTab === 'foods') {
       fetchFoods();
-    } else if (activeTab === 'users') {
+    } else if (activeTab === 'users' || activeTab === 'staff') {
       fetchAdminUsers();
     }
   }, [activeTab]);

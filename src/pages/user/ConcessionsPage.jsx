@@ -26,7 +26,10 @@ import {
   ChevronRight,
   RefreshCw,
   Layers,
-  CheckCircle2
+  CheckCircle2,
+  AlertTriangle,
+  ChevronDown,
+  MapPin
 } from 'lucide-react';
 import { getStoredAuth } from '../../services/authService';
 import { bookingService } from '../../services/bookingService';
@@ -250,11 +253,19 @@ export default function ConcessionsPage() {
   const showToast = useUiStore((state) => state.showToast);
   const setShowOTP = useUiStore((state) => state.setShowOTP);
   const setAuthMode = useUiStore((state) => state.setAuthMode);
-  const { foodCatalog = [], fetchPublicFoodCatalog, publicCinema } = useMovies();
+  const {
+    foodCatalog = [],
+    fetchPublicFoodCatalog,
+    publicCinema,
+    selectedCinema,
+    setSelectedCinema
+  } = useMovies();
 
   // Booking & Context state
   const [linkedBooking, setLinkedBooking] = useState(null);
   const [isLoadingContext, setIsLoadingContext] = useState(Boolean(requestedBookingId));
+  const [cinemas, setCinemas] = useState([]);
+  const [selectedPickupCinema, setSelectedPickupCinema] = useState(null);
   const [quantities, setQuantities] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [checkoutError, setCheckoutError] = useState('');
@@ -263,6 +274,7 @@ export default function ConcessionsPage() {
   const [foodOrders, setFoodOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(true);
   const [orderActionId, setOrderActionId] = useState(null);
+  const [cancelConfirmOrder, setCancelConfirmOrder] = useState(null);
   const [now, setNow] = useState(Date.now());
 
   // ── Filters & Menu Navigation State ─────────────────────────────────────────
@@ -278,6 +290,57 @@ export default function ConcessionsPage() {
       .then((data) => setCategories(Array.isArray(data) ? data : []))
       .catch(() => setCategories([]));
   }, []);
+
+  // Load public cinemas for concessions pickup location
+  useEffect(() => {
+    let cancelled = false;
+    movieService.getPublicCinemas()
+      .then((res) => {
+        if (cancelled) return;
+        const list = Array.isArray(res) ? res : (res?.data || []);
+        const active = list.filter((c) => !c.status || c.status === 'ACTIVE');
+        setCinemas(active);
+
+        // Determine initial pickup cinema
+        if (active.length > 0) {
+          const savedCinemaId = localStorage.getItem('concessions_pickup_cinema_id');
+          const matched = (savedCinemaId && active.find(c => String(c.id) === String(savedCinemaId)))
+            || (selectedCinema?.id && active.find(c => String(c.id) === String(selectedCinema.id)))
+            || (publicCinema?.id && active.find(c => String(c.id) === String(publicCinema.id)))
+            || active[0];
+          setSelectedPickupCinema(matched || active[0]);
+        }
+      })
+      .catch((err) => {
+        console.warn('Lỗi tải danh sách rạp bắp nước:', err);
+      });
+    return () => { cancelled = true; };
+  }, [publicCinema, selectedCinema]);
+
+  // Active pickup cinema: if attached to a booking, use booking's cinema; otherwise use selectedPickupCinema
+  const activePickupCinema = useMemo(() => {
+    if (linkedBooking) {
+      return {
+        id: linkedBooking.cinemaId || null,
+        name: linkedBooking.cinemaName || linkedBooking.cinema?.name || 'Rạp theo vé đã đặt',
+        address: linkedBooking.cinemaAddress || linkedBooking.cinema?.address || '',
+        city: linkedBooking.cinemaCity || linkedBooking.cinema?.city || '',
+      };
+    }
+    return selectedPickupCinema || publicCinema || (cinemas.length > 0 ? cinemas[0] : null);
+  }, [linkedBooking, selectedPickupCinema, publicCinema, cinemas]);
+
+  const handleSelectPickupCinema = (cinemaId) => {
+    const found = cinemas.find(c => String(c.id) === String(cinemaId));
+    if (found) {
+      setSelectedPickupCinema(found);
+      if (setSelectedCinema) setSelectedCinema(found);
+      try {
+        localStorage.setItem('concessions_pickup_cinema_id', String(found.id));
+      } catch {}
+      showToast(`Điểm nhận bắp nước: ${found.name}`, 'info');
+    }
+  };
 
   const refreshFoodOrders = useCallback(async () => {
     const { accessToken } = getStoredAuth();
@@ -349,12 +412,21 @@ export default function ConcessionsPage() {
   }, [requestedBookingId, showToast]);
 
   const effectiveFoodCatalog = useMemo(() => {
+    let combined = [];
     if (Array.isArray(foodCatalog) && foodCatalog.length > 0) {
       const existingIds = new Set(foodCatalog.map((f) => String(f.id)));
       const extras = DEFAULT_FALLBACK_FOODS.filter((df) => !existingIds.has(String(df.id)));
-      return [...foodCatalog, ...extras];
+      combined = [...foodCatalog, ...extras];
+    } else {
+      combined = DEFAULT_FALLBACK_FOODS;
     }
-    return DEFAULT_FALLBACK_FOODS;
+    const seen = new Set();
+    return combined.filter(item => {
+      const idKey = String(item.id);
+      if (seen.has(idKey)) return false;
+      seen.add(idKey);
+      return true;
+    });
   }, [foodCatalog]);
 
   // Only active products
@@ -597,13 +669,19 @@ export default function ConcessionsPage() {
     }
   };
 
-  const cancelFoodOrder = async (order) => {
-    if (!window.confirm(`Hủy đơn ${order.orderCode}? Thao tác này không thể hoàn tác.`)) return;
+  const cancelFoodOrder = (order) => {
+    setCancelConfirmOrder(order);
+  };
+
+  const executeCancelFoodOrder = async () => {
+    if (!cancelConfirmOrder) return;
+    const order = cancelConfirmOrder;
     const { accessToken } = getStoredAuth();
     if (!accessToken || orderActionId) return;
     setOrderActionId(order.id);
     try {
       await bookingService.cancelFoodOrder(accessToken, order.id);
+      setCancelConfirmOrder(null);
       showToast('Đã hủy đơn bắp nước.');
       await refreshFoodOrders();
     } catch (error) {
@@ -631,6 +709,9 @@ export default function ConcessionsPage() {
     if (isSubmitting) return;
 
     const body = {
+      cinemaId: activePickupCinema?.id ?? null,
+      cinemaName: activePickupCinema?.name ?? null,
+      cinemaAddress: activePickupCinema?.address ?? null,
       foods: selectedRows.map((item) => ({
         foodItemId: item.foodItemId ?? null,
         foodComboId: item.foodComboId ?? null,
@@ -644,6 +725,26 @@ export default function ConcessionsPage() {
       const order = linkedBooking
         ? await bookingService.createFoodOrder(accessToken, linkedBooking.id, body)
         : await bookingService.createStandaloneFoodOrder(accessToken, body);
+
+      if (order?.id && activePickupCinema) {
+        try {
+          const map = JSON.parse(localStorage.getItem('food_orders_cinema_map') || '{}');
+          map[String(order.id)] = {
+            id: activePickupCinema.id,
+            name: activePickupCinema.name,
+            address: activePickupCinema.address,
+          };
+          if (order.orderCode || order.foodOrderCode) {
+            map[String(order.orderCode || order.foodOrderCode)] = {
+              id: activePickupCinema.id,
+              name: activePickupCinema.name,
+              address: activePickupCinema.address,
+            };
+          }
+          localStorage.setItem('food_orders_cinema_map', JSON.stringify(map));
+        } catch {}
+      }
+
       await refreshFoodOrders();
       const payment = await paymentService.createVnpayFoodOrderPayment(accessToken, order.id);
       const paymentUrl = payment?.paymentUrl ?? payment?.payment_url;
@@ -684,7 +785,7 @@ export default function ConcessionsPage() {
         }`}
       >
         {/* Top Badges */}
-        <div className="relative aspect-[16/10] w-full overflow-hidden bg-neutral-900">
+        <div className="relative h-28 sm:h-32 w-full overflow-hidden bg-neutral-900">
           <img
             src={item.imageUrl || fallbackImage}
             alt={item.name}
@@ -696,9 +797,9 @@ export default function ConcessionsPage() {
           <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/30" />
 
           {/* Left Badge: Type / Category */}
-          <div className="absolute left-2.5 top-2.5 flex flex-wrap gap-1.5">
+          <div className="absolute left-2 top-2 flex flex-wrap gap-1">
             <span
-              className={`px-2 py-0.5 text-[8px] font-black uppercase tracking-widest border backdrop-blur-md ${
+              className={`px-1.5 py-0.5 text-[7.5px] font-black uppercase tracking-widest border backdrop-blur-md ${
                 isCombo
                   ? 'border-amber-500/50 bg-amber-500/20 text-amber-300'
                   : 'border-white/20 bg-black/70 text-neutral-300'
@@ -707,31 +808,31 @@ export default function ConcessionsPage() {
               {isCombo ? 'Combo' : item.categoryName || 'Món lẻ'}
             </span>
             {item.sku && (
-              <span className="px-1.5 py-0.5 text-[8px] font-mono font-bold bg-black/80 border border-white/10 text-neutral-400">
+              <span className="px-1 py-0.5 text-[7.5px] font-mono font-bold bg-black/80 border border-white/10 text-neutral-400">
                 {item.sku}
               </span>
             )}
           </div>
 
           {/* Right Badge: Savings or Stock */}
-          <div className="absolute right-2.5 top-2.5 flex flex-col items-end gap-1">
+          <div className="absolute right-2 top-2 flex flex-col items-end gap-1">
             {isOutOfStock ? (
-              <span className="px-2 py-0.5 text-[8px] font-black uppercase tracking-wider bg-rose-950/90 border border-rose-500/40 text-rose-300">
+              <span className="px-1.5 py-0.5 text-[7.5px] font-black uppercase tracking-wider bg-rose-950/90 border border-rose-500/40 text-rose-300">
                 Hết hàng
               </span>
             ) : isLowStock ? (
-              <span className="px-2 py-0.5 text-[8px] font-black uppercase tracking-wider bg-amber-950/90 border border-amber-500/40 text-amber-300">
+              <span className="px-1.5 py-0.5 text-[7.5px] font-black uppercase tracking-wider bg-amber-950/90 border border-amber-500/40 text-amber-300">
                 Sắp hết
               </span>
             ) : isCombo && Number(item.savingsAmount) > 0 ? (
-              <span className="px-2 py-0.5 text-[8px] font-black uppercase tracking-wider bg-emerald-950/90 border border-emerald-500/50 text-emerald-300 flex items-center gap-1">
-                <Sparkles className="h-2.5 w-2.5" /> Tiết kiệm {formatVnd(item.savingsAmount)}
+              <span className="px-1.5 py-0.5 text-[7.5px] font-black uppercase tracking-wider bg-emerald-950/90 border border-emerald-500/50 text-emerald-300 flex items-center gap-0.5">
+                <Sparkles className="h-2 w-2" /> -{formatVnd(item.savingsAmount)}
               </span>
             ) : null}
           </div>
 
           {/* Bottom Overlay Info on Image */}
-          <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between text-[9px] font-mono">
+          <div className="absolute bottom-1.5 left-2 right-2 flex items-center justify-between text-[8px] font-mono">
             <span className="text-neutral-300 truncate">
               {isCombo ? `${item.items?.length || 0} món đi kèm` : `Tồn kho: ${item.totalStock ?? 0}`}
             </span>
@@ -739,27 +840,27 @@ export default function ConcessionsPage() {
         </div>
 
         {/* Content Section */}
-        <div className="flex flex-1 flex-col justify-between p-4 space-y-3">
+        <div className="flex flex-1 flex-col justify-between p-2.5 sm:p-3 space-y-2">
           <div>
             <h3
-              className="text-sm font-black uppercase tracking-wide text-white group-hover:text-amber-300 transition-colors line-clamp-1"
+              className="text-xs font-bold uppercase tracking-wide text-white group-hover:text-amber-300 transition-colors line-clamp-1"
               title={item.name}
             >
               {item.name}
             </h3>
 
             {/* Description */}
-            <p className="mt-1 text-[11px] leading-4 text-neutral-400 line-clamp-2">
+            <p className="mt-0.5 text-[10px] leading-snug text-neutral-400 line-clamp-2">
               {item.description || 'Món bắp nước chính hãng được chuẩn bị tươi mới tại rạp CinePremier.'}
             </p>
 
             {/* Combo recipe ingredients pills */}
             {isCombo && Array.isArray(item.items) && item.items.length > 0 && (
-              <div className="mt-2.5 flex flex-wrap gap-1 border-t border-white/5 pt-2">
+              <div className="mt-1.5 flex flex-wrap gap-1 border-t border-white/5 pt-1.5">
                 {item.items.map((ci, idx) => (
                   <span
                     key={idx}
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[8px] font-mono border border-white/10 bg-white/[0.03] text-neutral-300"
+                    className="inline-flex items-center gap-0.5 px-1 py-0.2 text-[7.5px] font-mono border border-white/10 bg-white/[0.03] text-neutral-300"
                   >
                     <span className="text-amber-400 font-bold">{ci.quantity}×</span> {ci.foodItemName}
                   </span>
@@ -769,20 +870,20 @@ export default function ConcessionsPage() {
           </div>
 
           {/* Pricing & Quantity Stepper */}
-          <div className="border-t border-white/10 pt-3 flex items-center justify-between gap-2">
+          <div className="border-t border-white/10 pt-2 flex items-center justify-between gap-1.5">
             <div>
-              <div className="flex items-baseline gap-1.5">
-                <span className="font-mono text-base font-black text-amber-400">
+              <div className="flex items-baseline gap-1">
+                <span className="font-mono text-xs sm:text-sm font-black text-amber-400">
                   {formatVnd(item.price)}
                 </span>
                 {isCombo && Number(item.regularPriceSum) > Number(item.price) && (
-                  <span className="font-mono text-[10px] text-neutral-500 line-through">
+                  <span className="font-mono text-[9px] text-neutral-500 line-through">
                     {formatVnd(item.regularPriceSum)}
                   </span>
                 )}
               </div>
               {isCombo && Number(item.savingsAmount) > 0 && (
-                <span className="text-[9px] font-bold text-emerald-400 block mt-0.5">
+                <span className="text-[8px] font-bold text-emerald-400 block mt-0.5">
                   Giảm {formatVnd(item.savingsAmount)}
                 </span>
               )}
@@ -793,7 +894,7 @@ export default function ConcessionsPage() {
               <button
                 type="button"
                 disabled
-                className="px-3 py-2 bg-neutral-900 border border-white/10 text-[9px] font-black uppercase tracking-wider text-neutral-600 cursor-not-allowed"
+                className="px-2 py-1 bg-neutral-900 border border-white/10 text-[8.5px] font-black uppercase tracking-wider text-neutral-600 cursor-not-allowed"
               >
                 Tạm hết
               </button>
@@ -802,9 +903,9 @@ export default function ConcessionsPage() {
                 type="button"
                 data-concession-add
                 onClick={() => changeQuantity(item, 1)}
-                className="flex items-center gap-1.5 px-3 py-2 bg-amber-500/15 hover:bg-amber-400 border border-amber-500/40 hover:border-amber-400 text-amber-300 hover:text-black text-[10px] font-black uppercase tracking-widest transition"
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-amber-500/15 hover:bg-amber-400 border border-amber-500/40 hover:border-amber-400 text-amber-300 hover:text-black text-[9px] font-black uppercase tracking-wider transition"
               >
-                <Plus className="h-3 w-3" /> Thêm món
+                <Plus className="h-2.5 w-2.5" /> Thêm món
               </button>
             ) : (
               <div className="flex items-center border border-amber-400 bg-black">
@@ -812,11 +913,11 @@ export default function ConcessionsPage() {
                   type="button"
                   aria-label={`Giảm ${item.name}`}
                   onClick={() => changeQuantity(item, -1)}
-                  className="flex h-8 w-8 items-center justify-center text-neutral-300 hover:text-white hover:bg-white/10 transition"
+                  className="flex h-6 w-6 items-center justify-center text-neutral-300 hover:text-white hover:bg-white/10 transition"
                 >
-                  <Minus className="h-3 w-3" />
+                  <Minus className="h-2.5 w-2.5" />
                 </button>
-                <span className="w-7 text-center font-mono text-xs font-black text-amber-300">
+                <span className="w-5 text-center font-mono text-[10px] font-black text-amber-300">
                   {quantity}
                 </span>
                 <button
@@ -824,9 +925,9 @@ export default function ConcessionsPage() {
                   aria-label={`Thêm ${item.name}`}
                   onClick={() => changeQuantity(item, 1)}
                   disabled={quantity >= MAX_ITEM_QUANTITY}
-                  className="flex h-8 w-8 items-center justify-center text-neutral-300 hover:text-white hover:bg-white/10 transition disabled:opacity-30 disabled:hover:bg-transparent"
+                  className="flex h-6 w-6 items-center justify-center text-neutral-300 hover:text-white hover:bg-white/10 transition disabled:opacity-30 disabled:hover:bg-transparent"
                 >
-                  <Plus className="h-3 w-3" />
+                  <Plus className="h-2.5 w-2.5" />
                 </button>
               </div>
             )}
@@ -839,36 +940,71 @@ export default function ConcessionsPage() {
   return (
     <div className="min-h-screen bg-[#060606] text-white">
       {/* ── TOP HERO BANNER ─────────────────────────────────────────────────── */}
-      <div className="relative border-b border-white/10 bg-gradient-to-b from-[#12100e] via-[#0a0a0a] to-[#060606] px-4 py-8 sm:px-6 lg:px-8">
+      <div className="relative border-b border-white/10 bg-gradient-to-b from-[#12100e] via-[#0a0a0a] to-[#060606] px-4 py-4 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-[1500px]">
-          <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
-            <div className="space-y-2">
-              <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-black uppercase tracking-[0.2em]">
-                <Popcorn className="h-3.5 w-3.5 text-amber-400" /> CinePremier Concessions Bar
+          <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+            <div className="space-y-1.5">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[9px] font-black uppercase tracking-[0.2em]">
+                <Popcorn className="h-3 w-3 text-amber-400" /> CinePremier Concessions Bar
               </div>
-              <h1 className="text-3xl font-black uppercase tracking-tight text-white sm:text-5xl">
+              <h1 className="text-xl font-black uppercase tracking-tight text-white sm:text-2xl">
                 Thực đơn Bắp Nước &amp; Combo
               </h1>
-              <p className="max-w-2xl text-xs sm:text-sm text-neutral-400 leading-relaxed">
+              <p className="max-w-xl text-[11px] sm:text-xs text-neutral-400 leading-relaxed">
                 Hương vị bắp rang bơ giòn rụm, đồ uống mát lạnh và các combo tiết kiệm tối đa. Đặt online trước, nhận ngay tại quầy CinePremier không cần xếp hàng!
               </p>
             </div>
 
-            {/* Cinema location box */}
-            <div className="flex items-center gap-3 border border-amber-500/20 bg-black/60 p-3.5 backdrop-blur-md">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-amber-500/30 bg-amber-500/10 text-amber-400">
-                <Store className="h-5 w-5" />
+            {/* Cinema location box: Allow picking ANY cinema from system */}
+            <div className="relative flex items-center gap-2.5 border border-amber-500/30 bg-black/80 p-2.5 backdrop-blur-md min-w-[240px] sm:min-w-[290px]">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center border border-amber-500/40 bg-amber-500/10 text-amber-400">
+                <Store className="h-4.5 w-4.5" />
               </div>
-              <div>
-                <span className="text-[9px] font-mono uppercase tracking-widest text-neutral-400 block">
-                  Điểm nhận bắp nước
-                </span>
-                <strong className="text-xs font-black uppercase tracking-wider text-white">
-                  {publicCinema?.name || 'Quầy F&B CinePremier Cinema'}
-                </strong>
-                <span className="text-[9px] text-emerald-400 block mt-0.5">
-                  ● Đang mở cửa phục vụ
-                </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[8.5px] font-mono uppercase tracking-widest text-neutral-400 block">
+                    {linkedBooking ? 'Điểm nhận theo vé' : 'Điểm nhận bắp nước'}
+                  </span>
+                  {!linkedBooking && cinemas.length > 0 && (
+                    <span className="text-[8px] font-mono font-bold text-amber-400 tracking-wider">
+                      {cinemas.length} cụm rạp
+                    </span>
+                  )}
+                </div>
+
+                {linkedBooking ? (
+                  <strong className="text-xs font-black uppercase tracking-wider text-white truncate block mt-0.5">
+                    {activePickupCinema?.name || 'Rạp theo vé'}
+                  </strong>
+                ) : (
+                  <div className="relative mt-0.5">
+                    <select
+                      id="concessions-pickup-cinema-select"
+                      aria-label="Chọn rạp nhận bắp nước"
+                      value={activePickupCinema?.id || ''}
+                      onChange={(e) => handleSelectPickupCinema(e.target.value)}
+                      className="w-full appearance-none bg-transparent text-xs font-black uppercase tracking-wider text-white outline-none cursor-pointer pr-6 hover:text-amber-300 transition"
+                    >
+                      {cinemas.map((c) => (
+                        <option key={c.id} value={c.id} className="bg-[#0e0e14] text-white py-1">
+                          {c.name} {c.city ? `(${c.city})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-amber-400" />
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-[8.5px] font-semibold text-emerald-400 shrink-0">
+                    ● Mở cửa phục vụ
+                  </span>
+                  {activePickupCinema?.address && (
+                    <span className="text-[8.5px] text-neutral-400 truncate max-w-[160px] sm:max-w-[210px]" title={activePickupCinema.address}>
+                      · {activePickupCinema.address}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -987,26 +1123,26 @@ export default function ConcessionsPage() {
 
         {/* ── SPOTLIGHT COMBO BANNER (HOT DEAL) ─────────────────────────────── */}
         {spotlightCombo && !searchQuery.trim() && (
-          <div className="relative overflow-hidden border border-amber-500/40 bg-gradient-to-r from-amber-500/10 via-[#0e0c08] to-black p-5 sm:p-7">
-            <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
-              <div className="space-y-3 text-center md:text-left">
-                <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-500 text-black text-[9px] font-black uppercase tracking-widest">
-                  <Flame className="h-3 w-3 fill-black" /> Combo Hot Nhất Hôm Nay
+          <div className="relative overflow-hidden border border-amber-500/40 bg-gradient-to-r from-amber-500/10 via-[#0e0c08] to-black p-4 sm:p-5">
+            <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="space-y-2 text-center md:text-left">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-amber-500 text-black text-[8.5px] font-black uppercase tracking-widest">
+                  <Flame className="h-2.5 w-2.5 fill-black" /> Combo Hot Nhất Hôm Nay
                 </div>
-                <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-wide text-white">
+                <h2 className="text-lg sm:text-xl font-black uppercase tracking-wide text-white">
                   {spotlightCombo.name}
                 </h2>
-                <p className="text-xs text-neutral-300 max-w-xl">
+                <p className="text-[11px] text-neutral-300 max-w-lg leading-relaxed">
                   {spotlightCombo.description || 'Trọn bộ bắp rang bơ thơm ngon kết hợp đồ uống giải khát mát lạnh với mức giá ưu đãi cực lớn cho mọt phim!'}
                 </p>
 
                 {/* Recipe badges */}
                 {Array.isArray(spotlightCombo.items) && spotlightCombo.items.length > 0 && (
-                  <div className="flex flex-wrap gap-2 justify-center md:justify-start pt-1">
+                  <div className="flex flex-wrap gap-1.5 justify-center md:justify-start pt-0.5">
                     {spotlightCombo.items.map((ci, idx) => (
                       <span
                         key={idx}
-                        className="px-2.5 py-1 text-[10px] font-mono border border-amber-500/30 bg-black/60 text-amber-200"
+                        className="px-2 py-0.5 text-[9px] font-mono border border-amber-500/30 bg-black/60 text-amber-200"
                       >
                         <strong className="text-amber-400">{ci.quantity}×</strong> {ci.foodItemName}
                       </span>
@@ -1016,23 +1152,23 @@ export default function ConcessionsPage() {
               </div>
 
               {/* Price & Action */}
-              <div className="flex flex-col items-center md:items-end gap-3 shrink-0">
+              <div className="flex flex-col items-center md:items-end gap-2.5 shrink-0">
                 <div className="text-center md:text-right">
-                  <span className="text-[10px] font-mono text-neutral-400 uppercase tracking-wider block">
+                  <span className="text-[9px] font-mono text-neutral-400 uppercase tracking-wider block">
                     Giá combo ưu đãi
                   </span>
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-mono text-2xl sm:text-3xl font-black text-amber-400">
+                  <div className="flex items-baseline gap-1.5">
+                    <span className="font-mono text-xl sm:text-2xl font-black text-amber-400">
                       {formatVnd(spotlightCombo.price)}
                     </span>
                     {Number(spotlightCombo.regularPriceSum) > Number(spotlightCombo.price) && (
-                      <span className="font-mono text-xs text-neutral-500 line-through">
+                      <span className="font-mono text-[11px] text-neutral-500 line-through">
                         {formatVnd(spotlightCombo.regularPriceSum)}
                       </span>
                     )}
                   </div>
                   {Number(spotlightCombo.savingsAmount) > 0 && (
-                    <span className="text-[10px] font-bold text-emerald-400 font-mono">
+                    <span className="text-[9px] font-bold text-emerald-400 font-mono">
                       Tiết kiệm {formatVnd(spotlightCombo.savingsAmount)} so với mua lẻ
                     </span>
                   )}
@@ -1041,9 +1177,9 @@ export default function ConcessionsPage() {
                 <button
                   type="button"
                   onClick={() => changeQuantity(spotlightCombo, 1)}
-                  className="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-black text-xs font-black uppercase tracking-widest transition flex items-center gap-2 shadow-lg shadow-amber-500/20"
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-black text-[11px] font-black uppercase tracking-widest transition flex items-center gap-1.5 shadow-md shadow-amber-500/20"
                 >
-                  <Plus className="h-4 w-4" /> Thêm Combo Ngay
+                  <Plus className="h-3.5 w-3.5" /> Thêm Combo Ngay
                 </button>
               </div>
             </div>
@@ -1185,16 +1321,16 @@ export default function ConcessionsPage() {
         </section>
 
         {/* ── MAIN CONTENT LAYOUT: MENU + STICKY RECEIPT ────────────────────── */}
-        <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_400px]">
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
           {/* MENU COLUMN */}
-          <section className="space-y-8">
+          <section className="space-y-6">
             {processedFoods.length === 0 ? (
-              <div className="flex flex-col items-center justify-center p-16 border border-dashed border-white/10 bg-black text-center space-y-3">
-                <ShoppingBag className="h-10 w-10 text-neutral-600" />
-                <h3 className="text-sm font-black uppercase tracking-wider text-white">
+              <div className="flex flex-col items-center justify-center p-12 border border-dashed border-white/10 bg-black text-center space-y-2.5">
+                <ShoppingBag className="h-8 w-8 text-neutral-600" />
+                <h3 className="text-xs font-black uppercase tracking-wider text-white">
                   Không tìm thấy món bắp nước phù hợp
                 </h3>
-                <p className="text-xs text-neutral-500 max-w-sm">
+                <p className="text-[11px] text-neutral-500 max-w-sm">
                   Thử tìm kiếm với từ khóa khác hoặc bấm đặt lại bộ lọc để xem toàn bộ thực đơn.
                 </p>
                 <button
@@ -1204,42 +1340,42 @@ export default function ConcessionsPage() {
                     setSelectedTab('ALL');
                     setOnlyInStock(false);
                   }}
-                  className="mt-2 px-4 py-2 border border-amber-500/40 text-amber-300 text-xs font-black uppercase tracking-wider hover:bg-amber-400 hover:text-black transition"
+                  className="mt-1.5 px-3 py-1.5 border border-amber-500/40 text-amber-300 text-[11px] font-black uppercase tracking-wider hover:bg-amber-400 hover:text-black transition"
                 >
                   Xem tất cả món
                 </button>
               </div>
             ) : isGroupedView ? (
               // ── GROUPED PROFESSIONAL CINEMA MENU SECTIONS ──────────────────
-              <div className="space-y-10">
+              <div className="space-y-8">
                 {groupedSections.map((sec) => {
                   const SecIcon = sec.icon;
                   return (
-                    <div key={sec.id} className="space-y-4">
+                    <div key={sec.id} className="space-y-3">
                       {/* Section Header */}
-                      <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 items-center justify-center border border-white/15 bg-neutral-950 text-amber-400">
-                            <SecIcon className="h-4 w-4" />
+                      <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <div className="flex h-7 w-7 items-center justify-center border border-white/15 bg-neutral-950 text-amber-400">
+                            <SecIcon className="h-3.5 w-3.5" />
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
-                              <h2 className="text-base font-black uppercase tracking-wider text-white">
+                              <h2 className="text-sm font-black uppercase tracking-wider text-white">
                                 {sec.title}
                               </h2>
-                              <span className="px-2 py-0.5 text-[8px] font-black uppercase tracking-widest bg-white/5 border border-white/10 text-neutral-400">
+                              <span className="px-1.5 py-0.2 text-[7.5px] font-black uppercase tracking-widest bg-white/5 border border-white/10 text-neutral-400">
                                 {sec.items.length} món
                               </span>
                             </div>
-                            <p className="text-[11px] text-neutral-500 mt-0.5">
+                            <p className="text-[10px] text-neutral-500">
                               {sec.subtitle}
                             </p>
                           </div>
                         </div>
                       </div>
 
-                      {/* Items Grid */}
-                      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-2">
+                      {/* Items Grid (3 Columns, Compact) */}
+                      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-3">
                         {sec.items.map(renderFoodCard)}
                       </div>
                     </div>
@@ -1248,16 +1384,16 @@ export default function ConcessionsPage() {
               </div>
             ) : (
               // ── FILTERED / SEARCHED GRID ────────────────────────────────────
-              <div className="space-y-4">
-                <div className="flex items-center justify-between border-b border-white/10 pb-3">
-                  <h2 className="text-sm font-black uppercase tracking-wider text-white">
+              <div className="space-y-3">
+                <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+                  <h2 className="text-xs font-black uppercase tracking-wider text-white">
                     Kết quả thực đơn ({processedFoods.length})
                   </h2>
-                  <span className="font-mono text-[10px] text-neutral-400">
+                  <span className="font-mono text-[9px] text-neutral-400">
                     Sắp xếp: {sortBy === 'price_asc' ? 'Giá tăng dần' : sortBy === 'price_desc' ? 'Giá giảm dần' : 'Phổ biến'}
                   </span>
                 </div>
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-2">
+                <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-3">
                   {processedFoods.map(renderFoodCard)}
                 </div>
               </div>
@@ -1367,6 +1503,38 @@ export default function ConcessionsPage() {
 
             {/* Summary & Calculations */}
             <div className="p-5 space-y-4 bg-black">
+              {/* Điểm nhận bắp nước trong hóa đơn */}
+              <div className="border border-amber-500/25 bg-amber-500/[0.04] p-3 space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-[9px] font-mono uppercase tracking-widest text-neutral-400 flex items-center gap-1.5">
+                    <Store className="h-3 w-3 text-amber-400" /> Quầy nhận bắp nước
+                  </span>
+                  {!linkedBooking && cinemas.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const sel = document.getElementById('concessions-pickup-cinema-select');
+                        if (sel) {
+                          sel.focus();
+                          sel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                      }}
+                      className="text-[9px] font-bold text-amber-400 hover:text-amber-300 underline cursor-pointer"
+                    >
+                      Đổi rạp khác
+                    </button>
+                  )}
+                </div>
+                <p className="text-xs font-bold text-white uppercase tracking-wide">
+                  {activePickupCinema?.name || 'Quầy F&B CinePremier Cinema'}
+                </p>
+                {activePickupCinema?.address && (
+                  <p className="text-[10px] text-neutral-400 leading-tight">
+                    {activePickupCinema.address}
+                  </p>
+                )}
+              </div>
+
               {/* CinePoints Banner */}
               <div className="flex items-center justify-between border border-emerald-500/20 bg-emerald-500/[0.05] p-3">
                 <div className="flex items-center gap-2.5">
@@ -1480,6 +1648,74 @@ export default function ConcessionsPage() {
             >
               {isSubmitting ? 'Đang xử lý...' : 'Thanh toán ngay'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {cancelConfirmOrder && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => !orderActionId && setCancelConfirmOrder(null)}
+        >
+          <div
+            className="relative w-full max-w-md border border-rose-500/30 bg-[#0d0d0d] p-6 shadow-[0_25px_60px_rgba(0,0,0,0.95)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-rose-500 to-amber-500" />
+            <div className="flex items-start justify-between gap-3 pt-1">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-rose-500/30 bg-rose-500/10 text-rose-400">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-[9px] font-mono font-black uppercase tracking-[0.25em] text-rose-400">
+                    Xác nhận hủy đơn
+                  </p>
+                  <h3 className="mt-0.5 text-base font-black uppercase tracking-wide text-white">
+                    Hủy đơn bắp nước?
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !orderActionId && setCancelConfirmOrder(null)}
+                disabled={Boolean(orderActionId)}
+                className="text-neutral-400 hover:text-white p-1 hover:bg-white/10 transition disabled:opacity-30"
+                title="Đóng"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="mt-4 text-xs leading-relaxed text-neutral-300">
+              Hủy đơn <span className="font-mono font-bold text-amber-400">{cancelConfirmOrder.orderCode}</span>? Thao tác này không thể hoàn tác.
+            </p>
+
+            <div className="mt-6 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setCancelConfirmOrder(null)}
+                disabled={Boolean(orderActionId)}
+                className="border border-white/15 bg-black px-4 py-2 text-[10px] font-black uppercase tracking-widest text-neutral-300 hover:border-white/30 hover:text-white transition disabled:opacity-40"
+              >
+                Giữ đơn
+              </button>
+              <button
+                type="button"
+                onClick={executeCancelFoodOrder}
+                disabled={Boolean(orderActionId)}
+                className="flex items-center gap-2 border border-rose-500 bg-rose-600 px-5 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-rose-500 transition shadow-[0_0_20px_rgba(244,63,94,0.3)] disabled:opacity-50"
+              >
+                {orderActionId ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Đang hủy...
+                  </>
+                ) : (
+                  'Xác nhận hủy đơn'
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

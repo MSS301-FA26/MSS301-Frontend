@@ -168,6 +168,9 @@ export default function AdminUsersPanel({ ctx }) {
     } else if (activeTab === 'users') {
       setViewCategory('users');
     }
+    if (activeTab === 'users' || activeTab === 'staff') {
+      fetchAdminUsers();
+    }
   }, [activeTab]);
 
   // Modal / Form states
@@ -500,19 +503,62 @@ export default function AdminUsersPanel({ ctx }) {
     }
   };
 
-  // Metrics
-  const customerCount = useMemo(() => adminUsers.filter(isCustomerMember).length, [adminUsers]);
-  const staffCount = useMemo(() => adminUsers.filter(isStaffMember).length, [adminUsers]);
-  const staffCinemaCount = useMemo(() => adminUsers.filter((u) => getStaffCategory(u) === 'STAFF').length, [adminUsers]);
-  const managerCount = useMemo(() => adminUsers.filter((u) => getStaffCategory(u) === 'MANAGER').length, [adminUsers]);
-  const adminCount = useMemo(() => adminUsers.filter((u) => getStaffCategory(u) === 'ADMIN').length, [adminUsers]);
+  // Merge adminUsers with staffProfiles so staff profiles are never missed
+  const effectiveUsers = useMemo(() => {
+    const list = [...adminUsers];
+    const userMap = new Map();
+    list.forEach((u) => {
+      userMap.set(String(u.id ?? u.userId), u);
+    });
 
-  const activeCustomerCount = useMemo(() => adminUsers.filter((u) => isCustomerMember(u) && u.status === 'ACTIVE').length, [adminUsers]);
-  const disabledCustomerCount = useMemo(() => adminUsers.filter((u) => isCustomerMember(u) && u.status === 'DISABLED').length, [adminUsers]);
+    (staffProfiles || []).forEach((sp) => {
+      const spId = String(sp.userId || sp.id);
+      const existing = userMap.get(spId);
+      if (!existing) {
+        const synthesized = {
+          id: sp.userId || sp.id,
+          userId: sp.userId || sp.id,
+          email: sp.email || '',
+          fullName: sp.fullName || (sp.employeeCode ? ('Nhân viên ' + sp.employeeCode) : ('Nhân viên #' + spId)),
+          phone: sp.phone || '',
+          roles: ['STAFF'],
+          cinemaId: sp.cinemaId,
+          status: sp.status || 'ACTIVE',
+          employeeCode: sp.employeeCode,
+          position: sp.position
+        };
+        list.push(synthesized);
+        userMap.set(spId, synthesized);
+      } else {
+        if (sp.cinemaId && !existing.cinemaId) existing.cinemaId = sp.cinemaId;
+        if (sp.employeeCode && !existing.employeeCode) existing.employeeCode = sp.employeeCode;
+        if (sp.position && !existing.position) existing.position = sp.position;
+      }
+    });
+
+    if (isEffectiveManager && currentUser?.cinemaId) {
+      return list.filter((u) => {
+        if (!isStaffMember(u)) return true;
+        return !u.cinemaId || String(u.cinemaId) === String(currentUser.cinemaId);
+      });
+    }
+
+    return list;
+  }, [adminUsers, staffProfiles, isEffectiveManager, currentUser?.cinemaId]);
+
+  // Metrics
+  const customerCount = useMemo(() => effectiveUsers.filter(isCustomerMember).length, [effectiveUsers]);
+  const staffCount = useMemo(() => effectiveUsers.filter(isStaffMember).length, [effectiveUsers]);
+  const staffCinemaCount = useMemo(() => effectiveUsers.filter((u) => getStaffCategory(u) === 'STAFF').length, [effectiveUsers]);
+  const managerCount = useMemo(() => effectiveUsers.filter((u) => getStaffCategory(u) === 'MANAGER').length, [effectiveUsers]);
+  const adminCount = useMemo(() => effectiveUsers.filter((u) => getStaffCategory(u) === 'ADMIN').length, [effectiveUsers]);
+
+  const activeCustomerCount = useMemo(() => effectiveUsers.filter((u) => isCustomerMember(u) && u.status === 'ACTIVE').length, [effectiveUsers]);
+  const disabledCustomerCount = useMemo(() => effectiveUsers.filter((u) => isCustomerMember(u) && u.status === 'DISABLED').length, [effectiveUsers]);
 
   // Filtered Users List
   const filteredUsers = useMemo(() => {
-    let list = adminUsers.filter((user) => {
+    let list = effectiveUsers.filter((user) => {
       if (viewCategory === 'staff') {
         if (!isStaffMember(user)) return false;
         if (staffFilter === 'STAFF') return getStaffCategory(user) === 'STAFF';
@@ -540,7 +586,7 @@ export default function AdminUsersPanel({ ctx }) {
         cinemaName.includes(query)
       );
     });
-  }, [adminUsers, viewCategory, staffFilter, customerFilter, userSearch, cinemaMap]);
+  }, [effectiveUsers, viewCategory, staffFilter, customerFilter, userSearch, cinemaMap]);
 
   // Auto-switch selected user if current selection does not belong to active category
   useEffect(() => {
@@ -554,7 +600,7 @@ export default function AdminUsersPanel({ ctx }) {
     } else if (filteredUsers.length > 0) {
       handleSelectAdminUser(filteredUsers[0]);
     }
-  }, [viewCategory]);
+  }, [viewCategory, filteredUsers.length]);
 
   const selectedStatus = getStatusMeta(selectedAdminUser?.status);
   const SelectedStatusIcon = selectedStatus.icon;
