@@ -167,7 +167,7 @@ export const adminService = {
 
 
   // Loyalty points
-  getLoyaltyConfiguration:    (token) => request('/api/v1/admin/loyalty/config', { token }),
+  getLoyaltyConfiguration:    (token, params = {}) => request(`/api/v1/admin/loyalty/config${buildQueryString(params)}`, { token }),
   updateLoyaltyConfiguration: (token, payload) => request('/api/v1/admin/loyalty/config', { method: 'PUT', token, body: payload }),
   getLoyaltyTransactions:     (token, params = {}) => request(`/api/v1/admin/loyalty/transactions${buildQueryString(params)}`, { token }),
   getLoyaltyReport:           (token, params = {}) => request(`/api/v1/admin/loyalty/report${buildQueryString(params)}`, { token }),

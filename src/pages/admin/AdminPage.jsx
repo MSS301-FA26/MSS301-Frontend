@@ -959,6 +959,7 @@ export default function AdminDashboard({
     'showtime-incidents',
     'tickets',
     'staff',
+    'loyalty',
     'fnb-report',
     'statistics'
   ];
@@ -1918,6 +1919,13 @@ export default function AdminDashboard({
                     <NavItem indent icon={MessageSquare} label="Đánh giá phim" active={activeTab === 'reviews'} onClick={() => { playPulseSound(515, 'sine', 0.05); changeAdminSection('reviews'); }} />
                     <NavItem indent icon={DollarSign} label="Điểm tích lũy" active={activeTab === 'loyalty'} onClick={() => { playPulseSound(520, 'sine', 0.05); changeAdminSection('loyalty'); }} />
                     <NavItem indent icon={Wallet} label="CineWallet" active={activeTab === 'cinewallet'} onClick={() => { playPulseSound(525, 'sine', 0.05); changeAdminSection('cinewallet'); }} />
+                  </>
+                )}
+
+                {isEffectiveManager && (
+                  <>
+                    <NavSectionLabel>Chính sách điểm</NavSectionLabel>
+                    <NavItem indent icon={DollarSign} label="Điểm tích lũy rạp" active={activeTab === 'loyalty'} onClick={() => { playPulseSound(520, 'sine', 0.05); changeAdminSection('loyalty'); }} />
                   </>
                 )}
 
