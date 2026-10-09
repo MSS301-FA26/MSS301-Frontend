@@ -43,7 +43,7 @@ export default function MovieCard({
 }) {
   const [imgError, setImgError] = useState(false);
 
-  const isBookable = movie?.status === 'NOW_SHOWING' || (!movie?.status && !movie?.isUpcoming);
+  const isBookable = Boolean(movie?.hasShowtimes || Number(movie?.showtimesCount) > 0 || movie?.status === 'NOW_SHOWING' || movie?.status === 'SCHEDULED' || (!movie?.status && !movie?.isUpcoming));
   const isUpcoming = movie?.status === 'UPCOMING' || movie?.isUpcoming;
 
   // Formats & Genres

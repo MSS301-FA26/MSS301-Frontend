@@ -288,19 +288,21 @@ export default function MovieDetailPage() {
   const [showtimesError, setShowtimesError] = useState(null);
   const [showtimesRetry, setShowtimesRetry] = useState(0);
   const [cinemas, setCinemas] = useState([]);
-  const [selectedDate, setSelectedDate] = useState(() => toLocalDateKey(new Date()));
+  const [selectedDate, setSelectedDate] = useState(() => searchParams.get('date') || toLocalDateKey(new Date()));
   const [selectedCity, setSelectedCity] = useState('ALL');
-  const [selectedCinemaId, setSelectedCinemaId] = useState('ALL');
+  const [selectedCinemaId, setSelectedCinemaId] = useState(() => searchParams.get('cinemaId') || 'ALL');
 
-  // Sync cinema from publicCinema store (Header context) if available
+  // Sync selected cinema from URL searchParams if provided
   useEffect(() => {
-    if (publicCinema?.id && selectedCinemaId === 'ALL') {
-      setSelectedCinemaId(String(publicCinema.id));
-      if (publicCinema.city) {
-        setSelectedCity(publicCinema.city.trim());
+    const urlCId = searchParams.get('cinemaId');
+    if (urlCId) {
+      setSelectedCinemaId(String(urlCId));
+      if (cinemas.length > 0) {
+        const found = cinemas.find(c => String(c.id) === String(urlCId));
+        if (found?.city) setSelectedCity(found.city.trim());
       }
     }
-  }, [publicCinema]);
+  }, [searchParams, cinemas]);
 
   // Load Cinemas list
   useEffect(() => {
@@ -370,19 +372,22 @@ export default function MovieDetailPage() {
     return () => { cancelled = true; };
   }, [detailMovieId, showtimesRetry]);
 
-  // Cities list from cinemas
+  // Cities list from cinemas and showtimes
   const cities = useMemo(() => {
     const set = new Set();
     cinemas.forEach(c => {
       if (c.city && c.city.trim()) set.add(c.city.trim());
     });
+    allShowtimes.forEach(st => {
+      if (st.cinemaCity && st.cinemaCity.trim()) set.add(st.cinemaCity.trim());
+    });
     return Array.from(set);
-  }, [cinemas]);
+  }, [cinemas, allShowtimes]);
 
   // Calendar follows the same movie/cinema/city filters as the showtime list.
   const upcomingDates = useMemo(() => {
     const matching = allShowtimes.filter(st => {
-      const cinemaId = String(st.cinemaId || st.cinema?.id);
+      const cinemaId = String(st.cinemaId || st.cinema?.id || '');
       if (selectedCinemaId !== 'ALL' && cinemaId !== String(selectedCinemaId)) return false;
       const cinema = cinemas.find(c => String(c.id) === cinemaId);
       const city = cinema?.city || st.cinemaCity || st.cinema?.city;
@@ -396,13 +401,27 @@ export default function MovieDetailPage() {
     return getShowtimeDates(matching).map(({ dateKey, count }) => {
       const [year, month, day] = dateKey.split('-').map(Number);
       const date = new Date(year, month - 1, day);
-      return { dateKey, count, label: dateKey === todayKey ? 'Hôm Nay' : dateKey === tomorrowKey ? 'Ngày Mai' : dayNames[date.getDay()], dateFormatted: `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}` };
+      return {
+        dateKey,
+        count,
+        label: dateKey === todayKey ? 'Hôm Nay' : dateKey === tomorrowKey ? 'Ngày Mai' : dayNames[date.getDay()],
+        dateFormatted: `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`
+      };
     });
   }, [allShowtimes, selectedCinemaId, selectedCity, cinemas]);
 
+  // Auto-switch to the first date having showtimes if current selectedDate has 0 showtimes
   useEffect(() => {
-    if (!isLoadingShowtimes && !upcomingDates.some(date => date.dateKey === selectedDate)) {
-      setSelectedDate(upcomingDates[0].dateKey);
+    if (isLoadingShowtimes || upcomingDates.length === 0) return;
+
+    const currentItem = upcomingDates.find(d => d.dateKey === selectedDate);
+    if (!currentItem || currentItem.count === 0) {
+      const firstAvailable = upcomingDates.find(d => d.count > 0);
+      if (firstAvailable) {
+        setSelectedDate(firstAvailable.dateKey);
+      } else if (!currentItem) {
+        setSelectedDate(upcomingDates[0].dateKey);
+      }
     }
   }, [upcomingDates, selectedDate, isLoadingShowtimes]);
 
@@ -440,9 +459,16 @@ export default function MovieDetailPage() {
       if (!cinemaData) {
         cinemaData = {
           id: cId,
-          name: st.cinemaName || st.cinema?.name || 'CinePremier Cinema',
-          address: st.cinemaAddress || st.cinema?.address || 'Hệ thống rạp CinePremier',
-          city: st.cinemaCity || ''
+          name: st.cinemaName || st.cinema?.name || `Rạp #${cId}`,
+          address: st.cinemaAddress || st.cinema?.address || '',
+          city: st.cinemaCity || st.cinema?.city || ''
+        };
+      } else {
+        cinemaData = {
+          ...cinemaData,
+          name: cinemaData.name || st.cinemaName || st.cinema?.name || `Rạp #${cId}`,
+          address: cinemaData.address || st.cinemaAddress || st.cinema?.address || '',
+          city: cinemaData.city || st.cinemaCity || ''
         };
       }
 
@@ -455,13 +481,10 @@ export default function MovieDetailPage() {
 
       const cinemaEntry = map.get(cId);
       const fmtKey = String(st.format || '2D').toUpperCase();
-      const roomStr = String(st.roomName || st.room?.name || st.roomType || '').toUpperCase();
-      const prefix = roomStr.includes('VIP') ? 'VIP - ' : (roomStr.includes('IMAX') ? 'IMAX - ' : '');
-      const experienceLabel = prefix + (fmtKey.includes('IMAX')
-        ? 'IMAX LASER 2D Phụ Đề'
-        : fmtKey.includes('3D')
-          ? '3D Digital Phụ Đề'
-          : '2D Phụ Đề');
+      const roomStr = st.roomName || st.room?.name || '';
+      const experienceLabel = roomStr
+        ? `${roomStr} · ${fmtKey.includes('IMAX') ? 'IMAX Laser 2D' : fmtKey.includes('3D') ? '3D' : '2D'} Phụ đề`
+        : (fmtKey.includes('IMAX') ? 'IMAX LASER 2D Phụ Đề' : fmtKey.includes('3D') ? '3D Digital Phụ Đề' : '2D Phụ Đề');
 
       if (!cinemaEntry.formats.has(experienceLabel)) {
         cinemaEntry.formats.set(experienceLabel, []);
@@ -525,7 +548,8 @@ export default function MovieDetailPage() {
   // ─────────────────────────────────────────────────────────────
   // MOVIE DETAIL FETCHING & AUTH CHECKS
   // ─────────────────────────────────────────────────────────────
-  const isBookable = movie?.status === 'NOW_SHOWING' || (!movie?.status && !movie?.isUpcoming);
+  const hasActiveShowtimes = allShowtimes.length > 0;
+  const isBookable = hasActiveShowtimes || movie?.status === 'NOW_SHOWING' || movie?.status === 'SCHEDULED' || (!movie?.status && !movie?.isUpcoming);
 
   useEffect(() => {
     if (!id) return;
@@ -738,8 +762,21 @@ export default function MovieDetailPage() {
 
       if (accessToken) {
         try {
-          const elig = await reviewService.checkEligibility(accessToken, detailMovieId);
-          if (elig) setReviewEligibility(elig);
+          const res = await reviewService.checkEligibility(accessToken, detailMovieId);
+          const elig = res?.data || res;
+          if (elig) {
+            setReviewEligibility({
+              eligible: Boolean(elig.eligible),
+              hasReviewed: Boolean(elig.canEdit || elig.existingReview || elig.hasReviewed),
+              reason: elig.reason,
+              message: elig.messageVi || elig.message,
+              bookingId: elig.bookingId,
+              bookingCode: elig.bookingCode,
+              existingReviewId: elig.existingReview?.id || elig.existingReviewId,
+              existingRating: elig.existingReview?.rating ?? elig.existingRating,
+              existingContent: elig.existingReview?.comment ?? elig.existingContent
+            });
+          }
         } catch (e) {
           console.warn('Eligibility check failed:', e);
         }
@@ -1307,7 +1344,7 @@ export default function MovieDetailPage() {
                   id="hero-book-now-button"
                 >
                   <Ticket className="w-4 h-4 fill-current" />
-                  <span>ĐẶT VÉ NGAY</span>
+                  <span>{(!movie?.status || movie?.status === 'COMING_SOON' || movie?.status === 'UPCOMING' || movie?.isUpcoming) && hasActiveShowtimes ? 'ĐẶT VÉ SỚM' : 'ĐẶT VÉ NGAY'}</span>
                 </button>
               ) : (
                 <button
@@ -1383,35 +1420,50 @@ export default function MovieDetailPage() {
             <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-2 w-full md:w-[380px] md:shrink-0 text-xs">
               <label className="min-w-0">
                 <span className="sr-only">Khu vực</span>
-              <select
-                value={selectedCity}
-                onChange={(e) => {
-                  setSelectedCity(e.target.value);
-                  setSelectedCinemaId('ALL');
-                }}
-                className="w-full min-w-0 h-[42px] bg-[#09090D] text-white font-semibold border border-white/10 rounded-none px-3 outline-none focus:border-[#F7C600] cursor-pointer"
-              >
-                <option value="ALL">Toàn quốc</option>
-                {cities.map(city => (
-                  <option key={city} value={city}>{city}</option>
-                ))}
-              </select>
+                <select
+                  value={selectedCity}
+                  onChange={(e) => {
+                    const nextCity = e.target.value;
+                    setSelectedCity(nextCity);
+                    if (nextCity !== 'ALL' && selectedCinemaId !== 'ALL') {
+                      const curC = cinemas.find(c => String(c.id) === String(selectedCinemaId));
+                      if (curC && curC.city?.trim() !== nextCity) {
+                        setSelectedCinemaId('ALL');
+                      }
+                    }
+                  }}
+                  className="w-full min-w-0 h-[42px] bg-[#09090D] text-white font-semibold border border-white/10 rounded-none px-3 outline-none focus:border-[#F7C600] cursor-pointer"
+                >
+                  <option value="ALL">Toàn quốc</option>
+                  {cities.map(city => (
+                    <option key={city} value={city}>{city}</option>
+                  ))}
+                </select>
               </label>
               <label className="min-w-0">
                 <span className="sr-only">Rạp chiếu</span>
-              <select
-                value={selectedCinemaId}
-                onChange={(e) => setSelectedCinemaId(e.target.value)}
-                className="w-full min-w-0 h-[42px] bg-[#09090D] text-white font-semibold border border-white/10 rounded-none px-3 outline-none focus:border-[#F7C600] cursor-pointer"
-              >
-                <option value="ALL">Tất cả rạp</option>
-                {cinemas
-                  .filter(c => selectedCity === 'ALL' || c.city?.trim() === selectedCity)
-                  .map(c => (
-                    <option key={c.id} value={String(c.id)}>{c.name}</option>
-                  ))
-                }
-              </select>
+                <select
+                  value={selectedCinemaId}
+                  onChange={(e) => {
+                    const nextCinemaId = e.target.value;
+                    setSelectedCinemaId(nextCinemaId);
+                    if (nextCinemaId !== 'ALL') {
+                      const curC = cinemas.find(c => String(c.id) === String(nextCinemaId));
+                      if (curC?.city) {
+                        setSelectedCity(curC.city.trim());
+                      }
+                    }
+                  }}
+                  className="w-full min-w-0 h-[42px] bg-[#09090D] text-white font-semibold border border-white/10 rounded-none px-3 outline-none focus:border-[#F7C600] cursor-pointer"
+                >
+                  <option value="ALL">Tất cả rạp ({cinemas.length > 0 ? cinemas.length : 'Hệ thống'})</option>
+                  {cinemas
+                    .filter(c => selectedCity === 'ALL' || c.city?.trim() === selectedCity)
+                    .map(c => (
+                      <option key={c.id} value={String(c.id)}>{c.name}</option>
+                    ))
+                  }
+                </select>
               </label>
             </div>
           </div>
@@ -1523,9 +1575,11 @@ export default function MovieDetailPage() {
                   <h3 className="text-base font-bold text-white">
                     {cinema.name}
                   </h3>
-                  <p className="text-xs text-[#7F7F89] mt-0.5">
-                    {cinema.address || 'Hệ thống rạp CinePremier'}
-                  </p>
+                  {(cinema.address || cinema.city) && (
+                    <p className="text-xs text-[#7F7F89] mt-0.5">
+                      {cinema.address || cinema.city}
+                    </p>
+                  )}
                 </div>
 
                 {/* Format Rows */}
@@ -1581,22 +1635,32 @@ export default function MovieDetailPage() {
               </h2>
             </div>
 
-            <button
-              onClick={handleOpenWriteReview}
-              className="px-4 py-2 bg-[#111116] hover:bg-[#F7C600] text-white hover:text-black border border-white/15 hover:border-[#F7C600] text-xs font-bold uppercase rounded-lg transition cursor-pointer self-start sm:self-auto flex items-center gap-1.5"
-            >
-              {reviewEligibility.hasReviewed ? (
-                <>
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>Sửa đánh giá của bạn</span>
-                </>
-              ) : (
-                <>
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  <span>Viết đánh giá</span>
-                </>
-              )}
-            </button>
+            {(reviewEligibility.eligible || reviewEligibility.hasReviewed) ? (
+              <button
+                onClick={handleOpenWriteReview}
+                className="px-4 py-2 bg-[#111116] hover:bg-[#F7C600] text-white hover:text-black border border-white/15 hover:border-[#F7C600] text-xs font-bold uppercase rounded-lg transition cursor-pointer self-start sm:self-auto flex items-center gap-1.5"
+              >
+                {reviewEligibility.hasReviewed ? (
+                  <>
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Sửa đánh giá của bạn</span>
+                  </>
+                ) : (
+                  <>
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>Viết đánh giá</span>
+                  </>
+                )}
+              </button>
+            ) : reviewEligibility.reason === 'SHOWTIME_NOT_FINISHED' ? (
+              <div
+                className="px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold uppercase rounded-lg flex items-center gap-1.5"
+                title="Suất chiếu đang diễn ra. Bạn chỉ có thể đánh giá sau khi suất chiếu kết thúc."
+              >
+                <Clock className="w-3.5 h-3.5 text-amber-400" />
+                <span>Đang chiếu — Đánh giá sau giờ chiếu</span>
+              </div>
+            ) : null}
           </div>
 
           {/* Rating Summary Card */}

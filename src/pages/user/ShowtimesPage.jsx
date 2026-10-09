@@ -146,7 +146,7 @@ export default function ShowtimesPage() {
   // 2. Selection States (Synced with URL)
   const todayKey = toDateKey(new Date());
   const initialDate = searchParams.get('date') || todayKey;
-  const initialCinemaId = searchParams.get('cinemaId') || (storeSelectedCinema?.id ? String(storeSelectedCinema.id) : '');
+  const initialCinemaId = searchParams.get('cinemaId') || 'ALL';
   const initialMovieId = searchParams.get('movieId') || '';
 
   const [selectedDate, setSelectedDate] = useState(initialDate);
@@ -198,14 +198,7 @@ export default function ShowtimesPage() {
         const active = raw.filter((c) => !c.status || c.status === 'ACTIVE');
         setCinemas(active);
 
-        // Khởi tạo cinema mặc định nếu chưa chọn
-        if (!selectedCinemaId && active.length > 0) {
-          const matched = storeSelectedCinema?.id ? active.find(c => String(c.id) === String(storeSelectedCinema.id)) : active[0];
-          const chosen = matched || active[0];
-          setSelectedCinemaId(String(chosen.id));
-          if (chosen.city) setSelectedCity(chosen.city.trim());
-          if (setStoreSelectedCinema) setStoreSelectedCinema(chosen);
-        } else if (selectedCinemaId && selectedCinemaId !== 'ALL') {
+        if (selectedCinemaId && selectedCinemaId !== 'ALL') {
           const found = active.find(c => String(c.id) === String(selectedCinemaId));
           if (found && found.city) setSelectedCity(found.city.trim());
         }

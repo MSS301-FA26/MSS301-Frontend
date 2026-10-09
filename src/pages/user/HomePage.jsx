@@ -583,12 +583,23 @@ export default function HomePage({
     const list = Array.isArray(foodCatalog)
       ? foodCatalog.filter(item => !item.status || item.status === 'ACTIVE' || item.status === 'LOW_STOCK')
       : [];
+    let combined = [];
     if (list.length > 0) {
-      const existingNames = new Set(list.map(f => (f.name || '').toLowerCase()));
-      const extras = CURATED_FOODS.filter(cf => !existingNames.has(cf.name.toLowerCase()));
-      return [...list, ...extras];
+      const existingIds = new Set(list.map(f => String(f.id)));
+      const existingNames = new Set(list.map(f => (f.name || '').toLowerCase().trim()));
+      const extras = CURATED_FOODS.filter(cf => !existingIds.has(String(cf.id)) && !existingNames.has((cf.name || '').toLowerCase().trim()));
+      combined = [...list, ...extras];
+    } else {
+      combined = CURATED_FOODS;
     }
-    return CURATED_FOODS;
+
+    const seen = new Set();
+    return combined.filter(item => {
+      const idKey = String(item.id);
+      if (seen.has(idKey)) return false;
+      seen.add(idKey);
+      return true;
+    });
   }, [foodCatalog]);
 
   // AI PopBot Chat state

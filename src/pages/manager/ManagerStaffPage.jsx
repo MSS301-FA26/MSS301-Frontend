@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import {
   Users, UserPlus, ShieldAlert, CheckCircle2,
   XCircle, RefreshCw, Lock, Mail, Phone, User
@@ -28,7 +28,7 @@ export default function ManagerStaffPage() {
     if (!selectedCinemaId) return;
     setLoading(true);
     try {
-      const data = await request(`/api/v1/manager/cinemas/${selectedCinemaId}/staff`, { token: token() });
+      const data = await request(`/api/v1/admin/users?role=STAFF`, { token: token() });
       setStaffList(Array.isArray(data) ? data : []);
     } catch (err) {
       showToast(err.message || 'Không thể tải danh sách nhân viên rạp', 'error');
@@ -45,7 +45,7 @@ export default function ManagerStaffPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      await request(`/api/v1/manager/cinemas/${selectedCinemaId}/staff`, {
+      await request(`/api/v1/admin/users/staff`, {
         method: 'POST',
         token: token(),
         body: {
@@ -74,7 +74,7 @@ export default function ManagerStaffPage() {
     }
 
     try {
-      await request(`/api/v1/manager/cinemas/${selectedCinemaId}/staff/${staff.id}/status`, {
+      await request(`/api/v1/admin/users/${staff.id}/status`, {
         method: 'PATCH',
         token: token(),
         body: { status: nextStatus }
@@ -294,3 +294,4 @@ export default function ManagerStaffPage() {
     </div>
   );
 }
+

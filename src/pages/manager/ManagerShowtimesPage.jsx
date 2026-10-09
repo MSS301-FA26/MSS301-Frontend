@@ -4,6 +4,7 @@ import {
   Layers, Film, CheckCircle2, RefreshCw, XCircle, AlertTriangle
 } from 'lucide-react';
 import { useManagerCinema } from '../../context/ManagerCinemaContext';
+import { adminService } from '../../services/adminService';
 import { getStoredAuth, request } from '../../services/authService';
 import { useUiStore } from '../../stores/useUiStore';
 
@@ -39,6 +40,7 @@ export default function ManagerShowtimesPage() {
 
   // Create/Edit Modal
   const [modalOpen, setModalOpen] = useState(false);
+  const [cancelModal, setCancelModal] = useState(null);
   const [editingShowtime, setEditingShowtime] = useState(null);
   const [formData, setFormData] = useState({
     movieId: '',
@@ -74,7 +76,22 @@ export default function ManagerShowtimesPage() {
       if (selectedRoomId) url += `&roomId=${selectedRoomId}`;
 
       const res = await request(url, { token: token() });
-      setShowtimes(res?.items || []);
+      const items = res?.items || [];
+      setShowtimes(items);
+      const validIds = items.map(x => Number(x.id)).filter(id => !isNaN(id) && id > 0);
+      if (validIds.length > 0) {
+      if (validIds.length > 0 && typeof adminService?.getShowtimesTicketCounts === 'function') {
+        adminService.getShowtimesTicketCounts(token(), validIds)
+          .then(countsMap => {
+            if (countsMap && typeof countsMap === 'object') {
+              setShowtimes(prev => prev.map(item => {
+                const cnt = countsMap[item.id] ?? countsMap[Number(item.id)];
+                return cnt !== undefined ? { ...item, sold: Number(cnt) } : item;
+              }));
+            }
+          })
+          .catch(() => {});
+      }
     } catch (err) {
       showToast(err.message || 'Không thể tải danh sách suất chiếu', 'error');
     } finally {
@@ -179,18 +196,61 @@ export default function ManagerShowtimesPage() {
   };
 
   const handleCancel = async (st) => {
-    const confirmMsg = `Bạn có chắc chắn muốn HỦY suất chiếu này?\n\nPhim: ${st.movieTitle || `#${st.movieId}`}\nThời gian: ${st.startTime}\n\nLưu ý: Tất cả vé đã thanh toán của suất chiếu này sẽ được hệ thống TỰ ĐỘNG HOÀN TIỀN cho khách hàng!`;
-    if (!window.confirm(confirmMsg)) return;
+    setCancelModal({
+      showtime: st,
+      reason: 'Sự cố kỹ thuật phòng chiếu',
+      submitting: false,
+      loadingSummary: true,
+      soldCount: Number(st.sold || 0),
+      paidBookingsCount: null,
+      totalRefundAmount: null
+    });
 
+    const t = token();
+    if (t && st.id && !isNaN(Number(st.id)) && typeof adminService?.getShowtimeBookingSummary === 'function') {
+      try {
+        const summary = await adminService.getShowtimeBookingSummary(t, st.id);
+        if (summary) {
+          const soldCount = Number(summary.soldTicketsCount ?? summary.paidTicketsCount ?? 0);
+          const paidBookingsCount = Number(summary.paidBookingsCount ?? 0);
+          const totalRefundAmount = Number(summary.totalRefundAmount ?? 0);
+          setCancelModal(prev => prev && String(prev.showtime?.id) === String(st.id) ? ({
+            ...prev,
+            loadingSummary: false,
+            soldCount,
+            paidBookingsCount,
+            totalRefundAmount,
+            showtime: { ...prev.showtime, sold: soldCount }
+          }) : prev);
+
+          setShowtimes(prev => prev.map(item =>
+            String(item.id) === String(st.id) ? { ...item, sold: soldCount } : item
+          ));
+        }
+      } catch (err) {
+        console.warn('Lỗi lấy thông tin đặt vé suất chiếu:', err);
+        setCancelModal(prev => prev ? ({ ...prev, loadingSummary: false }) : null);
+      }
+    } else {
+      setCancelModal(prev => prev ? ({ ...prev, loadingSummary: false }) : null);
+    }
+  };
+
+  const handleConfirmCancelAndRefund = async () => {
+    if (!cancelModal?.showtime) return;
+    const st = cancelModal.showtime;
+    const finalReason = cancelModal.reason?.trim() || 'Sự cố kỹ thuật phòng chiếu';
+
+    setCancelModal(prev => ({ ...prev, submitting: true }));
     try {
-      await request(`/api/v1/manager/cinemas/${selectedCinemaId}/showtimes/${st.id}`, {
-        method: 'DELETE',
-        token: token()
-      });
-      showToast('Đã hủy suất chiếu và kích hoạt quy trình hoàn tiền cho khách hàng.', 'info');
+      showToast('Đang xử lý hủy suất chiếu và hoàn tiền...', 'info');
+      await adminService.cancelShowtimeAndRefund(token(), st.id, finalReason);
+      showToast('✓ Đã hủy suất chiếu và tự động hoàn tiền vào CineWallet thành công!', 'success');
+      setCancelModal(null);
       loadShowtimes();
     } catch (err) {
       showToast(err.message || 'Không thể hủy suất chiếu', 'error');
+      setCancelModal(prev => ({ ...prev, submitting: false }));
     }
   };
 
@@ -321,14 +381,17 @@ export default function ManagerShowtimesPage() {
                       >
                         <Edit3 className="w-4 h-4" />
                       </button>
-                      {st.status !== 'CANCELLED' && (
+                      {st.status !== 'CANCELLED' ? (
                         <button
                           onClick={() => handleCancel(st)}
-                          className="p-1.5 text-neutral-400 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors"
-                          title="Hủy suất chiếu & Hoàn tiền vé"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold rounded bg-rose-500/15 text-rose-400 hover:bg-rose-500/25 border border-rose-500/30 transition-all shadow-sm"
+                          title="Hủy suất chiếu & Tự động hoàn tiền vào CineWallet"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                          <span>⚠️ Hủy & hoàn tiền</span>
                         </button>
+                      ) : (
+                        <span className="text-[11px] text-neutral-500 italic px-2 py-0.5">Đã hủy</span>
                       )}
                     </div>
                   </td>
@@ -340,6 +403,105 @@ export default function ManagerShowtimesPage() {
       )}
 
       {/* Create / Edit Modal */}
+      {/* Cancel Showtime & Refund In-App Modal */}
+      {cancelModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget && !cancelModal.submitting) setCancelModal(null); }}>
+          <div className="bg-[#181818] border border-rose-500/40 rounded-xl max-w-lg w-full p-6 shadow-2xl space-y-4 shadow-rose-950/20">
+            <div className="flex items-center gap-3 border-b border-white/[0.08] pb-3">
+              <div className="w-10 h-10 rounded-lg bg-rose-500/15 border border-rose-500/30 flex items-center justify-center text-lg text-rose-400 shrink-0">
+                ⚠️
+              </div>
+              <div>
+                <h3 className="font-semibold text-white text-base">
+                  Xác nhận Hủy suất chiếu & Hoàn tiền
+                </h3>
+                <p className="text-xs text-rose-400 font-medium mt-0.5">
+                  Thao tác sự cố khẩn cấp (CineWallet)
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-white/[0.03] border border-white/[0.08] rounded-lg p-3.5 space-y-2 text-xs">
+              <div className="flex justify-between">
+                <span className="text-neutral-400">Phim:</span>
+                <strong className="text-white">{cancelModal.showtime?.movieTitle || `Phim #${cancelModal.showtime?.movieId}`}</strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-400">Phòng chiếu:</span>
+                <span className="text-sky-400 font-semibold">{cancelModal.showtime?.roomName || `Phòng ${cancelModal.showtime?.roomId}`}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-neutral-400">Thời gian:</span>
+                <span className="text-amber-400 font-mono">{cancelModal.showtime?.startTime ? new Date(cancelModal.showtime.startTime).toLocaleString('vi-VN') : '-'}</span>
+              </div>
+              <div className="flex justify-between pt-2 border-t border-white/[0.06]">
+                <span className="text-neutral-400">Giá vé cơ bản:</span>
+                <span className="text-neutral-200 font-mono">{formatVND(cancelModal.showtime?.price)}</span>
+              </div>
+              <div className="flex justify-between pt-2 border-t border-white/[0.06]">
+                <span className="text-neutral-400">Vé đã bán (Cần hoàn):</span>
+                {cancelModal.loadingSummary ? (
+                  <span className="text-amber-400 text-[11px]">🔄 Đang kiểm tra hệ thống...</span>
+                ) : (
+                  <strong className={`font-mono text-xs ${(cancelModal.soldCount || 0) > 0 ? "text-rose-400" : "text-emerald-400"}`}>
+                    {cancelModal.soldCount || 0} vé {cancelModal.paidBookingsCount !== null && cancelModal.paidBookingsCount !== undefined ? `(${cancelModal.paidBookingsCount} đơn đặt)` : ""}
+                  </strong>
+                )}
+              </div>
+              {cancelModal.totalRefundAmount !== null && cancelModal.totalRefundAmount !== undefined && (
+                <div className="flex justify-between pt-1">
+                  <span className="text-neutral-400">Tổng tiền hoàn trả:</span>
+                  <strong className="text-sky-400 font-mono text-xs">
+                    {formatVND(cancelModal.totalRefundAmount)}
+                  </strong>
+                </div>
+              )}
+            </div>
+
+            <div className={`border rounded-lg p-3 text-xs leading-relaxed ${(cancelModal.soldCount || 0) > 0 ? "bg-rose-500/10 border-rose-500/25 text-rose-300" : "bg-sky-500/10 border-sky-500/25 text-sky-300"}`}>
+              {(cancelModal.soldCount || 0) > 0 ? (
+                <>💡 <strong>Lưu ý:</strong> Toàn bộ <strong>{cancelModal.soldCount} vé</strong> đã thanh toán ({formatVND(cancelModal.totalRefundAmount || 0)}) sẽ được hệ thống <strong>tự động hoàn tiền 100% vào CineWallet</strong> của từng khách hàng và các ghế đã đặt sẽ được giải phóng ngay lập tức.</>
+              ) : (
+                <>ℹ️ Suất chiếu hiện tại <strong>chưa có vé thanh toán</strong>. Thao tác hủy sẽ chuyển trạng thái suất chiếu sang "Đã hủy" một cách an toàn mà không phát sinh hoàn tiền.</>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-neutral-200 block">
+                Lý do hủy suất chiếu:
+              </label>
+              <input
+                type="text"
+                value={cancelModal.reason}
+                onChange={(e) => setCancelModal(prev => ({ ...prev, reason: e.target.value }))}
+                placeholder="Nhập lý do hủy sự cố (VD: Sự cố kỹ thuật phòng chiếu, mất điện...)"
+                disabled={cancelModal.submitting}
+                className="w-full px-3.5 py-2.5 bg-white/[0.05] border border-white/[0.12] rounded-lg text-white text-xs focus:outline-none focus:border-rose-500 transition-colors"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setCancelModal(null)}
+                disabled={cancelModal.submitting}
+                className="px-4 py-2 rounded-lg text-xs font-medium text-neutral-300 hover:bg-white/[0.06] transition-colors"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmCancelAndRefund}
+                disabled={cancelModal.submitting}
+                className="px-4 py-2 rounded-lg text-xs font-semibold bg-rose-600 hover:bg-rose-500 text-white transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {cancelModal.submitting ? 'Đang xử lý...' : '⚠️ Xác nhận Hủy & Hoàn tiền'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {modalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
           <div className="bg-[#181818] border border-white/[0.12] rounded-xl max-w-lg w-full p-6 shadow-2xl space-y-4">

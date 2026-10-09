@@ -1,19 +1,44 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Ticket, Calendar, MapPin, Star, CheckCircle, Clock, Loader2, MoreVertical, ScanLine, XCircle, MessageSquare, Pencil, Trash2, Save, X, ChevronLeft, ChevronRight, EyeOff } from 'lucide-react';
+import { Ticket, Calendar, MapPin, Star, CheckCircle, Clock, Loader2, MoreVertical, ScanLine, XCircle, MessageSquare, Pencil, Trash2, Save, X, ChevronLeft, ChevronRight, EyeOff, AlertTriangle, RotateCcw, Wallet } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { getStoredAuth } from '../../services/authService';
 import { bookingService } from '../../services/bookingService';
 import { reviewService } from '../../services/reviewService';
+import { movieService } from '../../services/movieService';
 import { useMovies } from '../../stores/useMovieStore';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useUiStore } from '../../stores/useUiStore';
+
+const CINEMA_DEFAULT_ADDRESS_MAP = {
+  1: 'Tầng 3, Bitexco Financial Tower, Số 2 Hải Triều, P. Bến Nghé, Quận 1, TP. Hồ Chí Minh',
+  2: '135 Hai Bà Trưng, P. Bến Nghé, Quận 1, TP. Hồ Chí Minh',
+  3: 'Tầng B1, Vincom Center Landmark 81, 720A Điện Biên Phủ, P. 22, Q. Bình Thạnh, TP. Hồ Chí Minh',
+  4: 'Tầng 4, Lotte Mall West Lake, 272 Võ Chí Công, Q. Tây Hồ, Hà Nội',
+  5: 'Tầng 5, Vincom Plaza Ngô Quyền, 910A Ngô Quyền, Q. Sơn Trà, Đà Nẵng',
+  6: 'Quận 2, TP. Hồ Chí Minh',
+};
+
+const CINEMA_NAME_ADDRESS_MAP = {
+  'cinemaai dragon city': 'Tầng 5, Vincom Plaza Ngô Quyền, 910A Ngô Quyền, Q. Sơn Trà, Đà Nẵng',
+  'dragon city': 'Tầng 5, Vincom Plaza Ngô Quyền, 910A Ngô Quyền, Q. Sơn Trà, Đà Nẵng',
+  'cinemaai central - q.1': 'Tầng 3, Bitexco Financial Tower, Số 2 Hải Triều, P. Bến Nghé, Quận 1, TP. Hồ Chí Minh',
+  'cinemaai hai bà trưng - q.1': '135 Hai Bà Trưng, P. Bến Nghé, Quận 1, TP. Hồ Chí Minh',
+  'cinemaai landmark 81': 'Tầng B1, Vincom Center Landmark 81, 720A Điện Biên Phủ, P. 22, Q. Bình Thạnh, TP. Hồ Chí Minh',
+  'cinemaai tây hồ - hà nội': 'Tầng 4, Lotte Mall West Lake, 272 Võ Chí Công, Q. Tây Hồ, Hà Nội',
+};
+
+const formatVnd = (value) => {
+  const num = Number(value || 0);
+  return `${num.toLocaleString('vi-VN')} đ`;
+};
 
 export default function MyTicketsView({ embedded = false }) {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const highlightBookingId = searchParams.get('highlightBookingId') || searchParams.get('bookingId');
   const [highlightedId, setHighlightedId] = useState(null);
+  const [ticketFilter, setTicketFilter] = useState('ALL');
   const hasProcessedHighlightRef = useRef(null);
   const isLoggedIn = useAuthStore((state) => state.isLoggedIn);
   const showToast = useUiStore((state) => state.showToast);
@@ -21,6 +46,7 @@ export default function MyTicketsView({ embedded = false }) {
   const { publicCinema, moviesList = [] } = useMovies();
   const onSelectMovie = (id) => navigate(`/movies/${id}`);
   const onOpenOTP = () => setShowOTP(true);
+  const [cinemas, setCinemas] = useState([]);
   const [reviewContent, setReviewContent] = useState('');
   const [reviewRating, setReviewRating] = useState(5);
   const [selectedReviewMovie, setSelectedReviewMovie] = useState('');
@@ -28,12 +54,105 @@ export default function MyTicketsView({ embedded = false }) {
   const [realBookings, setRealBookings] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [cancellingBookingId, setCancellingBookingId] = useState('');
+
+  // Tải danh sách rạp để hiển thị tên và địa chỉ rạp chi tiết cho vé
+  useEffect(() => {
+    movieService.getPublicCinemas?.()
+      .then((res) => {
+        const list = Array.isArray(res) ? res : (res?.data || []);
+        setCinemas(list.filter((c) => !c.status || c.status === 'ACTIVE'));
+      })
+      .catch((err) => {
+        console.warn('Lỗi tải danh sách rạp:', err);
+      });
+  }, []);
+
+  const resolveBookingCinema = (b) => {
+    const rawName = b.cinemaName || b.cinemaNameSnapshot || b.showtime?.cinemaName || '';
+    const normName = rawName.toLowerCase().trim();
+
+    // 1. Khớp theo cinemaId từ API danh sách rạp
+    if (b.cinemaId && Array.isArray(cinemas) && cinemas.length > 0) {
+      const match = cinemas.find((c) => String(c.id) === String(b.cinemaId));
+      if (match) {
+        return {
+          id: match.id,
+          name: match.name,
+          address: match.address || CINEMA_DEFAULT_ADDRESS_MAP[match.id] || '',
+          city: match.city || '',
+        };
+      }
+    }
+
+    // 2. Khớp theo cinemaName từ API danh sách rạp
+    if (rawName && Array.isArray(cinemas) && cinemas.length > 0) {
+      const match = cinemas.find(
+        (c) => c.name?.toLowerCase().trim() === normName || normName.includes(c.name?.toLowerCase().trim())
+      );
+      if (match) {
+        return {
+          id: match.id,
+          name: match.name,
+          address: match.address || CINEMA_DEFAULT_ADDRESS_MAP[match.id] || '',
+          city: match.city || '',
+        };
+      }
+    }
+
+    // 3. Khớp bản đồ địa chỉ mặc định
+    if (b.cinemaId && CINEMA_DEFAULT_ADDRESS_MAP[b.cinemaId]) {
+      return {
+        id: b.cinemaId,
+        name: rawName || (b.cinemaId === 5 ? 'CinemaAI Dragon City' : 'CinePremier Cinema'),
+        address: CINEMA_DEFAULT_ADDRESS_MAP[b.cinemaId],
+        city: '',
+      };
+    }
+    if (normName && CINEMA_NAME_ADDRESS_MAP[normName]) {
+      return {
+        id: b.cinemaId || null,
+        name: rawName,
+        address: CINEMA_NAME_ADDRESS_MAP[normName],
+        city: '',
+      };
+    }
+
+    // 4. Fallback từ publicCinema trong store
+    if (publicCinema) {
+      return {
+        id: publicCinema.id,
+        name: rawName || publicCinema.name || 'CinemaAI Dragon City',
+        address: publicCinema.address || CINEMA_DEFAULT_ADDRESS_MAP[publicCinema.id] || 'Tầng 5, Vincom Plaza Ngô Quyền, 910A Ngô Quyền, Q. Sơn Trà, Đà Nẵng',
+        city: publicCinema.city || '',
+      };
+    }
+
+    // 5. Fallback rạp đầu tiên hoặc Dragon City
+    if (Array.isArray(cinemas) && cinemas.length > 0) {
+      const def = cinemas.find((c) => c.id === 5) || cinemas[0];
+      return {
+        id: def.id,
+        name: rawName || def.name,
+        address: def.address || CINEMA_DEFAULT_ADDRESS_MAP[def.id] || '',
+        city: def.city || '',
+      };
+    }
+
+    return {
+      id: 5,
+      name: rawName || 'CinemaAI Dragon City',
+      address: 'Tầng 5, Vincom Plaza Ngô Quyền, 910A Ngô Quyền, Q. Sơn Trà, Đà Nẵng',
+      city: 'Đà Nẵng',
+    };
+  };
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [editingReviewId, setEditingReviewId] = useState('');
   const [editReviewContent, setEditReviewContent] = useState('');
   const [editReviewRating, setEditReviewRating] = useState(5);
   const [savingReviewId, setSavingReviewId] = useState('');
   const [deletingReviewId, setDeletingReviewId] = useState('');
+  const [cancelConfirmBooking, setCancelConfirmBooking] = useState(null);
+  const [deleteReviewConfirm, setDeleteReviewConfirm] = useState(null);
   const [ticketPage, setTicketPage] = useState(1);
   const [historyPage, setHistoryPage] = useState(1);
   const reviewSectionRef = useRef(null);
@@ -42,7 +161,7 @@ export default function MyTicketsView({ embedded = false }) {
   const HISTORY_PAGE_SIZE = 10;
 
   const canOrderMoreFood = (t) => (
-    ['PAID', 'USED'].includes(t?.status) || Boolean(t?.isWatching)
+    !t?.isRefunded && !t?.isCancelledShowtime && (['PAID', 'USED'].includes(t?.status) || Boolean(t?.isWatching))
   );
 
   const loadBookings = () => {
@@ -94,6 +213,17 @@ export default function MyTicketsView({ embedded = false }) {
     });
   }, [clockTick, realBookings]);
 
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (cancelConfirmBooking && !cancellingBookingId) setCancelConfirmBooking(null);
+        if (deleteReviewConfirm && !deletingReviewId) setDeleteReviewConfirm(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [cancelConfirmBooking, cancellingBookingId, deleteReviewConfirm, deletingReviewId]);
+
   const formatCountdown = (seconds) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -133,6 +263,8 @@ export default function MyTicketsView({ embedded = false }) {
         return 'bg-amber-950/20 text-amber-400 border-amber-500/20';
       case 'CANCELLED':
         return 'bg-rose-950/25 text-rose-300 border-rose-500/20';
+      case 'REFUNDED':
+        return 'bg-purple-950/40 text-purple-300 border-purple-500/30';
       case 'EXPIRED':
         return 'bg-zinc-900 text-zinc-500 border-zinc-700';
       default:
@@ -141,6 +273,14 @@ export default function MyTicketsView({ embedded = false }) {
   };
 
   const getBookingHelperText = (booking) => {
+    if (booking.status === 'REFUNDED' || booking.refundedAt) {
+      return booking.refundReason
+        ? `Đã hoàn tiền vào CineWallet (${booking.refundReason})`
+        : 'Đã hoàn tiền vào CineWallet';
+    }
+    if (booking.status === 'CANCELLED') {
+      return booking.refundReason || booking.cancelReason || 'Suất chiếu đã bị hủy';
+    }
     if (booking.status === 'PAID') return 'Sẵn sàng quét / Đưa mã cho nhân viên soát vé';
     if (booking.status === 'PENDING_PAYMENT') return 'Có thể tiếp tục thanh toán khi thời gian giữ ghế còn hiệu lực';
     if (booking.status === 'HOLDING') {
@@ -149,26 +289,30 @@ export default function MyTicketsView({ embedded = false }) {
     return 'Đã sử dụng';
   };
 
-  const handleCancelBooking = async (booking) => {
+  const handleCancelBooking = (booking) => {
     const isCancellable = booking?.bookingId
       && ['HOLDING', 'PENDING_PAYMENT'].includes(booking.status)
       && (!booking.holdExpiresAt || new Date(booking.holdExpiresAt).getTime() > Date.now());
     if (!isCancellable) return;
 
-    const confirmed = window.confirm(
-      'Hủy đặt vé này? Ghế đang giữ sẽ được giải phóng ngay để bạn có thể chọn lại số ghế hoặc thông tin vé.'
-    );
-    if (!confirmed) return;
+    setCancelConfirmBooking(booking);
+  };
+
+  const executeCancelBooking = async () => {
+    if (!cancelConfirmBooking) return;
+    const booking = cancelConfirmBooking;
 
     const { accessToken } = getStoredAuth();
     if (!accessToken) {
       showToast('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.', 4500, null, 'sad');
+      setCancelConfirmBooking(null);
       return;
     }
 
     setCancellingBookingId(String(booking.bookingId));
     try {
       await bookingService.cancelBooking(accessToken, booking.bookingId);
+      setCancelConfirmBooking(null);
       showToast('Đã hủy đặt vé và giải phóng ghế. Bạn có thể đặt lại ngay.');
       await loadBookings();
     } catch (error) {
@@ -188,6 +332,17 @@ export default function MyTicketsView({ embedded = false }) {
     )) || null;
   };
 
+  const isShowtimeCancelledBooking = (b) => {
+    if (!b) return false;
+    if (b.status === 'REFUNDED') return true;
+    const reason = String(b.refundReason || b.cancelReason || '').toLowerCase();
+    if (reason.includes('suất chiếu') || reason.includes('suat chieu') || reason.includes('sự cố') || reason.includes('hủy') || reason.includes('cancel')) return true;
+    if (b.showtime?.status === 'CANCELLED' || b.showtimeStatus === 'CANCELLED') return true;
+    return false;
+  };
+
+  const isRefundedBooking = (b) => (b.status === 'REFUNDED' || Boolean(b.refundedAt));
+
   const isPendingBooking = (booking) => ['HOLDING', 'PENDING_PAYMENT'].includes(booking.status);
   const hasHoldExpired = (booking) => Boolean(
     isPendingBooking(booking)
@@ -195,15 +350,20 @@ export default function MyTicketsView({ embedded = false }) {
     && new Date(booking.holdExpiresAt).getTime() <= clockTick
   );
 
-  // Đơn chờ thanh toán chỉ nằm trong "Vé của tôi" khi session giữ ghế còn hiệu lực.
+  // Lấy cả vé thành công, vé đã hoàn tiền, vé hủy suất chiếu và đơn giữ ghế còn hạn
   const activeTickets = useMemo(() => {
     return realBookings
       .filter((booking) => (
         booking.status === 'PAID'
         || booking.status === 'USED'
+        || isRefundedBooking(booking)
+        || (booking.status === 'CANCELLED' && isShowtimeCancelledBooking(booking))
         || (isPendingBooking(booking) && !hasHoldExpired(booking))
       ))
       .map(b => {
+        const isRefunded = isRefundedBooking(b);
+        const isCancelledShowtime = !isRefunded && (b.status === 'CANCELLED' || isShowtimeCancelledBooking(b));
+
         // Trạng thái giữ ghế realtime: đếm ngược tới holdExpiresAt; hết giờ thì
         // hiển thị "ĐÃ HẾT HẠN" ngay cả khi BE scheduler (60s/lần) chưa kịp đổi status
         const isPendingStatus = ['HOLDING', 'PENDING_PAYMENT'].includes(b.status);
@@ -228,12 +388,16 @@ export default function MyTicketsView({ embedded = false }) {
           }, {}))
           : [];
 
+        const cinemaInfo = resolveBookingCinema(b);
+
         return {
           bookingId: b.id,
           id: b.bookingCode || String(b.id),
           showtimeId: b.showtimeId || b.showtime?.id || null,
           paidAt: b.paidAt || null,
           createdAt: b.createdAt || null,
+          refundedAt: b.refundedAt || null,
+          refundReason: b.refundReason || b.cancelReason || '',
           status: b.status,
           movieId: b.movieId || b.showtime?.movieId || findMovieForBooking(b)?.backendId || findMovieForBooking(b)?.id,
           title: b.movieTitle || b.showtime?.movieTitle || 'Phim',
@@ -241,21 +405,43 @@ export default function MyTicketsView({ embedded = false }) {
           time: b.showtimeStart ? new Date(b.showtimeStart).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '—',
           date: b.showtimeStart ? new Date(b.showtimeStart).toLocaleDateString('vi-VN') : '—',
           room: b.roomName || b.showtime?.roomName || '—',
-          location: b.cinemaName || publicCinema?.name || 'Rạp chưa được cấu hình',
+          cinemaId: cinemaInfo.id,
+          cinemaName: cinemaInfo.name,
+          cinemaAddress: cinemaInfo.address,
+          cinemaCity: cinemaInfo.city,
+          location: cinemaInfo.name,
           seats: b.seats?.map(s => `${s.rowLabel}${s.seatNumber}`).join(', ') || '—',
           code: b.bookingCode || String(b.id),
           qrCode: b.qrCode || '',
-          badge: isClientExpired ? 'ĐÃ HẾT HẠN' : isWatching ? 'ĐÃ CHECK-IN' : getBookingBadge(b.status),
-          badgeColor: isClientExpired
-            ? getBookingBadgeColor('EXPIRED')
-            : isWatching
-              ? 'bg-emerald-950/30 text-emerald-400 border-emerald-500/20'
-              : getBookingBadgeColor(b.status),
-          helperText: isClientExpired
-            ? 'Hết thời gian giữ ghế — ghế đã được nhả cho khách khác'
-            : isWatching
-              ? 'Đã vào rạp — chúc bạn xem phim vui vẻ 🍿'
-              : getBookingHelperText(b),
+          badge: isRefunded
+            ? 'ĐÃ HOÀN TIỀN'
+            : isCancelledShowtime
+              ? 'SUẤT CHIẾU ĐÃ HỦY'
+              : isClientExpired
+                ? 'ĐÃ HẾT HẠN'
+                : isWatching
+                  ? 'ĐÃ CHECK-IN'
+                  : getBookingBadge(b.status),
+          badgeColor: isRefunded
+            ? 'bg-purple-950/40 text-purple-300 border-purple-500/30'
+            : isCancelledShowtime
+              ? 'bg-rose-950/40 text-rose-300 border-rose-500/30'
+              : isClientExpired
+                ? getBookingBadgeColor('EXPIRED')
+                : isWatching
+                  ? 'bg-emerald-950/30 text-emerald-400 border-emerald-500/20'
+                  : getBookingBadgeColor(b.status),
+          helperText: isRefunded
+            ? (b.refundReason ? `Đã hoàn tiền vào CineWallet · ${b.refundReason}` : 'Đã hoàn tiền vào CineWallet')
+            : isCancelledShowtime
+              ? (b.refundReason || b.cancelReason || 'Suất chiếu đã bị hủy')
+              : isClientExpired
+                ? 'Hết thời gian giữ ghế — ghế đã được nhả cho khách khác'
+                : isWatching
+                  ? 'Đã vào rạp — chúc bạn xem phim vui vẻ 🍿'
+                  : getBookingHelperText(b),
+          isRefunded,
+          isCancelledShowtime,
           isWatching,
           holdExpiresAt: b.holdExpiresAt,
           holdSecondsLeft,
@@ -281,16 +467,29 @@ export default function MyTicketsView({ embedded = false }) {
         const timeB = b.paidAt ? new Date(b.paidAt).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
         return timeB - timeA;
       });
-  }, [realBookings, clockTick, publicCinema, moviesList]);
+  }, [realBookings, clockTick, publicCinema, moviesList, cinemas]);
 
-  const totalActiveTickets = activeTickets.length;
+  const filteredActiveTickets = useMemo(() => {
+    if (ticketFilter === 'UPCOMING') {
+      return activeTickets.filter(t => !t.isRefunded && !t.isCancelledShowtime && t.status === 'PAID' && !t.isWatching && (!t.showtimeEnd || new Date(t.showtimeEnd).getTime() > Date.now()));
+    }
+    if (ticketFilter === 'REFUNDED') {
+      return activeTickets.filter(t => t.isRefunded || t.isCancelledShowtime);
+    }
+    if (ticketFilter === 'USED') {
+      return activeTickets.filter(t => !t.isRefunded && !t.isCancelledShowtime && (t.status === 'USED' || (t.showtimeEnd && new Date(t.showtimeEnd).getTime() <= Date.now())));
+    }
+    return activeTickets;
+  }, [activeTickets, ticketFilter]);
+
+  const totalActiveTickets = filteredActiveTickets.length;
   const totalTicketPages = Math.ceil(totalActiveTickets / TICKET_PAGE_SIZE) || 1;
   const safeTicketPage = Math.min(Math.max(1, ticketPage), totalTicketPages);
 
   const paginatedActiveTickets = useMemo(() => {
     const start = (safeTicketPage - 1) * TICKET_PAGE_SIZE;
-    return activeTickets.slice(start, start + TICKET_PAGE_SIZE);
-  }, [activeTickets, safeTicketPage]);
+    return filteredActiveTickets.slice(start, start + TICKET_PAGE_SIZE);
+  }, [filteredActiveTickets, safeTicketPage]);
 
   useEffect(() => {
     if (!highlightBookingId || activeTickets.length === 0) return;
@@ -331,21 +530,36 @@ export default function MyTicketsView({ embedded = false }) {
         const isExpiredHold = hasHoldExpired(booking);
         const isWatching = booking.status === 'USED' && booking.showtimeEnd
           && Date.now() < new Date(booking.showtimeEnd).getTime();
+        const cinemaInfo = resolveBookingCinema(booking);
+
+        const isRefunded = isRefundedBooking(booking);
+        const isShowtimeCancelled = !isRefunded && (booking.status === 'CANCELLED' || isShowtimeCancelledBooking(booking));
+
         return {
           bookingId: booking.id,
           id: booking.id,
           paidAt: booking.paidAt || null,
           createdAt: booking.createdAt || null,
+          refundedAt: booking.refundedAt || null,
+          refundReason: booking.refundReason || booking.cancelReason || '',
           movie: booking.movieTitle || booking.showtime?.movieTitle || 'Phim',
           date: booking.showtimeStart ? new Date(booking.showtimeStart).toLocaleDateString('vi-VN') : '—',
-          location: booking.cinemaName || publicCinema?.name || 'Rạp chưa được cấu hình',
+          cinemaId: cinemaInfo.id,
+          cinemaName: cinemaInfo.name,
+          cinemaAddress: cinemaInfo.address,
+          cinemaCity: cinemaInfo.city,
+          location: cinemaInfo.name,
           seats: booking.seats?.map((seat) => `${seat.rowLabel}${seat.seatNumber}`).join(', ') || '—',
-          status: isExpiredHold ? 'ĐÃ HẾT HẠN' : isWatching ? 'ĐÃ CHECK-IN' : getBookingBadge(booking.status),
-          statusColor: isExpiredHold
-            ? getBookingBadgeColor('EXPIRED')
-            : isWatching
-              ? 'bg-emerald-950/30 text-emerald-400 border-emerald-500/20'
-              : getBookingBadgeColor(booking.status)
+          status: isRefunded ? 'ĐÃ HOÀN TIỀN' : isShowtimeCancelled ? 'SUẤT CHIẾU ĐÃ HỦY' : isExpiredHold ? 'ĐÃ HẾT HẠN' : isWatching ? 'ĐÃ CHECK-IN' : getBookingBadge(booking.status),
+          statusColor: isRefunded
+            ? 'bg-purple-950/40 text-purple-300 border-purple-500/30'
+            : isShowtimeCancelled
+              ? 'bg-rose-950/40 text-rose-300 border-rose-500/30'
+              : isExpiredHold
+                ? getBookingBadgeColor('EXPIRED')
+                : isWatching
+                  ? 'bg-emerald-950/30 text-emerald-400 border-emerald-500/20'
+                  : getBookingBadgeColor(booking.status)
         };
       })
       .sort((a, b) => {
@@ -358,7 +572,7 @@ export default function MyTicketsView({ embedded = false }) {
         const timeB = b.paidAt ? new Date(b.paidAt).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
         return timeB - timeA;
       });
-  }, [realBookings, clockTick, publicCinema]);
+  }, [realBookings, clockTick, publicCinema, cinemas]);
 
   const totalHistoryItems = bookingHistory.length;
   const totalHistoryPages = Math.ceil(totalHistoryItems / HISTORY_PAGE_SIZE) || 1;
@@ -376,6 +590,13 @@ export default function MyTicketsView({ embedded = false }) {
       .map(String)
   ), [reviewsList]);
 
+  const reviewedMovieIds = useMemo(() => new Set(
+    reviewsList
+      .filter((r) => r.status !== 'DELETED' && r.status !== 'REJECTED')
+      .map((r) => String(r.movieId || r.movie?.id || ''))
+      .filter(Boolean)
+  ), [reviewsList]);
+
   const visibleReviews = useMemo(
     () => reviewsList
       .slice()
@@ -389,13 +610,25 @@ export default function MyTicketsView({ embedded = false }) {
   );
 
   const isReviewInEditWindow = (review) => {
-    if (!review?.createdAt) return false;
-    return Date.now() - new Date(review.createdAt).getTime() <= 24 * 60 * 60 * 1000;
+    if (!review) return false;
+    const time = review.createdAt || review.created_at || review.timestamp || review.date;
+    if (!time) return true;
+    const createdMs = new Date(time).getTime();
+    if (Number.isNaN(createdMs)) return true;
+    return Date.now() - createdMs <= 24 * 60 * 60 * 1000;
   };
 
   const reviewableBookings = useMemo(() => {
     return realBookings
-      .filter((booking) => booking.status === 'USED')
+      .filter((booking) => {
+        if (booking.status !== 'USED' && booking.status !== 'PAID') return false;
+        // Phải qua giờ chiếu mới cho phép đánh giá (chỉ hiện nút / form khi showtime kết thúc)
+        const endTime = booking.showtimeEnd
+          ? new Date(booking.showtimeEnd).getTime()
+          : (booking.showtimeStart ? new Date(booking.showtimeStart).getTime() + 120 * 60000 : null);
+        const isShowtimeFinished = endTime ? Date.now() >= endTime : false;
+        return isShowtimeFinished;
+      })
       .map((booking) => {
         const matchedMovie = findMovieForBooking(booking);
         const movieId = booking.movieId || booking.showtime?.movieId || matchedMovie?.backendId || matchedMovie?.id;
@@ -412,8 +645,8 @@ export default function MyTicketsView({ embedded = false }) {
   }, [realBookings, moviesList]);
 
   const pendingReviewBookings = useMemo(
-    () => reviewableBookings.filter((booking) => !reviewedBookingIds.has(String(booking.id))),
-    [reviewableBookings, reviewedBookingIds]
+    () => reviewableBookings.filter((booking) => !reviewedBookingIds.has(String(booking.id)) && !reviewedMovieIds.has(String(booking.movieId))),
+    [reviewableBookings, reviewedBookingIds, reviewedMovieIds]
   );
   const selectedReviewBooking = reviewableBookings.find((booking) => String(booking.id) === String(selectedReviewMovie))
     || pendingReviewBookings[0]
@@ -451,7 +684,8 @@ export default function MyTicketsView({ embedded = false }) {
     try {
       const savedReview = await reviewService.createReview(accessToken, movieId, {
         bookingId: selectedReviewBooking?.id,
-        rating: reviewRating,
+        rating: Number(reviewRating),
+        content: comment,
         comment
       });
       setReviewsList((current) => [savedReview, ...current.filter((review) => String(review.id) !== String(savedReview.id))]);
@@ -505,6 +739,7 @@ export default function MyTicketsView({ embedded = false }) {
     try {
       const updatedReview = await reviewService.updateReview(accessToken, review.id, {
         rating: editReviewRating,
+        content: comment,
         comment
       });
       setReviewsList((current) => current.map((item) => (
@@ -519,12 +754,18 @@ export default function MyTicketsView({ embedded = false }) {
     }
   };
 
-  const handleDeleteReview = async (review) => {
-    const confirmed = window.confirm('Xóa đánh giá này? Thao tác chỉ hợp lệ trong 24 giờ sau khi gửi.');
-    if (!confirmed) return;
+  const handleDeleteReview = (review) => {
+    setDeleteReviewConfirm(review);
+  };
+
+  const executeDeleteReview = async () => {
+    if (!deleteReviewConfirm) return;
+    const review = deleteReviewConfirm;
+
     const { accessToken } = getStoredAuth();
     if (!accessToken) {
       showToast('Vui lòng đăng nhập lại để xóa đánh giá.', 4500, null, 'sad');
+      setDeleteReviewConfirm(null);
       return;
     }
 
@@ -535,6 +776,7 @@ export default function MyTicketsView({ embedded = false }) {
         String(item.id) === String(review.id) ? { ...item, status: 'DELETED' } : item
       )));
       if (editingReviewId === String(review.id)) handleCancelEditReview();
+      setDeleteReviewConfirm(null);
       showToast('Đã xóa đánh giá.');
     } catch (error) {
       showToast(error.message || 'Không thể xóa đánh giá.', 4500, null, 'sad');
@@ -575,14 +817,62 @@ export default function MyTicketsView({ embedded = false }) {
 
           {/* SECTION: VÉ HIỆN TẠI */}
           <div className="space-y-4">
-            <div className="flex items-center justify-between border-b border-white/5 pb-2">
+            <div className="flex flex-col gap-3 border-b border-white/5 pb-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
                 <Ticket className="h-4 w-4 text-white" />
                 <span className="text-[10px] uppercase font-sans font-black tracking-widest text-neutral-400">
                   🎫 Vé của tôi {isLoggedIn && !isLoading && `(${activeTickets.length})`}
                 </span>
+                {isLoading && <Loader2 className="h-4 w-4 text-amber-500 animate-spin ml-2" />}
               </div>
-              {isLoading && <Loader2 className="h-4 w-4 text-amber-500 animate-spin" />}
+
+              {/* Quick filter tabs */}
+              <div className="flex flex-wrap items-center gap-1.5 text-[9px] font-mono uppercase">
+                <button
+                  type="button"
+                  onClick={() => { setTicketFilter('ALL'); setTicketPage(1); }}
+                  className={`px-2.5 py-1 rounded transition border ${
+                    ticketFilter === 'ALL'
+                      ? 'bg-amber-400 text-black border-amber-400 font-bold'
+                      : 'bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-white'
+                  }`}
+                >
+                  Tất cả ({activeTickets.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setTicketFilter('UPCOMING'); setTicketPage(1); }}
+                  className={`px-2.5 py-1 rounded transition border ${
+                    ticketFilter === 'UPCOMING'
+                      ? 'bg-amber-400 text-black border-amber-400 font-bold'
+                      : 'bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-white'
+                  }`}
+                >
+                  Sắp chiếu ({activeTickets.filter(t => !t.isRefunded && !t.isCancelledShowtime && t.status === 'PAID' && !t.isWatching && (!t.showtimeEnd || new Date(t.showtimeEnd).getTime() > Date.now())).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setTicketFilter('REFUNDED'); setTicketPage(1); }}
+                  className={`px-2.5 py-1 rounded transition border ${
+                    ticketFilter === 'REFUNDED'
+                      ? 'bg-purple-600 text-white border-purple-500 font-bold shadow-[0_0_10px_rgba(168,85,247,0.3)]'
+                      : 'bg-purple-950/40 text-purple-300 border-purple-500/30 hover:bg-purple-900/50'
+                  }`}
+                >
+                  Đã hoàn tiền / Hủy suất ({activeTickets.filter(t => t.isRefunded || t.isCancelledShowtime).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setTicketFilter('USED'); setTicketPage(1); }}
+                  className={`px-2.5 py-1 rounded transition border ${
+                    ticketFilter === 'USED'
+                      ? 'bg-amber-400 text-black border-amber-400 font-bold'
+                      : 'bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-white'
+                  }`}
+                >
+                  Đã xem ({activeTickets.filter(t => !t.isRefunded && !t.isCancelledShowtime && (t.status === 'USED' || (t.showtimeEnd && new Date(t.showtimeEnd).getTime() <= Date.now()))).length})
+                </button>
+              </div>
             </div>
 
             {/* Dynamic / Styled tickets flex grid matching secondary screenshot */}
@@ -594,9 +884,14 @@ export default function MyTicketsView({ embedded = false }) {
                   || String(t.id) === String(highlightedId)
                   || String(t.code) === String(highlightedId)
                 );
-                const isEnded = Boolean(t.showtimeEnd && new Date(t.showtimeEnd).getTime() <= Date.now());
-                const isCheckedIn = t.status === 'USED' || t.status === 'COMPLETED' || (Array.isArray(t.seatDetails) && t.seatDetails.some((s) => s.status === 'CHECKED_IN'));
-                const hasShowtimePassed = isEnded || Boolean(t.showtimeStart && new Date(t.showtimeStart).getTime() <= Date.now());
+                const isEnded = Boolean(
+                  (t.showtimeEnd && new Date(t.showtimeEnd).getTime() <= Date.now())
+                  || (t.showtimeStart && new Date(new Date(t.showtimeStart).getTime() + 120 * 60000).getTime() <= Date.now())
+                );
+                const isRefunded = Boolean(t.isRefunded || t.status === 'REFUNDED' || t.refundedAt);
+                const isCancelledShowtime = !isRefunded && Boolean(t.isCancelledShowtime || t.status === 'CANCELLED');
+                const isCheckedIn = !isRefunded && !isCancelledShowtime && (t.status === 'USED' || t.status === 'COMPLETED' || (Array.isArray(t.seatDetails) && t.seatDetails.some((s) => s.status === 'CHECKED_IN')));
+                const hasShowtimePassed = isEnded;
                 const canReview = isCheckedIn && hasShowtimePassed;
                 const hasAlreadyReviewed = Boolean(t.bookingId && reviewedBookingIds.has(String(t.bookingId)));
                 const showReviewButton = canReview || hasAlreadyReviewed;
@@ -632,15 +927,25 @@ export default function MyTicketsView({ embedded = false }) {
 
                     {/* Tech Badge on poster */}
                     <div className={`absolute left-2.5 top-2.5 border text-[9px] font-black tracking-widest px-2 py-0.5 uppercase shadow-sm ${
-                      isEnded
-                        ? 'bg-neutral-950/95 border-neutral-700 text-neutral-400'
-                        : t.isClientExpired
-                          ? 'bg-zinc-900/95 border-zinc-600 text-zinc-400'
-                          : t.isWatching
-                            ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-300'
-                            : 'bg-red-950/90 border-red-500/50 text-white/90'
-                      }`}>
-                      {isEnded ? 'SUẤT CHIẾU ĐÃ KẾT THÚC' : t.badge}
+                      isRefunded
+                        ? 'bg-purple-950/95 border-purple-500/60 text-purple-200'
+                        : isCancelledShowtime
+                          ? 'bg-rose-950/95 border-rose-500/60 text-rose-200'
+                          : isEnded
+                            ? 'bg-neutral-950/95 border-neutral-700 text-neutral-400'
+                            : t.isClientExpired
+                              ? 'bg-zinc-900/95 border-zinc-600 text-zinc-400'
+                              : t.isWatching
+                                ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-300'
+                                : 'bg-red-950/90 border-red-500/50 text-white/90'
+                    }`}>
+                      {isRefunded
+                        ? 'ĐÃ HOÀN TIỀN'
+                        : isCancelledShowtime
+                          ? 'SUẤT CHIẾU ĐÃ HỦY'
+                          : isEnded
+                            ? 'SUẤT CHIẾU ĐÃ KẾT THÚC'
+                            : t.badge}
                     </div>
                   </div>
 
@@ -660,6 +965,71 @@ export default function MyTicketsView({ embedded = false }) {
                       <div className="flex justify-between items-center text-[10px] text-neutral-400 tracking-wider">
                         <p className="truncate uppercase font-sans font-medium max-w-[60%]">{t.englishTitle}</p>
                         <p className="font-mono font-extrabold text-zinc-300 border-b border-white/5 pb-0.5 uppercase tracking-wide shrink-0">{t.date}</p>
+                      </div>
+                    </div>
+
+                    {/* KHỐI THÔNG TIN HOÀN TIỀN / HỦY SUẤT CHIẾU */}
+                    {isRefunded && (
+                      <div className="my-2 flex items-center justify-between gap-2.5 rounded border border-purple-500/35 bg-purple-950/30 p-2.5 text-xs shadow-inner">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-purple-500/20 text-purple-300">
+                            <RotateCcw className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <span className="text-[9.5px] font-black uppercase tracking-wider text-purple-200 block truncate">
+                              ĐÃ HOÀN TIỀN VÀO CINEWALLET
+                            </span>
+                            <p className="text-[10px] text-purple-300/85 line-clamp-1 leading-tight mt-0.5">
+                              {t.refundReason ? `Lý do: ${t.refundReason}` : 'Suất chiếu bị hủy — toàn bộ tiền vé đã được hoàn về ví'}
+                            </p>
+                          </div>
+                        </div>
+                        {t.totalAmount ? (
+                          <div className="shrink-0 text-right pl-2 border-l border-purple-500/25">
+                            <span className="text-[8px] font-black uppercase tracking-wider text-purple-300/70 block">Số tiền</span>
+                            <span className="font-mono font-black text-emerald-400 text-xs">
+                              +{formatVnd(t.totalAmount)}
+                            </span>
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+
+                    {isCancelledShowtime && (
+                      <div className="my-2 flex items-center gap-2.5 rounded border border-rose-500/35 bg-rose-950/30 p-2.5 text-xs shadow-inner">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-rose-500/20 text-rose-300">
+                          <XCircle className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <span className="text-[9.5px] font-black uppercase tracking-wider text-rose-200 block truncate">
+                            SUẤT CHIẾU ĐÃ BỊ HỦY
+                          </span>
+                          <p className="text-[10px] text-rose-300/85 line-clamp-1 leading-tight mt-0.5">
+                            {t.refundReason || t.cancelReason || 'Suất chiếu không diễn ra theo lịch dự kiến'}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* THÔNG TIN RẠP CHIẾU & ĐỊA CHỈ CHI TIẾT */}
+                    <div className="my-2 flex items-start gap-2.5 rounded border border-amber-500/25 bg-amber-500/[0.05] p-2 text-xs">
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-amber-500/15 text-amber-400 mt-0.5">
+                        <MapPin className="h-3.5 w-3.5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[9px] font-black uppercase tracking-wider text-amber-400">
+                            Rạp chiếu:
+                          </span>
+                          <span className="font-bold text-white text-xs truncate">
+                            {t.cinemaName}
+                          </span>
+                        </div>
+                        {t.cinemaAddress && (
+                          <p className="mt-0.5 text-[10px] text-neutral-400 line-clamp-1 leading-tight" title={t.cinemaAddress}>
+                            {t.cinemaAddress}
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -695,15 +1065,33 @@ export default function MyTicketsView({ embedded = false }) {
 
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div className={`flex h-9 w-9 shrink-0 items-center justify-center border ${
-                          isEnded
-                            ? 'border-neutral-800 bg-neutral-900/40 text-neutral-600'
-                            : 'border-emerald-500/20 bg-emerald-500/5 text-emerald-400'
+                          isRefunded
+                            ? 'border-purple-500/30 bg-purple-950/30 text-purple-400'
+                            : isCancelledShowtime
+                              ? 'border-rose-500/30 bg-rose-950/30 text-rose-400'
+                              : isEnded
+                                ? 'border-neutral-800 bg-neutral-900/40 text-neutral-600'
+                                : 'border-emerald-500/20 bg-emerald-500/5 text-emerald-400'
                         }`}>
-                          <ScanLine className="h-4 w-4" />
+                          {isRefunded ? (
+                            <RotateCcw className="h-4 w-4" />
+                          ) : isCancelledShowtime ? (
+                            <XCircle className="h-4 w-4" />
+                          ) : (
+                            <ScanLine className="h-4 w-4" />
+                          )}
                         </div>
 
                         <div className="min-w-0">
-                          {t.isHoldActive && t.holdSecondsLeft !== null ? (
+                          {isRefunded ? (
+                            <p className="text-[9.5px] uppercase tracking-wide font-black text-purple-300 leading-tight truncate">
+                              ĐÃ HOÀN TIỀN VÀO CINEWALLET · {t.refundReason || 'SUẤT CHIẾU ĐÃ HỦY'}
+                            </p>
+                          ) : isCancelledShowtime ? (
+                            <p className="text-[9.5px] uppercase tracking-wide font-black text-rose-300 leading-tight truncate">
+                              SUẤT CHIẾU ĐÃ BỊ HỦY · VÉ KHÔNG CÒN HIỆU LỰC
+                            </p>
+                          ) : t.isHoldActive && t.holdSecondsLeft !== null ? (
                             <p className={`text-[10px] font-mono font-black tracking-wider leading-tight ${t.holdSecondsLeft <= 30 ? 'text-red-400 animate-pulse' : 'text-amber-400'
                               }`}>
                               ⏳ Còn {formatCountdown(t.holdSecondsLeft)} để thanh toán
@@ -715,8 +1103,8 @@ export default function MyTicketsView({ embedded = false }) {
                               {isEnded ? 'Suất chiếu đã kết thúc — vé không còn hiệu lực qua cửa' : t.helperText}
                             </p>
                           )}
-                          <span className="text-[7.5px] font-mono text-neutral-500 block leading-none truncate uppercase mt-0.5">
-                            {t.location || 'CINEPREMIER VIP RẠP'}
+                          <span className="text-[7.5px] font-mono text-neutral-400 block leading-none truncate uppercase mt-0.5">
+                            📍 {t.cinemaName || 'CINEPREMIER VIP RẠP'}{t.cinemaAddress ? ` — ${t.cinemaAddress}` : ''}
                           </span>
                         </div>
                       </div>
@@ -782,6 +1170,15 @@ export default function MyTicketsView({ embedded = false }) {
                             {hasAlreadyReviewed ? 'Xem đánh giá' : 'Đánh giá'}
                           </button>
                         )}
+                        {!showReviewButton && isCheckedIn && !isEnded && (
+                          <span
+                            className="inline-flex items-center gap-1.5 border border-amber-500/25 bg-amber-950/20 px-2.5 py-1.5 text-[8px] font-bold uppercase tracking-widest text-amber-300 rounded-sm"
+                            title="Phim đang trong giờ chiếu. Nút đánh giá sẽ hiện lên sau khi kết thúc suất chiếu."
+                          >
+                            <Clock className="h-3 w-3 text-amber-400" />
+                            Đang chiếu — Đánh giá sau giờ chiếu
+                          </span>
+                        )}
                         <button
                           onClick={() => showToast(`Mã rạp chiếu kĩ thuật số: ${t.code} đã được gửi lên hệ thống. Đưa mã này khi nhận vé bắp nước combo VIP.`)}
                           className="p-1.5 hover:bg-neutral-900 text-neutral-500 hover:text-white transition rounded-full shrink-0"
@@ -814,7 +1211,42 @@ export default function MyTicketsView({ embedded = false }) {
 
                   {/* MỘT QR CHUNG CHO CẢ ĐƠN — bên trong chứa danh sách mã vé từng ghế */}
                   <div className="flex w-full shrink-0 flex-col items-center justify-center gap-3 border-t border-dashed border-neutral-800 bg-black/35 p-5 md:w-[220px] md:border-l md:border-t-0">
-                    {isEnded ? (
+                    {isRefunded ? (
+                      <div className="flex flex-col items-center justify-center text-center p-3 space-y-2.5">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-purple-950/60 border border-purple-500/50 text-purple-300 shadow-[0_0_20px_rgba(168,85,247,0.25)]">
+                          <RotateCcw className="h-6 w-6" />
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-black uppercase tracking-[0.16em] text-purple-300">ĐÃ HOÀN TIỀN</p>
+                          {t.totalAmount ? (
+                            <p className="mt-1 font-mono text-sm font-black text-emerald-400">
+                              +{formatVnd(t.totalAmount)}
+                            </p>
+                          ) : null}
+                        </div>
+                        <p className="text-[9px] text-neutral-400 font-sans leading-relaxed">
+                          Tiền vé đã được hoàn vào ví CineWallet
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => navigate('/profile')}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 rounded text-[10px] font-semibold text-purple-200 transition shadow-sm"
+                        >
+                          <Wallet className="h-3.5 w-3.5 text-purple-400" />
+                          Xem CineWallet
+                        </button>
+                      </div>
+                    ) : isCancelledShowtime ? (
+                      <div className="flex flex-col items-center justify-center text-center p-3 space-y-2.5 opacity-90">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-950/50 border border-rose-500/40 text-rose-400">
+                          <XCircle className="h-6 w-6" />
+                        </div>
+                        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-rose-300">SUẤT CHIẾU ĐÃ HỦY</p>
+                        <p className="text-[9px] text-neutral-400 font-sans leading-relaxed">
+                          Suất chiếu không diễn ra theo lịch
+                        </p>
+                      </div>
+                    ) : isEnded ? (
                       <div className="flex flex-col items-center justify-center text-center p-3 space-y-2.5 opacity-80">
                         <div className="flex h-11 w-11 items-center justify-center rounded-full bg-neutral-900 border border-neutral-800 text-neutral-500">
                           <ScanLine className="h-5 w-5" />
@@ -836,7 +1268,7 @@ export default function MyTicketsView({ embedded = false }) {
                           />
                         </div>
                         <p className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400">
-                          QR đặt chỗ · Bao gồm {t.seatDetails.length} ghế.
+                          QR đặt chỗ · {t.cinemaName || 'CinePremier'}
                         </p>
                         <div className="w-full space-y-1">
                           {t.seatDetails.map((seat) => (
@@ -874,8 +1306,11 @@ export default function MyTicketsView({ embedded = false }) {
                           <p className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400">
                             QR Check-in
                           </p>
-                          <p className="mt-1 text-[8px] leading-relaxed text-neutral-500">
-                            Nhân viên quét mã để lấy thông tin vé
+                          <p className="mt-0.5 text-[9px] font-bold text-white truncate max-w-[190px]">
+                            {t.cinemaName}
+                          </p>
+                          <p className="mt-0.5 text-[8px] leading-relaxed text-neutral-500">
+                            Nhân viên soát vé quét mã tại cửa rạp
                           </p>
                         </div>
                       </>
@@ -892,7 +1327,13 @@ export default function MyTicketsView({ embedded = false }) {
 
               {paginatedActiveTickets.length === 0 && (
                 <div className="border border-white/10 bg-[#070707] p-8 text-center text-xs text-neutral-500 font-mono">
-                  Bạn chưa có vé hiện tại nào.
+                  {ticketFilter === 'REFUNDED'
+                    ? 'Không có vé nào bị hủy suất chiếu hoặc đã hoàn tiền.'
+                    : ticketFilter === 'UPCOMING'
+                      ? 'Không có vé nào sắp chiếu.'
+                      : ticketFilter === 'USED'
+                        ? 'Không có vé nào đã xem.'
+                        : 'Bạn chưa có vé hiện tại nào.'}
                 </div>
               )}
             </div>
@@ -970,7 +1411,7 @@ export default function MyTicketsView({ embedded = false }) {
                   <tr>
                     <th scope="col" className="px-4 py-2">PHIM</th>
                     <th scope="col" className="px-4 py-2">NGÀY CHIẾU</th>
-                    <th scope="col" className="px-4 py-2">ĐỊA ĐIỂM</th>
+                    <th scope="col" className="px-4 py-2">RẠP & ĐỊA ĐIỂM</th>
                     <th scope="col" className="px-4 py-2">SỐ GHẾ</th>
                     <th scope="col" className="px-4 py-2">TRẠNG THÁI</th>
                   </tr>
@@ -980,12 +1421,27 @@ export default function MyTicketsView({ embedded = false }) {
                     <tr key={idx} className="hover:bg-white/5 transition duration-150">
                       <td className="px-4 py-2 whitespace-nowrap font-serif italic text-white font-bold">{row.movie}</td>
                       <td className="px-4 py-2 whitespace-nowrap font-mono">{row.date}</td>
-                      <td className="px-4 py-2 whitespace-nowrap text-neutral-400">{row.location}</td>
+                      <td className="px-4 py-2 text-neutral-300">
+                        <div className="font-semibold text-white flex items-center gap-1">
+                          <MapPin className="h-3 w-3 text-amber-400 shrink-0" />
+                          <span className="truncate max-w-[200px]">{row.cinemaName}</span>
+                        </div>
+                        {row.cinemaAddress && (
+                          <div className="text-[10px] text-neutral-400 mt-0.5 line-clamp-1 max-w-[260px]" title={row.cinemaAddress}>
+                            {row.cinemaAddress}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-2 whitespace-nowrap font-mono">{row.seats}</td>
                       <td className="px-4 py-2 whitespace-nowrap">
                         <span className={`inline-block border text-[8px] font-bold px-2 py-0.5 tracking-wider uppercase rounded-sm ${row.statusColor}`}>
                           {row.status}
                         </span>
+                        {row.refundReason && (
+                          <span className="block text-[8px] text-purple-300/70 font-mono mt-0.5 line-clamp-1 max-w-[140px]" title={row.refundReason}>
+                            {row.refundReason}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -1074,11 +1530,11 @@ export default function MyTicketsView({ embedded = false }) {
                 </div>
 
                 <div className="space-y-1">
-                  <h4 className="text-sm font-serif font-bold italic text-white uppercase tracking-wider">{selectedReviewBooking?.movieTitle || 'Chưa có vé đã sử dụng'}</h4>
+                  <h4 className="text-sm font-serif font-bold italic text-white uppercase tracking-wider">{selectedReviewBooking?.movieTitle || 'Chưa có phim hoàn thành suất chiếu'}</h4>
                   <p className="text-[9px] uppercase tracking-widest text-[#888888] font-sans">
                     {selectedReviewBooking?.showtimeStart
                       ? `Đã xem ngày ${new Date(selectedReviewBooking.showtimeStart).toLocaleDateString('vi-VN')}`
-                      : 'Chỉ vé đã sử dụng mới được đánh giá'}
+                      : 'Nút đánh giá chỉ hiện lên sau khi suất chiếu đã kết thúc'}
                   </p>
                 </div>
 
@@ -1167,8 +1623,9 @@ export default function MyTicketsView({ embedded = false }) {
                 <div className="space-y-3">
                   {visibleReviews.map((rev) => {
                     const isEditing = editingReviewId === String(rev.id);
-                    const isHiddenByAdmin = rev.status === 'HIDDEN' || rev.status === 'DELETED';
-                    const canChangeReview = (!rev.status || rev.status === 'VISIBLE') && isReviewInEditWindow(rev);
+                    const isHiddenByAdmin = rev.status === 'HIDDEN' || rev.status === 'DELETED' || rev.status === 'REJECTED';
+                    const isVisibleStatus = !rev.status || rev.status === 'VISIBLE' || rev.status === 'PUBLISHED' || rev.status === 'ACTIVE';
+                    const canChangeReview = isVisibleStatus && !isHiddenByAdmin && isReviewInEditWindow(rev);
                     return (
                       <div key={rev.id} className={`border p-4 font-sans text-xs space-y-2.5 ${
                         isHiddenByAdmin ? 'border-rose-500/30 bg-rose-950/15' : 'border-white/5 bg-[#0a0a0a]'
@@ -1275,6 +1732,194 @@ export default function MyTicketsView({ embedded = false }) {
 
           </div>
         </>
+      )}
+
+    {/* Modal xác nhận hủy vé đang giữ chỗ (thay thế window.confirm localhost) */}
+      {cancelConfirmBooking && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => !cancellingBookingId && setCancelConfirmBooking(null)}
+        >
+          <div
+            className="relative w-full max-w-md border border-rose-500/30 bg-[#0d0d0d] p-6 shadow-[0_25px_60px_rgba(0,0,0,0.95)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Hiệu ứng dải sáng phía trên */}
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-rose-500 to-amber-500" />
+
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3 pt-1">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-rose-500/30 bg-rose-500/10 text-rose-400">
+                  <AlertTriangle className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-[9px] font-mono font-black uppercase tracking-[0.25em] text-rose-400">
+                    Xác nhận hủy giữ chỗ
+                  </p>
+                  <h3 className="mt-0.5 text-base font-black uppercase tracking-wide text-white">
+                    Hủy đặt vé này?
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !cancellingBookingId && setCancelConfirmBooking(null)}
+                disabled={Boolean(cancellingBookingId)}
+                className="text-neutral-400 hover:text-white p-1 hover:bg-white/10 transition disabled:opacity-30"
+                title="Đóng"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Nội dung thông báo hệ thống */}
+            <p className="mt-4 text-xs leading-relaxed text-neutral-300">
+              Ghế đang giữ sẽ được giải phóng ngay để bạn có thể chọn lại số ghế hoặc thông tin vé.
+            </p>
+
+            {/* Thẻ thông tin tóm tắt vé */}
+            <div className="mt-4 border border-white/10 bg-black/60 p-3.5 space-y-2 text-xs">
+              <div className="flex items-start justify-between gap-2 border-b border-white/5 pb-2">
+                <div className="min-w-0">
+                  <span className="block text-[8px] font-mono uppercase tracking-wider text-neutral-500">Phim</span>
+                  <p className="font-bold text-white truncate">{cancelConfirmBooking.title || cancelConfirmBooking.movieTitle || 'Vé xem phim'}</p>
+                </div>
+                {cancelConfirmBooking.code && (
+                  <div className="text-right shrink-0">
+                    <span className="block text-[8px] font-mono uppercase tracking-wider text-neutral-500">Mã đơn</span>
+                    <span className="font-mono text-[11px] font-extrabold text-amber-400">{cancelConfirmBooking.code}</span>
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div>
+                  <span className="block text-[8px] font-mono uppercase tracking-wider text-neutral-500">Suất chiếu</span>
+                  <span className="text-neutral-300 font-mono">{cancelConfirmBooking.time} · {cancelConfirmBooking.date}</span>
+                </div>
+                <div>
+                  <span className="block text-[8px] font-mono uppercase tracking-wider text-neutral-500">Ghế đang giữ</span>
+                  <span className="font-mono text-amber-300 font-bold">
+                    {cancelConfirmBooking.room ? `${cancelConfirmBooking.room} · ` : ''}{cancelConfirmBooking.seats || 'Chưa rõ'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Chú ý */}
+            <div className="mt-3 border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[10px] text-amber-200/90 leading-relaxed">
+              ⚠️ Ghế sẽ được nhả ngay cho khách hàng khác trên hệ thống sau khi bạn xác nhận hủy.
+            </div>
+
+            {/* Nút thao tác */}
+            <div className="mt-6 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setCancelConfirmBooking(null)}
+                disabled={Boolean(cancellingBookingId)}
+                className="border border-white/15 bg-black px-4 py-2 text-[10px] font-black uppercase tracking-widest text-neutral-300 hover:border-white/30 hover:text-white transition disabled:opacity-40"
+              >
+                Giữ lại vé
+              </button>
+              <button
+                type="button"
+                onClick={executeCancelBooking}
+                disabled={Boolean(cancellingBookingId)}
+                className="flex items-center gap-2 border border-rose-500 bg-rose-600 px-5 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-rose-500 transition shadow-[0_0_20px_rgba(244,63,94,0.3)] disabled:opacity-50"
+              >
+                {cancellingBookingId ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Đang hủy...
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="h-3.5 w-3.5" />
+                    Xác nhận hủy đặt vé
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal xác nhận xóa đánh giá */}
+      {deleteReviewConfirm && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-in fade-in duration-150"
+          onClick={() => !deletingReviewId && setDeleteReviewConfirm(null)}
+        >
+          <div
+            className="relative w-full max-w-md border border-rose-500/30 bg-[#0d0d0d] p-6 shadow-[0_25px_60px_rgba(0,0,0,0.95)]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 via-rose-500 to-amber-500" />
+            <div className="flex items-start justify-between gap-3 pt-1">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-rose-500/30 bg-rose-500/10 text-rose-400">
+                  <Trash2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-[9px] font-mono font-black uppercase tracking-[0.25em] text-rose-400">
+                    Xác nhận xóa
+                  </p>
+                  <h3 className="mt-0.5 text-base font-black uppercase tracking-wide text-white">
+                    Xóa đánh giá này?
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !deletingReviewId && setDeleteReviewConfirm(null)}
+                disabled={Boolean(deletingReviewId)}
+                className="text-neutral-400 hover:text-white p-1 hover:bg-white/10 transition disabled:opacity-30"
+                title="Đóng"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <p className="mt-4 text-xs leading-relaxed text-neutral-300">
+              Thao tác chỉ hợp lệ trong 24 giờ sau khi gửi và không thể hoàn tác.
+            </p>
+
+            {deleteReviewConfirm.comment && (
+              <div className="mt-3 border border-white/10 bg-black/60 p-3 text-xs text-neutral-300 italic line-clamp-3">
+                "{deleteReviewConfirm.comment}"
+              </div>
+            )}
+
+            <div className="mt-6 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setDeleteReviewConfirm(null)}
+                disabled={Boolean(deletingReviewId)}
+                className="border border-white/15 bg-black px-4 py-2 text-[10px] font-black uppercase tracking-widest text-neutral-300 hover:border-white/30 hover:text-white transition disabled:opacity-40"
+              >
+                Giữ lại
+              </button>
+              <button
+                type="button"
+                onClick={executeDeleteReview}
+                disabled={Boolean(deletingReviewId)}
+                className="flex items-center gap-2 border border-rose-500 bg-rose-600 px-5 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-rose-500 transition shadow-[0_0_20px_rgba(244,63,94,0.3)] disabled:opacity-50"
+              >
+                {deletingReviewId ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Đang xóa...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Xác nhận xóa
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

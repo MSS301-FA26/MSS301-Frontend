@@ -13,7 +13,13 @@ export default function PaymentCallbackPage() {
   const isCancelledRef = useRef(false);
 
   const onContinue = () => {
-    if (info.linkedBookingId) {
+    if (info.isFoodOrder) {
+      if (info.linkedBookingId) {
+        navigate(`/tickets?highlightBookingId=${info.linkedBookingId}&tab=food`);
+      } else {
+        navigate('/tickets?tab=food');
+      }
+    } else if (info.linkedBookingId) {
       navigate(`/tickets?highlightBookingId=${info.linkedBookingId}`);
     } else {
       navigate('/tickets');
@@ -72,23 +78,37 @@ export default function PaymentCallbackPage() {
           }
           const orders = await bookingService.getMyFoodOrders(accessToken);
           const order = Array.isArray(orders)
-            ? orders.find((candidate) => candidate.orderCode === code)
+            ? orders.find((candidate) => candidate.orderCode === code || candidate.foodOrderCode === code)
             : null;
 
-          if (order?.status === 'PAID') {
-            setStatus('success');
-            const linkedId = order.bookingId || order.booking?.id || order.bookingCode || null;
-            setInfo((prev) => ({
-              ...prev,
-              linkedBookingId: linkedId,
-            }));
-            return;
-          }
+          if (order) {
+            // Chủ động đồng bộ trạng thái nếu đơn vẫn chưa chuyển sang PAID
+            if (order.status !== 'PAID') {
+              try {
+                const synced = await bookingService.syncFoodOrderPayment(accessToken, order.id);
+                if (synced?.status) {
+                  order.status = synced.status;
+                }
+              } catch {
+                // Tiếp tục thử lần sau
+              }
+            }
 
-          if (order?.status === 'EXPIRED') {
-            setStatus('failed');
-            setFailReason('Đơn bắp nước đã hết thời hạn thanh toán 15 phút và không được ghi nhận thanh toán.');
-            return;
+            if (order.status === 'PAID') {
+              setStatus('success');
+              const linkedId = order.bookingId || order.booking?.id || order.bookingCode || null;
+              setInfo((prev) => ({
+                ...prev,
+                linkedBookingId: linkedId,
+              }));
+              return;
+            }
+
+            if (order.status === 'EXPIRED') {
+              setStatus('failed');
+              setFailReason('Đơn bắp nước đã hết thời hạn thanh toán 15 phút và không được ghi nhận thanh toán.');
+              return;
+            }
           }
 
           if (attempt < maxRetries) {
@@ -254,7 +274,7 @@ export default function PaymentCallbackPage() {
           onClick={onContinue}
           className="w-full bg-white text-black hover:bg-neutral-200 py-3 text-xs font-bold uppercase tracking-widest transition cursor-pointer"
         >
-          {info.isFoodOrder && info.linkedBookingId ? 'Về vé đã đặt' : 'Về vé của tôi'}
+          {info.isFoodOrder ? (info.linkedBookingId ? 'Về vé đã đặt' : 'Về đơn bắp nước của tôi') : 'Về vé của tôi'}
         </button>
 
       </div>
