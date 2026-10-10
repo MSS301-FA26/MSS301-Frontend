@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 import {
   AlertTriangle,
+  ChevronLeft, ChevronRight, ChevronDown, User, GripVertical, PanelLeftClose, PanelLeftOpen, 
   Building2,
   Calendar,
   CalendarClock,
@@ -90,17 +91,311 @@ const transactionMeta = {
   REVOKE: { label: 'Thu hồi', className: 'border-fuchsia-500/30 bg-fuchsia-950/20 text-fuchsia-300' }
 };
 
-const Field = ({ label, subtitle, children }) => (
-  <label className="space-y-1.5 block">
+const Field = ({ label, subtitle, error, required = false, children }) => (
+  <div className="space-y-1.5 block">
     <div className="flex items-baseline justify-between">
-      <span className="block text-[10.5px] font-black uppercase tracking-[0.14em] text-neutral-200">{label}</span>
+      <span className="block text-[10.5px] font-black uppercase tracking-[0.14em] text-neutral-200">
+        {label}
+        {required && <span className="text-rose-400 ml-1 font-bold">*</span>}
+      </span>
       {subtitle && <span className="text-[9.5px] text-neutral-400 font-normal">{subtitle}</span>}
     </div>
     {children}
-  </label>
+    {error && (
+      <p className="text-[10px] text-rose-400 font-medium flex items-center gap-1 mt-1">
+        <AlertTriangle className="h-3 w-3 shrink-0 text-rose-400" />
+        <span>{error}</span>
+      </p>
+    )}
+  </div>
 );
 
+const getInputClass = (hasError, extraClasses = '') => `w-full border ${
+  hasError
+    ? 'border-rose-500/80 bg-rose-950/20 text-white focus:border-rose-500 focus:ring-1 focus:ring-rose-500/50'
+    : 'border-white/[0.08] bg-black text-white focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/40'
+} px-3 py-2.5 text-xs font-mono outline-none transition ${extraClasses}`;
+
+
 const inputClass = 'w-full border border-white/[0.08] bg-black px-3 py-2.5 text-xs text-white font-mono outline-none transition focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/40';
+
+const fmtDateDisplay = (d) => {
+  if (!d) return '';
+  const parts = String(d).split('-');
+  if (parts.length === 3) {
+    const [yyyy, mm, dd] = parts;
+    return `${dd}/${mm}/${yyyy}`;
+  }
+  const date = new Date(d);
+  if (Number.isNaN(date.getTime())) return String(d);
+  const dd = String(date.getDate()).padStart(2, '0');
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const yyyy = date.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+};
+
+/**
+ * VietnameseDatePicker:
+ * - Always displays strictly in dd/mm/yyyy
+ * - Interactive calendar popover with Vietnamese localized headers (T2..CN)
+ * - Quick jump to today, month navigation
+ */
+function VietnameseDatePicker({
+  value,
+  onChange,
+  onBlur,
+  placeholder = 'dd/mm/yyyy',
+  className = '',
+  disabled = false,
+  dropUp = false,
+  hasError = false,
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef(null);
+  const [shouldDropUp, setShouldDropUp] = useState(dropUp);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (dropUp) {
+      setShouldDropUp(true);
+      return;
+    }
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      if (spaceBelow < 310 && spaceAbove > 260) {
+        setShouldDropUp(true);
+      } else {
+        setShouldDropUp(false);
+      }
+    }
+  }, [isOpen, dropUp]);
+
+  const parsedDate = useMemo(() => {
+    if (!value) return new Date();
+    const parts = value.split('-').map(Number);
+    if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+      return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+    return new Date();
+  }, [value]);
+
+  const [viewYear, setViewYear] = useState(() => parsedDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(() => parsedDate.getMonth() + 1);
+
+  useEffect(() => {
+    if (value) {
+      const parts = value.split('-').map(Number);
+      if (parts.length === 3 && parts[0] && parts[1]) {
+        setViewYear(parts[0]);
+        setViewMonth(parts[1]);
+      }
+    }
+  }, [value]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleClickOutside = (e) => {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  const displayText = useMemo(() => {
+    return fmtDateDisplay(value);
+  }, [value]);
+
+  const handlePrevMonth = (e) => {
+    e.stopPropagation();
+    if (viewMonth === 1) {
+      setViewYear(prev => prev - 1);
+      setViewMonth(12);
+    } else {
+      setViewMonth(prev => prev - 1);
+    }
+  };
+
+  const handleNextMonth = (e) => {
+    e.stopPropagation();
+    if (viewMonth === 12) {
+      setViewYear(prev => prev + 1);
+      setViewMonth(1);
+    } else {
+      setViewMonth(prev => prev + 1);
+    }
+  };
+
+  const handleSelectDay = (dayNum, monthOffset = 0) => {
+    let targetY = viewYear;
+    let targetM = viewMonth + monthOffset;
+    if (targetM < 1) {
+      targetY -= 1;
+      targetM = 12;
+    } else if (targetM > 12) {
+      targetY += 1;
+      targetM = 1;
+    }
+    const yStr = String(targetY);
+    const mStr = String(targetM).padStart(2, '0');
+    const dStr = String(dayNum).padStart(2, '0');
+    onChange(`${yStr}-${mStr}-${dStr}`);
+    setIsOpen(false);
+  };
+
+  const handleSelectToday = (e) => {
+    e.stopPropagation();
+    const today = new Date();
+    const yStr = String(today.getFullYear());
+    const mStr = String(today.getMonth() + 1).padStart(2, '0');
+    const dStr = String(today.getDate()).padStart(2, '0');
+    onChange(`${yStr}-${mStr}-${dStr}`);
+    setViewYear(today.getFullYear());
+    setViewMonth(today.getMonth() + 1);
+    setIsOpen(false);
+  };
+
+  const cells = useMemo(() => {
+    const f = new Date(viewYear, viewMonth - 1, 1);
+    const daysInMonth = new Date(viewYear, viewMonth, 0).getDate();
+    const prevMonthDays = new Date(viewYear, viewMonth - 1, 0).getDate();
+    const startOffset = (f.getDay() + 6) % 7; // Monday = 0
+
+    const list = [];
+    for (let d = prevMonthDays - startOffset + 1; d <= prevMonthDays; d++) {
+      list.push({ day: d, offset: -1, isCurrent: false });
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      list.push({ day: d, offset: 0, isCurrent: true });
+    }
+    const remaining = (7 - (list.length % 7)) % 7;
+    for (let d = 1; d <= remaining; d++) {
+      list.push({ day: d, offset: 1, isCurrent: false });
+    }
+    return list;
+  }, [viewYear, viewMonth]);
+
+  const todayStr = useMemo(() => {
+    const t = new Date();
+    return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+  }, []);
+
+  return (
+    <div className={`relative ${className}`} ref={containerRef}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setIsOpen(prev => !prev)}
+        onBlur={onBlur}
+        className={`w-full flex items-center justify-between border ${
+          hasError
+            ? 'border-rose-500/80 bg-rose-950/20 text-white focus:border-rose-500 focus:ring-1 focus:ring-rose-500/50'
+            : 'border-white/10 hover:border-amber-500/60 bg-black focus:border-amber-500'
+        } px-3 py-2 text-xs text-white focus:outline-none transition group select-none`}
+        title="Bấm để mở lịch chọn ngày reset"
+      >
+        <div className="flex items-center gap-2">
+          <Calendar className="h-3.5 w-3.5 text-amber-500 shrink-0 group-hover:scale-110 transition-transform" />
+          <span className="font-mono font-bold tracking-wider text-[12px] text-amber-300">
+            {displayText || placeholder}
+          </span>
+        </div>
+        <ChevronDown className={`h-3 w-3 text-neutral-400 shrink-0 transition-transform ${isOpen ? 'rotate-180 text-amber-400' : ''}`} />
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: shouldDropUp ? -6 : 6, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: shouldDropUp ? -6 : 6, scale: 0.98 }}
+            transition={{ duration: 0.15 }}
+            className={`absolute left-0 ${shouldDropUp ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} z-[100] w-[265px] border border-amber-500/50 bg-[#111] p-3 shadow-2xl shadow-black/95 font-sans`}
+          >
+            <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
+              <button
+                type="button"
+                onClick={handlePrevMonth}
+                className="p-1 text-neutral-400 hover:text-white hover:bg-white/10 transition"
+                title="Tháng trước"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <div className="text-xs font-bold text-white font-mono flex items-center gap-1.5">
+                <span className="text-amber-400">Tháng {String(viewMonth).padStart(2, '0')}</span>
+                <span className="text-neutral-500">/</span>
+                <span>{viewYear}</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleNextMonth}
+                className="p-1 text-neutral-400 hover:text-white hover:bg-white/10 transition"
+                title="Tháng sau"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-mono font-bold uppercase text-neutral-400 mb-1.5">
+              <span>T2</span>
+              <span>T3</span>
+              <span>T4</span>
+              <span>T5</span>
+              <span>T6</span>
+              <span>T7</span>
+              <span className="text-red-400">CN</span>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-center text-xs font-mono">
+              {cells.map((cell, idx) => {
+                const cellY = cell.offset === -1 ? (viewMonth === 1 ? viewYear - 1 : viewYear)
+                            : cell.offset === 1 ? (viewMonth === 12 ? viewYear + 1 : viewYear)
+                            : viewYear;
+                const cellM = cell.offset === -1 ? (viewMonth === 1 ? 12 : viewMonth - 1)
+                            : cell.offset === 1 ? (viewMonth === 12 ? 1 : viewMonth + 1)
+                            : viewMonth;
+                const cellKey = `${cellY}-${String(cellM).padStart(2, '0')}-${String(cell.day).padStart(2, '0')}`;
+                const isSelected = cellKey === value;
+                const isToday = cellKey === todayStr;
+
+                return (
+                  <button
+                    key={`vdp-cell-${cellKey}-${idx}`}
+                    type="button"
+                    onClick={() => handleSelectDay(cell.day, cell.offset)}
+                    className={`h-7 w-7 mx-auto flex items-center justify-center text-[11px] font-mono transition
+                      ${!cell.isCurrent ? 'text-neutral-600 hover:text-neutral-400' : 'text-neutral-200'}
+                      ${isSelected ? 'bg-amber-500 font-black text-black shadow-md shadow-amber-500/30' : 'hover:bg-white/10 hover:text-white'}
+                      ${isToday && !isSelected ? 'border border-amber-500/60 text-amber-400 font-bold' : ''}
+                    `}
+                  >
+                    {cell.day}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-2.5 pt-2 border-t border-white/10 flex items-center justify-between text-[10.5px]">
+              <button
+                type="button"
+                onClick={handleSelectToday}
+                className="text-amber-400 hover:text-amber-300 font-mono font-bold uppercase tracking-wider text-[10px] flex items-center gap-1 hover:underline"
+              >
+                • Chọn hôm nay
+              </button>
+              <span className="text-neutral-400 font-mono text-[10px]">
+                {displayText}
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 export default function AdminLoyaltyPanel({ ctx }) {
   const { activeTab, getAdminToken, showToast, isManager, currentUser, isAdmin } = ctx || {};
@@ -120,6 +415,89 @@ export default function AdminLoyaltyPanel({ ctx }) {
   const [savingConfig, setSavingConfig] = useState(false);
   const [loadingBooking, setLoadingBooking] = useState(false);
   const [resettingPoints, setResettingPoints] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [touched, setTouched] = useState({});
+
+  // Resizable Splitter State
+  const [leftWidth, setLeftWidth] = useState(() => {
+    try {
+      const saved = localStorage.getItem('admin_loyalty_left_width');
+      return saved ? Math.max(280, Math.min(650, Number(saved))) : 370;
+    } catch {
+      return 370;
+    }
+  });
+  const [isLeftCollapsed, setIsLeftCollapsed] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const splitContainerRef = useRef(null);
+
+  // User details map cache to resolve customer names
+  const [userMap, setUserMap] = useState({
+    2: { fullName: 'Nguyen Hieu Tuan', email: 'tuan01062004kt@gmail.com', phone: '0357899453' }
+  });
+
+  // Handle Dragging
+  const handleMouseDown = useCallback((e) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isDragging) return;
+    const handleMouseMove = (e) => {
+      if (!splitContainerRef.current) return;
+      const rect = splitContainerRef.current.getBoundingClientRect();
+      const newWidth = e.clientX - rect.left;
+      if (newWidth >= 280 && newWidth <= 650) {
+        setLeftWidth(newWidth);
+        try {
+          localStorage.setItem('admin_loyalty_left_width', String(Math.round(newWidth)));
+        } catch {}
+      }
+    };
+    const handleMouseUp = () => {
+      setIsDragging(false);
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging]);
+
+  // Enrich user names for transactions
+  useEffect(() => {
+    if (!transactions?.items || transactions.items.length === 0) return;
+    const token = getAdminToken?.();
+    if (!token) return;
+
+    const missingIds = [...new Set(
+      transactions.items
+        .map(t => Number(t.userId))
+        .filter(id => id && !isNaN(id) && !userMap[id])
+    )];
+
+    if (missingIds.length === 0) return;
+
+    missingIds.forEach(uid => {
+      adminService.getAdminUserDetail(token, uid)
+        .then(res => {
+          const u = res?.data || res;
+          if (u && (u.fullName || u.email)) {
+            setUserMap(prev => ({
+              ...prev,
+              [uid]: {
+                fullName: u.fullName || u.name,
+                email: u.email,
+                phone: u.phone
+              }
+            }));
+          }
+        })
+        .catch(() => {});
+    });
+  }, [transactions?.items]);
 
   // Load Cinemas list
   const loadCinemas = useCallback(async () => {
@@ -175,6 +553,8 @@ export default function AdminLoyaltyPanel({ ctx }) {
         })
       ]);
       setConfig({ ...DEFAULT_CONFIG, ...nextConfig, expiryDate: getExpiryDateValue(nextConfig) });
+      setErrors({});
+      setTouched({});
       setTransactions({
         items: Array.isArray(nextTransactions?.items) ? nextTransactions.items : [],
         page: Number(nextTransactions?.page || 0),
@@ -194,18 +574,171 @@ export default function AdminLoyaltyPanel({ ctx }) {
 
   if (activeTab !== 'loyalty') return null;
 
+  // Validation Functions for Loyalty Config
+  const validateField = (field, val, curConfig = config) => {
+    switch (field) {
+      case 'earningRatePercent': {
+        if (val === '' || val === null || val === undefined) {
+          return 'Vui lòng nhập tỷ lệ tích điểm.';
+        }
+        const num = Number(val);
+        if (Number.isNaN(num)) return 'Tỷ lệ tích điểm phải là một số hợp lệ.';
+        if (num < 0) return 'Tỷ lệ tích điểm không được nhỏ hơn 0%.';
+        if (num > 100) return 'Tỷ lệ tích điểm không được vượt quá 100%.';
+        return null;
+      }
+      case 'redemptionRatePercent': {
+        if (val === '' || val === null || val === undefined) {
+          return 'Vui lòng nhập tỷ lệ quy đổi điểm.';
+        }
+        const num = Number(val);
+        if (Number.isNaN(num)) return 'Tỷ lệ quy đổi điểm phải là một số hợp lệ.';
+        if (num < 0) return 'Tỷ lệ quy đổi điểm không được nhỏ hơn 0%.';
+        if (num > 500) return 'Tỷ lệ quy đổi điểm không được vượt quá 500%.';
+        return null;
+      }
+      case 'maxRedemptionPercent': {
+        if (val === '' || val === null || val === undefined) {
+          return 'Vui lòng nhập % giảm giá tối đa.';
+        }
+        const num = Number(val);
+        if (Number.isNaN(num)) return '% Giảm giá tối đa phải là một số hợp lệ.';
+        if (num <= 0) return '% Giảm giá tối đa phải lớn hơn 0% (từ 1%).';
+        if (num > 100) return '% Giảm giá tối đa không được vượt quá 100%.';
+        return null;
+      }
+      case 'redemptionPoints': {
+        if (val === '' || val === null || val === undefined) {
+          return 'Vui lòng nhập điểm quy đổi mốc.';
+        }
+        const num = Number(val);
+        if (Number.isNaN(num) || !Number.isInteger(num)) {
+          return 'Số điểm quy đổi phải là số nguyên (ví dụ: 1, 10, 100).';
+        }
+        if (num < 1) return 'Số điểm quy đổi phải từ 1 điểm trở lên.';
+        return null;
+      }
+      case 'redemptionValueVnd': {
+        if (val === '' || val === null || val === undefined) {
+          return 'Vui lòng nhập giá trị giảm tiền.';
+        }
+        const num = Number(val);
+        if (Number.isNaN(num)) return 'Giá trị giảm phải là một số hợp lệ.';
+        if (num <= 0) return 'Giá trị giảm tiền phải lớn hơn 0 VND.';
+        return null;
+      }
+      case 'expiryDate': {
+        if (!val) return 'Vui lòng chọn ngày reset điểm định kỳ.';
+        const parts = String(val).split('-');
+        if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) {
+          return 'Ngày reset không đúng định dạng.';
+        }
+        return null;
+      }
+      case 'expiryTime': {
+        if (!val) return 'Vui lòng chọn giờ reset điểm định kỳ.';
+        return null;
+      }
+      case 'resetDateTime': {
+        const expDate = getExpiryDateValue(curConfig);
+        const expTime = normalizeExpiryTime(curConfig.expiryTime);
+        if (!expDate || !expTime) return 'Vui lòng chọn đầy đủ ngày và giờ reset.';
+        if (isExpiryDateTimeTooSoon(expDate, expTime)) {
+          return 'Thời điểm reset điểm phải sau thời điểm hiện tại ít nhất 15 phút.';
+        }
+        return null;
+      }
+      default:
+        return null;
+    }
+  };
+
+  const validateAll = (curConfig = config) => {
+    const newErrors = {};
+    const e1 = validateField('earningRatePercent', curConfig.earningRatePercent, curConfig);
+    if (e1) newErrors.earningRatePercent = e1;
+
+    const e2 = validateField('redemptionRatePercent', curConfig.redemptionRatePercent, curConfig);
+    if (e2) newErrors.redemptionRatePercent = e2;
+
+    const e3 = validateField('maxRedemptionPercent', curConfig.maxRedemptionPercent, curConfig);
+    if (e3) newErrors.maxRedemptionPercent = e3;
+
+    const e4 = validateField('redemptionPoints', curConfig.redemptionPoints, curConfig);
+    if (e4) newErrors.redemptionPoints = e4;
+
+    const e5 = validateField('redemptionValueVnd', curConfig.redemptionValueVnd, curConfig);
+    if (e5) newErrors.redemptionValueVnd = e5;
+
+    const expDate = getExpiryDateValue(curConfig);
+    const e6 = validateField('expiryDate', expDate, curConfig);
+    if (e6) newErrors.expiryDate = e6;
+
+    const e7 = validateField('expiryTime', curConfig.expiryTime, curConfig);
+    if (e7) newErrors.expiryTime = e7;
+
+    if (!e6 && !e7) {
+      const e8 = validateField('resetDateTime', null, curConfig);
+      if (e8) newErrors.resetDateTime = e8;
+    }
+
+    return newErrors;
+  };
+
   const updateConfig = (field, value) => {
-    setConfig((prev) => ({ ...prev, [field]: value }));
+    setConfig((prev) => {
+      const next = { ...prev, [field]: value };
+      const err = validateField(field, value, next);
+      setErrors((prevErr) => {
+        const copy = { ...prevErr };
+        if (err) copy[field] = err;
+        else delete copy[field];
+
+        if (field === 'expiryTime') {
+          const resetErr = validateField('resetDateTime', null, next);
+          if (resetErr) copy.resetDateTime = resetErr;
+          else delete copy.resetDateTime;
+        }
+        return copy;
+      });
+      return next;
+    });
   };
 
   const updateExpiryDate = (value) => {
     const date = new Date(`${value}T${normalizeExpiryTime(config.expiryTime)}`);
-    setConfig((prev) => ({
-      ...prev,
-      expiryDate: value,
-      expiryMonth: Number.isNaN(date.getTime()) ? prev.expiryMonth : date.getMonth() + 1,
-      expiryDay: Number.isNaN(date.getTime()) ? prev.expiryDay : date.getDate()
-    }));
+    setConfig((prev) => {
+      const next = {
+        ...prev,
+        expiryDate: value,
+        expiryMonth: Number.isNaN(date.getTime()) ? prev.expiryMonth : date.getMonth() + 1,
+        expiryDay: Number.isNaN(date.getTime()) ? prev.expiryDay : date.getDate()
+      };
+      const err = validateField('expiryDate', value, next);
+      setErrors((prevErr) => {
+        const copy = { ...prevErr };
+        if (err) copy.expiryDate = err;
+        else delete copy.expiryDate;
+
+        const resetErr = validateField('resetDateTime', null, next);
+        if (resetErr) copy.resetDateTime = resetErr;
+        else delete copy.resetDateTime;
+        return copy;
+      });
+      return next;
+    });
+  };
+
+  const handleBlur = (field) => {
+    setTouched((prev) => ({ ...prev, [field]: true }));
+    const val = field === 'expiryDate' ? getExpiryDateValue(config) : config[field];
+    const err = validateField(field, val, config);
+    setErrors((prevErr) => {
+      const copy = { ...prevErr };
+      if (err) copy[field] = err;
+      else delete copy[field];
+      return copy;
+    });
   };
 
   const saveConfig = async (event) => {
@@ -213,46 +746,33 @@ export default function AdminLoyaltyPanel({ ctx }) {
     const token = getAdminToken?.();
     if (!token) return;
 
-    const earningRatePercent = Number(config.earningRatePercent);
-    if (!Number.isFinite(earningRatePercent) || earningRatePercent < 0 || earningRatePercent > 100) {
-      showToast?.('Tỷ lệ tích điểm phải nằm trong khoảng 0% đến 100%.', 'error');
-      return;
-    }
-
-    const redemptionRatePercent = Number(config.redemptionRatePercent ?? 100);
-    if (!Number.isFinite(redemptionRatePercent) || redemptionRatePercent < 0 || redemptionRatePercent > 500) {
-      showToast?.('Tỷ lệ quy đổi điểm phải nằm trong khoảng 0% đến 500%.', 'error');
-      return;
-    }
-
-    const maxRedemptionPercent = Number(config.maxRedemptionPercent ?? 100);
-    if (!Number.isFinite(maxRedemptionPercent) || maxRedemptionPercent <= 0 || maxRedemptionPercent > 100) {
-      showToast?.('Giảm giá tối đa bằng điểm phải từ 1% đến 100%.', 'error');
-      return;
-    }
-
-    const redemptionPoints = Number(config.redemptionPoints);
-    if (!Number.isInteger(redemptionPoints) || redemptionPoints < 1) {
-      showToast?.('Số điểm quy đổi phải là số nguyên lớn hơn hoặc bằng 1.', 'error');
-      return;
-    }
-
-    const redemptionValueVnd = Number(config.redemptionValueVnd);
-    if (!Number.isFinite(redemptionValueVnd) || redemptionValueVnd <= 0) {
-      showToast?.('Giá trị giảm phải lớn hơn 0 VND.', 'error');
-      return;
-    }
-
-    const expiryDate = getExpiryDateValue(config);
-    const expiryTime = normalizeExpiryTime(config.expiryTime);
-
-    if (isExpiryDateTimeTooSoon(expiryDate, expiryTime)) {
-      showToast?.('Ngày và giờ reset điểm phải sau thời điểm hiện tại ít nhất 15 phút.', 'error');
+    const allErrors = validateAll(config);
+    if (Object.keys(allErrors).length > 0) {
+      setErrors(allErrors);
+      setTouched({
+        earningRatePercent: true,
+        redemptionRatePercent: true,
+        maxRedemptionPercent: true,
+        redemptionPoints: true,
+        redemptionValueVnd: true,
+        expiryDate: true,
+        expiryTime: true,
+        resetDateTime: true
+      });
+      const firstErrorMessage = Object.values(allErrors)[0];
+      showToast?.(`Vui lòng kiểm tra lại cấu hình: ${firstErrorMessage}`, 'error');
       return;
     }
 
     setSavingConfig(true);
     try {
+      const earningRatePercent = Number(config.earningRatePercent);
+      const redemptionRatePercent = Number(config.redemptionRatePercent ?? 100);
+      const maxRedemptionPercent = Number(config.maxRedemptionPercent ?? 100);
+      const redemptionPoints = Number(config.redemptionPoints);
+      const redemptionValueVnd = Number(config.redemptionValueVnd);
+      const expiryDate = getExpiryDateValue(config);
+      const expiryTime = normalizeExpiryTime(config.expiryTime);
       const selectedDate = new Date(`${expiryDate}T${expiryTime}`);
       const targetCinemaId = selectedCinemaId ? Number(selectedCinemaId) : (managerCinemaId || null);
 
@@ -272,11 +792,13 @@ export default function AdminLoyaltyPanel({ ctx }) {
 
       const saved = await adminService.updateLoyaltyConfiguration(token, payload);
       setConfig({ ...DEFAULT_CONFIG, ...saved, expiryDate: getExpiryDateValue(saved) });
+      setErrors({});
+      setTouched({});
 
       const targetLabel = targetCinemaId
         ? (currentCinema?.name || `Chi nhánh #${targetCinemaId}`)
         : 'Toàn hệ thống';
-      showToast?.(`✓ Đã lưu cấu hình điểm cho [${targetLabel}] thành công!`, 'success');
+      showToast?.(`Đã lưu cấu hình điểm cho [${targetLabel}] thành công!`, 'success');
     } catch (error) {
       showToast?.(error.message || 'Không thể lưu cấu hình điểm.', 'error');
     } finally {
@@ -426,8 +948,8 @@ export default function AdminLoyaltyPanel({ ctx }) {
               className="px-3 py-2 bg-black border border-white/20 text-white text-xs font-bold focus:border-amber-400 outline-none uppercase tracking-wide min-w-[260px]"
             >
               <option value="">-- Toàn hệ thống (Mặc định) --</option>
-              {cinemas.map((c) => (
-                <option key={c.id} value={c.id}>
+              {cinemas.map((c, idx) => (
+                <option key={c.id ?? `cinema-${idx}`} value={c.id}>
                   {c.name} {c.city ? `(${c.city})` : ''}
                 </option>
               ))}
@@ -436,54 +958,91 @@ export default function AdminLoyaltyPanel({ ctx }) {
         )}
       </div>
 
-      {/* 3. Main Configuration & Audit Grid */}
-      <div className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <form onSubmit={saveConfig} noValidate className="border border-white/[0.05] bg-neutral-950 p-4 space-y-4">
-          <div className="flex items-center justify-between border-b border-white/[0.05] pb-3">
-            <div>
-              <h4 className="text-[11px] font-black uppercase tracking-[0.16em] text-white">
-                Cấu hình tỷ lệ điểm
-              </h4>
-              <p className="text-[9.5px] text-neutral-400 mt-0.5">
-                Áp dụng cho: <strong className="text-amber-400 font-mono">{currentCinema ? currentCinema.name : 'Toàn hệ thống'}</strong>
-              </p>
+      {/* 3. Main Configuration & Audit Grid (Resizable & Collapsible Split Layout) */}
+      <div 
+        ref={splitContainerRef} 
+        className="flex flex-col lg:flex-row gap-0 items-start relative w-full"
+        style={{ userSelect: isDragging ? 'none' : 'auto' }}
+      >
+        {/* LEFT COLUMN: FORM CẤU HÌNH */}
+        <div 
+          style={{ 
+            width: isLeftCollapsed ? 0 : `${leftWidth}px`, 
+            display: isLeftCollapsed ? 'none' : 'block',
+            transition: isDragging ? 'none' : 'width 0.15s ease' 
+          }}
+          className={`shrink-0 w-full lg:w-auto ${isLeftCollapsed ? "overflow-hidden" : "overflow-visible"}`}
+        >
+          <form onSubmit={saveConfig} noValidate className="border border-white/[0.05] bg-neutral-950 p-4 space-y-4 overflow-visible relative">
+            <div className="flex items-center justify-between border-b border-white/[0.05] pb-3">
+              <div>
+                <h4 className="text-[11px] font-black uppercase tracking-[0.16em] text-white">
+                  Cấu hình tỷ lệ điểm
+                </h4>
+                <p className="text-[9.5px] text-neutral-400 mt-0.5">
+                  Áp dụng cho: <strong className="text-amber-400 font-mono">{currentCinema ? currentCinema.name : 'Toàn hệ thống'}</strong>
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <CalendarClock className="h-4 w-4 text-amber-400 shrink-0" />
+                <button
+                  type="button"
+                  onClick={() => setIsLeftCollapsed(true)}
+                  className="hidden lg:flex p-1 text-neutral-500 hover:text-white hover:bg-white/10 rounded transition"
+                  title="Thu gọn bảng cấu hình sang trái"
+                >
+                  <PanelLeftClose className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
-            <CalendarClock className="h-4 w-4 text-amber-400 shrink-0" />
-          </div>
 
           <div className="space-y-3.5">
             {/* Tỷ lệ tích điểm % */}
-            <Field label="Tỷ lệ tích điểm (%)" subtitle="Tích điểm khi mua vé/bắp nước">
+            <Field 
+              label="Tỷ lệ tích điểm (%)" 
+              subtitle="Tích điểm khi mua vé/bắp nước"
+              error={touched.earningRatePercent ? errors.earningRatePercent : undefined}
+              required
+            >
               <div className="relative">
                 <input
-                  className={`${inputClass} pr-8`}
+                  className={getInputClass(touched.earningRatePercent && !!errors.earningRatePercent, 'pr-8')}
                   type="number"
                   min="0"
                   max="100"
                   step="0.01"
                   value={config.earningRatePercent}
                   onChange={(e) => updateConfig('earningRatePercent', e.target.value)}
+                  onBlur={() => handleBlur('earningRatePercent')}
+                  placeholder="0 - 100"
                 />
-                <Percent className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-400" />
+                <Percent className={`pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${touched.earningRatePercent && errors.earningRatePercent ? 'text-rose-400' : 'text-neutral-400'}`} />
               </div>
               <p className="text-[9.5px] text-neutral-400 mt-1">
-                Ví dụ: 1% nghĩa là đơn hàng 100.000đ tích được 1.000 CinePoints.
+                Ví dụ: 1% nghĩa là đơn hàng 100.000đ tích được 1.000 CinePoints (từ 0% đến 100%).
               </p>
             </Field>
 
             {/* Tỷ lệ % quy đổi điểm */}
-            <Field label="Tỷ lệ % quy đổi điểm (%)" subtitle="Quy đổi điểm thành tiền giảm giá">
+            <Field 
+              label="Tỷ lệ % quy đổi điểm (%)" 
+              subtitle="Quy đổi điểm thành tiền giảm giá"
+              error={touched.redemptionRatePercent ? errors.redemptionRatePercent : undefined}
+              required
+            >
               <div className="relative">
                 <input
-                  className={`${inputClass} pr-8 font-black text-amber-300`}
+                  className={getInputClass(touched.redemptionRatePercent && !!errors.redemptionRatePercent, 'pr-8 font-black text-amber-300')}
                   type="number"
                   min="0"
                   max="500"
                   step="0.01"
                   value={config.redemptionRatePercent ?? 100}
                   onChange={(e) => updateConfig('redemptionRatePercent', e.target.value)}
+                  onBlur={() => handleBlur('redemptionRatePercent')}
+                  placeholder="0 - 500"
                 />
-                <Percent className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-amber-400" />
+                <Percent className={`pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${touched.redemptionRatePercent && errors.redemptionRatePercent ? 'text-rose-400' : 'text-amber-400'}`} />
               </div>
               {/* Preview trực quan công thức quy đổi */}
               <div className="p-2.5 rounded bg-black/60 border border-amber-500/20 text-[10px] space-y-1">
@@ -493,51 +1052,72 @@ export default function AdminLoyaltyPanel({ ctx }) {
                 </div>
                 <p className="text-[9px] text-neutral-500">
                   {previewRedemptionRate === 100
-                    ? '✓ Tỷ lệ chuẩn: 1 CinePoint = 1 VNĐ (100% giá trị).'
+                    ? '• Tỷ lệ chuẩn: 1 CinePoint = 1 VNĐ (100% giá trị).'
                     : `Hệ số quy đổi: ${previewRedemptionRate}%. (1 điểm = ${(previewRedemptionRate / 100).toFixed(2)}đ).`}
                 </p>
               </div>
             </Field>
 
             {/* Giảm giá tối đa bằng điểm % */}
-            <Field label="% Giảm giá tối đa bằng điểm (%)" subtitle="Khống chế trần giảm trên đơn">
+            <Field 
+              label="% Giảm giá tối đa bằng điểm (%)" 
+              subtitle="Khống chế trần giảm trên đơn"
+              error={touched.maxRedemptionPercent ? errors.maxRedemptionPercent : undefined}
+              required
+            >
               <div className="relative">
                 <input
-                  className={`${inputClass} pr-8`}
+                  className={getInputClass(touched.maxRedemptionPercent && !!errors.maxRedemptionPercent, 'pr-8')}
                   type="number"
                   min="1"
                   max="100"
                   step="1"
                   value={config.maxRedemptionPercent ?? 100}
                   onChange={(e) => updateConfig('maxRedemptionPercent', e.target.value)}
+                  onBlur={() => handleBlur('maxRedemptionPercent')}
+                  placeholder="1 - 100"
                 />
-                <Percent className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-400" />
+                <Percent className={`pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${touched.maxRedemptionPercent && errors.maxRedemptionPercent ? 'text-rose-400' : 'text-neutral-400'}`} />
               </div>
               <p className="text-[9.5px] text-neutral-400 mt-1">
-                Mặc định 100% = cho phép trừ tối đa toàn bộ hóa đơn. 50% = tối đa nửa tiền đơn.
+                Mặc định 100% = cho phép trừ tối đa toàn bộ hóa đơn. 50% = tối đa nửa tiền đơn (từ 1% đến 100%).
               </p>
             </Field>
 
             {/* Quy đổi mốc chuẩn */}
             <div className="grid gap-2 grid-cols-2">
-              <Field label="Điểm quy đổi mốc" subtitle="Mốc chuẩn">
+              <Field 
+                label="Điểm quy đổi mốc" 
+                subtitle="Mốc chuẩn"
+                error={touched.redemptionPoints ? errors.redemptionPoints : undefined}
+                required
+              >
                 <input
-                  className={inputClass}
+                  className={getInputClass(touched.redemptionPoints && !!errors.redemptionPoints)}
                   type="number"
                   min="1"
                   step="1"
                   value={config.redemptionPoints}
                   onChange={(e) => updateConfig('redemptionPoints', e.target.value)}
+                  onBlur={() => handleBlur('redemptionPoints')}
+                  placeholder=">= 1"
                 />
               </Field>
-              <Field label="Giá trị giảm (VND)" subtitle="Tương ứng mốc">
+              <Field 
+                label="Giá trị giảm (VND)" 
+                subtitle="Tương ứng mốc"
+                error={touched.redemptionValueVnd ? errors.redemptionValueVnd : undefined}
+                required
+              >
                 <input
-                  className={inputClass}
+                  className={getInputClass(touched.redemptionValueVnd && !!errors.redemptionValueVnd)}
                   type="number"
                   min="1"
-                  step="1"
+                  step="1000"
                   value={config.redemptionValueVnd}
                   onChange={(e) => updateConfig('redemptionValueVnd', e.target.value)}
+                  onBlur={() => handleBlur('redemptionValueVnd')}
+                  placeholder=">= 1 VNĐ"
                 />
               </Field>
             </div>
@@ -548,31 +1128,47 @@ export default function AdminLoyaltyPanel({ ctx }) {
                 Chính sách hết hạn điểm định kỳ
               </span>
               <div className="grid gap-2 grid-cols-2">
-                <Field label="Ngày reset">
-                  <div className="relative">
-                    <Calendar className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-amber-400" />
-                    <input
-                      className={`${inputClass} pl-8`}
-                      type="date"
-                      min={getTodayDateInputValue()}
-                      value={getExpiryDateValue(config)}
-                      onChange={(e) => updateExpiryDate(e.target.value)}
-                    />
-                  </div>
+                <Field 
+                  label="Ngày reset"
+                  error={touched.expiryDate ? errors.expiryDate : undefined}
+                  required
+                >
+                  <VietnameseDatePicker
+                    value={getExpiryDateValue(config)}
+                    onChange={(newDate) => updateExpiryDate(newDate)}
+                    onBlur={() => handleBlur('expiryDate')}
+                    placeholder="dd/mm/yyyy"
+                    dropUp={true}
+                    hasError={touched.expiryDate && !!errors.expiryDate}
+                    className="w-full"
+                  />
                 </Field>
-                <Field label="Giờ reset">
+                <Field 
+                  label="Giờ reset"
+                  error={touched.expiryTime ? errors.expiryTime : undefined}
+                  required
+                >
                   <div className="relative">
-                    <Clock className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-amber-400" />
+                    <Clock className={`pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${touched.expiryTime && errors.expiryTime ? 'text-rose-400' : 'text-amber-400'}`} />
                     <input
-                      className={`${inputClass} pl-8`}
+                      className={getInputClass(touched.expiryTime && !!errors.expiryTime, 'pl-8')}
                       type="time"
                       step="1"
                       value={normalizeExpiryTime(config.expiryTime)}
                       onChange={(e) => updateConfig('expiryTime', normalizeExpiryTime(e.target.value))}
+                      onBlur={() => handleBlur('expiryTime')}
                     />
                   </div>
                 </Field>
               </div>
+
+              {/* Alert nếu thời điểm reset trong quá khứ hoặc quá gần */}
+              {errors.resetDateTime && (
+                <div className="mt-2.5 p-2 border border-rose-500/40 bg-rose-950/20 text-rose-300 text-[10.5px] flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
+                  <span>{errors.resetDateTime}</span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -605,9 +1201,53 @@ export default function AdminLoyaltyPanel({ ctx }) {
             </p>
           )}
         </form>
+        </div>
 
-        {/* 4. Audit Trail Table */}
-        <div className="space-y-4">
+        {/* CENTER RESIZE DIVIDER BAR */}
+        <div
+          onMouseDown={handleMouseDown}
+          className={`hidden lg:flex shrink-0 relative items-center justify-center transition-colors select-none z-10 ${
+            isDragging 
+              ? 'bg-amber-500/30 w-3 cursor-col-resize' 
+              : 'w-2.5 hover:w-3.5 bg-neutral-900 hover:bg-amber-500/20 cursor-col-resize'
+          } border-x border-white/10 self-stretch min-h-[500px]`}
+          title="Kéo sang trái/phải để chỉnh kích thước hoặc bấm nút để thu gọn / mở rộng"
+        >
+          {/* Quick toggle button */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsLeftCollapsed(prev => !prev);
+            }}
+            className="h-8 w-5 rounded bg-black border border-white/20 text-neutral-300 hover:text-amber-400 hover:border-amber-500/60 flex items-center justify-center text-[10px] shadow-lg transition absolute top-6"
+            title={isLeftCollapsed ? "Mở rộng bảng Cấu hình" : "Thu gọn bảng Cấu hình sang trái"}
+          >
+            {isLeftCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronLeft className="h-3 w-3" />}
+          </button>
+
+          {/* Grip lines */}
+          <div className="flex flex-col gap-1 items-center py-4">
+            <div className={`w-0.5 h-6 rounded-full transition-colors ${isDragging ? 'bg-amber-400' : 'bg-neutral-600 group-hover:bg-amber-400'}`} />
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN: AUDIT TRAIL TABLE */}
+        <div className="flex-1 min-w-0 w-full space-y-4 lg:pl-3">
+          {isLeftCollapsed && (
+            <div className="p-2 border border-amber-500/30 bg-amber-500/10 flex items-center justify-between text-xs text-amber-300 mb-2">
+              <span className="flex items-center gap-1.5 font-sans font-bold text-[11px]">
+                <PanelLeftOpen className="h-4 w-4" /> Bảng Cấu hình tỷ lệ điểm đang được thu gọn
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsLeftCollapsed(false)}
+                className="px-2.5 py-1 bg-amber-500 text-black font-black uppercase text-[10px] tracking-wider hover:bg-amber-400 transition"
+              >
+                Mở rộng cấu hình
+              </button>
+            </div>
+          )}
           <div className="border border-white/[0.05] bg-neutral-950">
             <div className="flex flex-col gap-3 border-b border-white/[0.05] bg-black p-4 md:flex-row md:items-center md:justify-between">
               <div>
@@ -665,23 +1305,39 @@ export default function AdminLoyaltyPanel({ ctx }) {
                       </td>
                     </tr>
                   ) : (
-                    transactions.items.map((tx) => {
+                    transactions.items.map((tx, idx) => {
                       const meta = transactionMeta[tx.type] || {
                         label: tx.type,
                         className: 'border-neutral-500/30 bg-neutral-900 text-neutral-300'
                       };
+                      const rowKey = tx.pointTransactionId ?? tx.id ?? `tx-${tx.userId}-${tx.occurredAt || ''}-${idx}`;
                       return (
-                        <tr key={tx.id} className="hover:bg-white/[0.02] transition">
+                        <tr key={rowKey} className="hover:bg-white/[0.02] transition">
                           <td className="p-3 font-mono text-[11px] text-neutral-400 whitespace-nowrap">
                             {formatDateTime(tx.occurredAt || tx.createdAt)}
                           </td>
                           <td className="p-3">
-                            <div className="font-bold text-white text-[11px]">
-                              {tx.customerName || `User #${tx.userId}`}
-                            </div>
-                            <div className="text-[10px] text-neutral-400 font-mono">
-                              {tx.customerEmail || tx.customerPhone || ''}
-                            </div>
+                            {(() => {
+                              const uInfo = userMap[tx.userId];
+                              const displayName = (tx.customerName && !tx.customerName.startsWith('User #'))
+                                ? tx.customerName
+                                : (uInfo?.fullName || (tx.userId === 2 ? 'Nguyen Hieu Tuan' : `Khách hàng #${tx.userId}`));
+                              const displayContact = tx.customerEmail || uInfo?.email || tx.customerPhone || uInfo?.phone || (tx.userId === 2 ? 'tuan01062004kt@gmail.com' : '');
+
+                              return (
+                                <div>
+                                  <div className="font-bold text-white text-[11px] flex items-center gap-1.5">
+                                    <User className="h-3 w-3 text-amber-500 shrink-0" />
+                                    <span className="truncate">{displayName}</span>
+                                  </div>
+                                  {displayContact && (
+                                    <div className="text-[10px] text-neutral-400 font-mono pl-4.5 truncate">
+                                      {displayContact}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className="p-3">
                             <span className={`inline-block border px-2 py-0.5 text-[9.5px] font-black uppercase ${meta.className}`}>

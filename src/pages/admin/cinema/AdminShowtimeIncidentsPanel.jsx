@@ -70,9 +70,29 @@ function VietnameseDatePicker({
   placeholder = 'dd/mm/yyyy',
   className = '',
   disabled = false,
+  dropUp = false,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
+  const [shouldDropUp, setShouldDropUp] = useState(dropUp);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (dropUp) {
+      setShouldDropUp(true);
+      return;
+    }
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const spaceAbove = rect.top;
+      if (spaceBelow < 310 && spaceAbove > 260) {
+        setShouldDropUp(true);
+      } else {
+        setShouldDropUp(false);
+      }
+    }
+  }, [isOpen, dropUp]);
 
   const parsedDate = useMemo(() => {
     if (!value) return new Date();
@@ -204,11 +224,11 @@ function VietnameseDatePicker({
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, y: 4, scale: 0.98 }}
+            initial={{ opacity: 0, y: shouldDropUp ? -6 : 6, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 4, scale: 0.98 }}
+            exit={{ opacity: 0, y: shouldDropUp ? -6 : 6, scale: 0.98 }}
             transition={{ duration: 0.15 }}
-            className="absolute left-0 top-full mt-1.5 z-50 w-[270px] border border-amber-500/40 bg-[#111] p-3 shadow-2xl shadow-black/90 font-sans"
+            className={`absolute left-0 ${shouldDropUp ? 'bottom-full mb-1.5' : 'top-full mt-1.5'} z-[100] w-[265px] border border-amber-500/50 bg-[#111] p-3 shadow-2xl shadow-black/95 font-sans`}
           >
             <div className="flex items-center justify-between pb-2 mb-2 border-b border-white/10">
               <button
