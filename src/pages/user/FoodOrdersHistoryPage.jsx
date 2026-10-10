@@ -360,7 +360,7 @@ export default function FoodOrdersHistoryPage() {
           {/* Tổng tiền & Đếm ngược */}
           <div className="flex items-center justify-between">
             <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
-              Tổng thanh toán:
+              Tổng tiền:
             </span>
             <span className="font-mono text-base font-black text-amber-300">
               {formatVnd(order.totalAmount)}

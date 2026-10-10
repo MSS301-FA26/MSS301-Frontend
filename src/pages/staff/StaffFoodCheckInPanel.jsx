@@ -723,7 +723,7 @@ export default function StaffFoodCheckInPanel({
               <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-4">
                 <div>
                   <span className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
-                    Tổng thanh toán
+                    Tổng Tiền
                   </span>
                   {activeOrder.paidAt && (
                     <p className="text-[10px] text-neutral-500">
