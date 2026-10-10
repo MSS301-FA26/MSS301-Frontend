@@ -245,7 +245,7 @@ const performRequest = async (path, { method = 'GET', body, token, timeout } = {
     }
   }
 
-  const headers = isFormData ? {} : { 'Content-Type': 'application/json' };
+  const headers = isFormData ? { 'ngrok-skip-browser-warning': 'true' } : { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' };
   if (effectiveToken) headers.Authorization = `Bearer ${effectiveToken}`;
 
   try {
