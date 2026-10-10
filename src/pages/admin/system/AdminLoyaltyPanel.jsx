@@ -790,7 +790,7 @@ export default function AdminLoyaltyPanel({ ctx }) {
                   </span>
                 </div>
                 <div className="flex justify-between py-1 border-b border-white/5">
-                  <span className="text-neutral-400">Tổng thanh toán:</span>
+                  <span className="text-neutral-400">Tổng tiền:</span>
                   <span className="font-mono font-black text-amber-400">
                     {formatNumber(selectedBooking.totalAmount || selectedBooking.totalPrice)}đ
                   </span>

@@ -20,7 +20,7 @@ const policyHighlights = [
   {
     icon: TicketCheck,
     title: 'Vé điện tử minh bạch',
-    text: 'Mã vé, ghế ngồi, suất chiếu và tổng thanh toán được lưu theo hồ sơ khách hàng để dễ đối soát.'
+    text: 'Mã vé, ghế ngồi, suất chiếu và tổng tiền được lưu theo hồ sơ khách hàng để dễ đối soát.'
   },
   {
     icon: Users,
