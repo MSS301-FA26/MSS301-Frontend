@@ -227,7 +227,7 @@ function ResultCard({
             ))}
           </div>
           <div className="flex items-center justify-between border-t border-white/10 pt-3">
-            <span className="text-[9px] font-black uppercase tracking-widest text-neutral-500">Tổng thanh toán</span>
+            <span className="text-[9px] font-black uppercase tracking-widest text-neutral-500">Tổng tiền</span>
             <strong className="font-mono text-lg text-white">{formatCurrency(foodOrder.totalAmount)}</strong>
           </div>
           {foodOrder.pickedUpAt && <p className="mt-3 text-[10px] text-neutral-500">Đã giao lúc {formatDateTime(foodOrder.pickedUpAt)}</p>}
@@ -2291,7 +2291,7 @@ export default function StaffCheckInPage() {
                       onClick={() => setManualRefundModal(null)}
                       className="flex-1 border border-neutral-700 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-neutral-300 transition hover:border-white hover:text-white"
                     >
-                      Quay lai
+                      Quay lại
                     </button>
                     <button
                       type="button"

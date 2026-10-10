@@ -1567,7 +1567,7 @@ export default function ConcessionsPage() {
                 )}
                 <div className="flex items-baseline justify-between pt-2 border-t border-white/10">
                   <span className="text-xs font-black uppercase tracking-widest text-white">
-                    Tổng thanh toán:
+                    Tổng tiền:
                   </span>
                   <span className="font-mono text-2xl font-black text-amber-400">
                     {formatVnd(finalPayableAmount)}

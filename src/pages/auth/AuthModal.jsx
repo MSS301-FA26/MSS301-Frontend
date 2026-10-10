@@ -7,6 +7,7 @@ import {
   Heart, Sparkle, AlertCircle
 } from 'lucide-react';
 import { authService, saveAuthSession } from '../../services/authService';
+import { movieService } from '../../services/movieService';
 import { useAuthStore } from '../../stores/useAuthStore';
 import {
   MAX_NAME_LENGTH,
@@ -68,6 +69,12 @@ export default function AuthModal({
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
   const [regDateOfBirth, setRegDateOfBirth] = useState('');
+  const [regUsername, setRegUsername] = useState('');
+  const [regIdentityNumber, setRegIdentityNumber] = useState('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState('');
+  const [regFavoriteCinemaId, setRegFavoriteCinemaId] = useState('');
+  const [registrationCinemas, setRegistrationCinemas] = useState([]);
+  const [cinemaLoadError, setCinemaLoadError] = useState(false);
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [regOtp, setRegOtp] = useState('');
   const [registerStep, setRegisterStep] = useState('form'); // 'form' | 'verify'
@@ -76,7 +83,8 @@ export default function AuthModal({
   const [emailOtpExpiresAt, setEmailOtpExpiresAt] = useState(null);
   const [selectedAvatar, setSelectedAvatar] = useState('director');
   const [selectedGenre, setSelectedGenre] = useState('Hành Động • IMAX');
-  const [agreeTerms, setAgreeTerms] = useState(true);
+  const [agreeTerms, setAgreeTerms] = useState(false);
+  const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
 
   // Security & Visual States
   const [showPassword, setShowPassword] = useState(false);
@@ -357,12 +365,37 @@ export default function AuthModal({
     }
   };
 
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'register' || registerStep !== 'form') return undefined;
+
+    let cancelled = false;
+    setCinemaLoadError(false);
+
+    movieService.getPublicCinemas()
+      .then((cinemas) => {
+        if (!cancelled) {
+          setRegistrationCinemas(
+            cinemas.filter((cinema) => !cinema.status || cinema.status === 'ACTIVE')
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setCinemaLoadError(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, isOpen, registerStep]);
+
   const handleRegister = async (e) => {
     e.preventDefault();
     const cleanName = regName.trim();
     const cleanPhone = regPhone.trim();
+    const cleanUsername = regUsername.trim();
+    const cleanIdentityNumber = regIdentityNumber.trim();
 
-    if (!cleanName || !cleanPhone || !regEmail || !regPassword || !regDateOfBirth) {
+    if (!cleanName || !cleanPhone || !regEmail || !regPassword || !regDateOfBirth || !cleanUsername || !cleanIdentityNumber || !regConfirmPassword) {
       showToast('error', 'Quý khách vui lòng điền trọn vẹn thông tin đăng ký.');
       return;
     }
@@ -374,8 +407,24 @@ export default function AuthModal({
       showToast('error', PHONE_VALIDATION_MESSAGE);
       return;
     }
+    if (/\s/.test(cleanUsername)) {
+      showToast('error', 'Tên đăng nhập không được chứa khoảng trắng.');
+      return;
+    }
+    if (!/^(\d{9}|\d{12})$/.test(cleanIdentityNumber)) {
+      showToast('error', 'Số CCCD/CMND phải gồm 9 hoặc 12 chữ số.');
+      return;
+    }
     if (!isStrongPassword(regPassword)) {
       showToast('error', PASSWORD_VALIDATION_MESSAGE);
+      return;
+    }
+    if (regPassword !== regConfirmPassword) {
+      showToast('error', 'Xác thực mật khẩu chưa khớp.');
+      return;
+    }
+    if (!agreeTerms) {
+      showToast('error', 'Vui lòng đồng ý với Chính sách bảo mật để tiếp tục.');
       return;
     }
     setIsSubmitting(true);
@@ -387,7 +436,10 @@ export default function AuthModal({
         password: cleanPassword,
         fullName: cleanName,
         phone: cleanPhone,
-        birthYear: regDateOfBirth ? parseInt(regDateOfBirth) : null
+          birthYear: Number(regDateOfBirth.slice(0, 4)),
+          username: cleanUsername,
+          identityNumber: cleanIdentityNumber,
+          preferredCinemaId: regFavoriteCinemaId ? Number(regFavoriteCinemaId) : null
       });
 
       setPendingRegistration({
@@ -438,6 +490,16 @@ export default function AuthModal({
         avatar: pendingRegistration?.avatar || selectedAvatar,
         genre: pendingRegistration?.genre || selectedGenre
       };
+
+      const favoriteCinema = registrationCinemas.find(
+        (cinema) => String(cinema.id) === String(regFavoriteCinemaId)
+      );
+      if (favoriteCinema) {
+        localStorage.setItem('preferredCinema', JSON.stringify({
+          id: favoriteCinema.id,
+          name: favoriteCinema.name
+        }));
+      }
 
       completeLogin(decoratedUser);
       playPing(987.77, 'sine', 0.4);
@@ -609,7 +671,7 @@ export default function AuthModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 p-4 md:p-6 select-none overflow-y-auto">
+    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/95 px-4 py-0 md:px-6 select-none">
 
       {/* Animated Glowing Ambient Spotlight in Background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -637,9 +699,8 @@ export default function AuthModal({
             </span>
             <div>
               <h3 className="text-xs font-sans font-black tracking-[0.25em] text-neutral-400 uppercase">
-                Khách Sạn Điện Ảnh
+                CINEPREMIER
               </h3>
-              <p className="text-[10px] text-zinc-400 font-mono tracking-wider">CINEPREMIER VIP MEMBERS</p>
             </div>
           </div>
 
@@ -651,7 +712,7 @@ export default function AuthModal({
             className="p-1 px-2 border border-neutral-850 hover:border-white text-neutral-400 hover:text-white transition duration-200 text-xs sm:text-sm font-light uppercase flex items-center gap-1 bg-neutral-900/50"
             title="Đóng trang"
           >
-            <X className="h-3.5 w-3.5" /> Thôi
+            <X className="h-3.5 w-3.5" /> 
           </button>
         </div>
 
@@ -723,7 +784,7 @@ export default function AuthModal({
                   : 'text-neutral-400 hover:text-neutral-200'
                   }`}
               >
-                Gia Nhập Cộng Đồng
+                ĐĂNG KÝ
                 {activeTab === 'register' && (
                   <motion.div layoutId="activeAuthTab" className="absolute bottom-0 left-0 right-0 h-0.5 bg-amber-400" />
                 )}
@@ -974,9 +1035,9 @@ export default function AuthModal({
                       }}
                       className="hover:text-amber-400 group flex items-center gap-1 transition-all duration-300 cursor-pointer text-left bg-transparent border-none p-0"
                     >
-                      <span className="text-neutral-400">Chưa có thẻ?</span>
+                      <span className="text-neutral-400">Chưa có tài khoản?</span>
                       <span className="font-extrabold text-neutral-200 group-hover:text-amber-400 underline decoration-amber-400/30 underline-offset-4 decoration-1">
-                        Gia Nhập Ngay
+                        Đăng Ký Ngay
                       </span>
                     </button>
 
@@ -991,10 +1052,6 @@ export default function AuthModal({
 
                 </div>
 
-                {/* Subtext info logs */}
-                <div className="bg-[#050505] p-3 text-[10px] text-zinc-400 border border-white/10 font-sans leading-relaxed text-center">
-                  🍿 <span className="text-zinc-300 font-extrabold uppercase">Ưu đãi hôm nay:</span> Hoàn tiền 10% cho tất cả chủ thẻ Premium Gold mua vé khung giờ vàng.
-                </div>
               </motion.div>
             ) : activeTab === 'register' ? (
 
@@ -1022,8 +1079,8 @@ export default function AuthModal({
                       </p>
                       <p className="font-mono text-[11px] text-amber-300">
                         {emailOtpSecondsLeft > 0
-                          ? `OTP het han sau ${Math.floor(emailOtpSecondsLeft / 60)}:${String(emailOtpSecondsLeft % 60).padStart(2, '0')}`
-                          : 'OTP da het han. Hay gui lai ma moi.'}
+                          ? `OTP hết hạn sau ${Math.floor(emailOtpSecondsLeft / 60)}:${String(emailOtpSecondsLeft % 60).padStart(2, '0')}`
+                          : 'OTP đã hết hạn. Hay gửi lại mã mới.'}
                       </p>
                     </div>
 
@@ -1038,7 +1095,7 @@ export default function AuthModal({
                           inputMode="numeric"
                           maxLength={6}
                           required
-                          placeholder="Nhap 6 so OTP..."
+                          placeholder="Nhập mã OTP"
                           value={regOtp}
                           onChange={(e) => setRegOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                           className="w-full border border-neutral-800 focus:border-amber-400 bg-neutral-950 py-3 pl-9 pr-3 text-sm font-mono tracking-[0.4em] text-white focus:outline-none transition-all placeholder-neutral-600"
@@ -1068,7 +1125,7 @@ export default function AuthModal({
                         }}
                         className="w-1/3 border border-neutral-800 bg-[#060606] text-neutral-400 text-[10px] uppercase font-sans font-black tracking-[0.18em] py-3.5 hover:text-white transition cursor-pointer"
                       >
-                        Quay lai
+                        Quay lại
                       </button>
                       <button
                         type="button"
@@ -1076,182 +1133,108 @@ export default function AuthModal({
                         onClick={handleRequestNewVerificationOtp}
                         className="flex-1 border border-amber-500/40 bg-amber-500/10 text-amber-300 disabled:border-neutral-800 disabled:bg-neutral-950 disabled:text-neutral-600 text-[10px] uppercase font-sans font-black tracking-widest py-3.5 transition cursor-pointer"
                       >
-                        Gui lai OTP khi het han
+                        Gửi lại mã OTP
                       </button>
                     </div>
                   </form>
                 ) : (
                   <form onSubmit={handleRegister} className="space-y-4">
 
-                    {/* Avatar Preset Grid - Extremely satisfying UI */}
-                    <div className="space-y-2">
-                      <span className="block text-[10px] font-sans font-black uppercase tracking-[0.18em] text-neutral-300 mb-1 flex items-center gap-1">
-                        <Sparkle className="h-3 w-3 text-amber-400" /> CHỌN DANH TÍNH AVATAR ĐIỆN ẢNH
-                      </span>
-                      <div className="grid grid-cols-5 gap-2" id="avatar-presets-box">
-                        {AVATAR_PRESETS.map((avatar) => (
-                          <button
-                            key={avatar.id}
-                            type="button"
-                            onClick={() => {
-                              playPing(450 + AVATAR_PRESETS.findIndex(a => a.id === avatar.id) * 30, 'sine', 0.12);
-                              setSelectedAvatar(avatar.id);
-                            }}
-                            className={`relative py-2 px-1 flex flex-col items-center justify-center border transition-all duration-300 ${selectedAvatar === avatar.id
-                              ? 'border-amber-400 bg-amber-950/20 scale-105 shadow-[0_0_12px_rgba(245,158,11,0.25)]'
-                              : 'border-neutral-900 bg-neutral-950 hover:border-neutral-800'
-                              }`}
-                          >
-                            <span className="text-xl sm:text-2xl mb-1">{avatar.emoji}</span>
-                            <span className="text-[7.5px] font-bold tracking-tight text-neutral-400 text-center truncate w-full">
-                              {avatar.name}
-                            </span>
 
-                            {selectedAvatar === avatar.id && (
-                              <div className="absolute top-1 right-1 h-2 w-2 bg-amber-400 rounded-full"></div>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Dual Grid Fields */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-
-                      {/* Full Name */}
+                    <div className="grid grid-cols-1 gap-3.5 md:grid-cols-2">
                       <div className="space-y-1">
-                        <label className="block text-[10px] font-sans font-black uppercase tracking-[0.18em] text-neutral-300">
-                          Họ & Tên Thượng Khách
-                        </label>
+                        <label htmlFor="register-full-name" className="block text-[10px] font-sans font-black uppercase tracking-[0.18em] text-neutral-300">Họ và tên <span className="text-amber-400">*</span></label>
                         <div className="relative">
                           <User className="absolute left-3 top-2.5 h-3.5 w-3.5 text-neutral-600" />
-                          <input
-                            type="text"
-                            required
-                            maxLength={MAX_NAME_LENGTH}
-                            placeholder="Minh Hồng..."
-                            value={regName}
-                            onChange={(e) => setRegName(normalizeNameInput(e.target.value))}
-                            className="w-full border border-neutral-800 focus:border-amber-400 bg-neutral-950 py-2.5 pl-9 pr-3 text-xs text-white focus:outline-none transition-all placeholder-neutral-600"
-                          />
+                          <input id="register-full-name" type="text" required maxLength={MAX_NAME_LENGTH} autoComplete="name" placeholder="Họ và tên" value={regName} onChange={(e) => setRegName(normalizeNameInput(e.target.value))} className="w-full border border-neutral-800 bg-neutral-950 py-2.5 pl-9 pr-3 text-xs text-white placeholder-neutral-600 transition-all focus:border-amber-400 focus:outline-none" />
                         </div>
-                        <p className="text-[9px] text-neutral-600 font-mono text-right">{regName.length}/{MAX_NAME_LENGTH}</p>
                       </div>
 
-                      {/* Contact Phone */}
                       <div className="space-y-1">
-                        <label className="block text-[10px] font-sans font-black uppercase tracking-[0.18em] text-neutral-300">
-                          Số Điện Thoại Nhận Vé
-                        </label>
+                        <label htmlFor="register-birth-date" className="block text-[10px] font-sans font-black uppercase tracking-[0.18em] text-neutral-300">Ngày sinh <span className="text-amber-400">*</span></label>
+                        <input id="register-birth-date" type="date" required min="1900-01-01" max={new Date().toISOString().slice(0, 10)} autoComplete="bday" value={regDateOfBirth} onChange={(e) => setRegDateOfBirth(e.target.value)} className="w-full border border-neutral-800 bg-neutral-950 px-3 py-2.5 text-xs text-white [color-scheme:dark] transition-all focus:border-amber-400 focus:outline-none" />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label htmlFor="register-phone" className="block text-[10px] font-sans font-black uppercase tracking-[0.18em] text-neutral-300">Số điện thoại <span className="text-amber-400">*</span></label>
                         <div className="relative">
                           <Phone className="absolute left-3 top-2.5 h-3.5 w-3.5 text-neutral-600" />
-                          <input
-                            type="tel"
-                            required
-                            inputMode="numeric"
-                            pattern="(03|05|08|09)[0-9]{8}"
-                            maxLength={10}
-                            placeholder="0912345678"
-                            value={regPhone}
-                            onChange={(e) => setRegPhone(normalizePhoneInput(e.target.value))}
-                            className="w-full border border-neutral-800 focus:border-amber-400 bg-neutral-950 py-2.5 pl-9 pr-3 text-xs font-mono tracking-wide text-white focus:outline-none transition-all placeholder-neutral-600"
-                          />
+                          <input id="register-phone" type="tel" required inputMode="numeric" pattern="(03|05|08|09)[0-9]{8}" maxLength={10} autoComplete="tel" placeholder="Số điện thoại" value={regPhone} onChange={(e) => setRegPhone(normalizePhoneInput(e.target.value))} className="w-full border border-neutral-800 bg-neutral-950 py-2.5 pl-9 pr-3 text-xs font-mono tracking-wide text-white placeholder-neutral-600 transition-all focus:border-amber-400 focus:outline-none" />
                         </div>
-                        <p className="text-[9px] text-neutral-600 font-mono">10 số, bắt đầu 03/05/08/09</p>
                       </div>
 
-                    </div>
-
-                    {/* Year of Birth */}
-                    <div className="space-y-1">
-                      <label className="block text-[10px] font-sans font-black uppercase tracking-[0.18em] text-neutral-300">
-                        Năm Sinh
-                      </label>
-                      <input
-                        type="number"
-                        required
-                        min={1900}
-                        max={new Date().getFullYear() - 5}
-                        placeholder={`VD: 2000`}
-                        value={regDateOfBirth}
-                        onChange={(e) => setRegDateOfBirth(e.target.value)}
-                        className="w-full border border-neutral-800 focus:border-amber-400 bg-neutral-950 py-2.5 px-3 text-xs text-white focus:outline-none transition-all font-mono"
-                      />
-                      <p className="text-[9px] text-neutral-600 font-mono">Dùng để xác minh độ tuổi xem phim</p>
-                    </div>
-
-                    {/* Email & Password Registration Row */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-
-                      {/* Email */}
                       <div className="space-y-1">
-                        <label className="block text-[10px] font-sans font-black uppercase tracking-[0.18em] text-neutral-400">
-                          Địa Chỉ Email
-                        </label>
+                        <label htmlFor="register-username" className="block text-[10px] font-sans font-black uppercase tracking-[0.18em] text-neutral-300">Tên đăng nhập <span className="text-amber-400">*</span></label>
+                        <div className="relative">
+                          <User className="absolute left-3 top-2.5 h-3.5 w-3.5 text-neutral-600" />
+                          <input id="register-username" type="text" required autoComplete="username" placeholder="Tên đăng nhập" value={regUsername} onChange={(e) => setRegUsername(e.target.value)} className="w-full border border-neutral-800 bg-neutral-950 py-2.5 pl-9 pr-3 text-xs text-white placeholder-neutral-600 transition-all focus:border-amber-400 focus:outline-none" />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label htmlFor="register-identity" className="block text-[10px] font-sans font-black uppercase tracking-[0.18em] text-neutral-300">CCCD/CMND <span className="text-amber-400">*</span></label>
+                        <div className="relative">
+                          <ShieldCheck className="absolute left-3 top-2.5 h-3.5 w-3.5 text-neutral-600" />
+                          <input id="register-identity" type="text" required inputMode="numeric" pattern="[0-9]{9}|[0-9]{12}" maxLength={12} placeholder="Số CCCD/CMND" value={regIdentityNumber} onChange={(e) => setRegIdentityNumber(e.target.value.replace(/\D/g, '').slice(0, 12))} className="w-full border border-neutral-800 bg-neutral-950 py-2.5 pl-9 pr-3 text-xs font-mono tracking-wide text-white placeholder-neutral-600 transition-all focus:border-amber-400 focus:outline-none" />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label htmlFor="register-email" className="block text-[10px] font-sans font-black uppercase tracking-[0.18em] text-neutral-300">Email <span className="text-amber-400">*</span></label>
                         <div className="relative">
                           <Mail className="absolute left-3 top-2.5 h-3.5 w-3.5 text-neutral-600" />
-                          <input
-                            type="email"
-                            required
-                            placeholder="tuan01062004kt@gmail.com..."
-                            value={regEmail}
-                            onChange={(e) => setRegEmail(e.target.value)}
-                            className="w-full border border-neutral-800 focus:border-amber-400 bg-neutral-950 py-2.5 pl-9 pr-3 text-xs text-white focus:outline-none transition-all placeholder-neutral-600"
-                          />
+                          <input id="register-email" type="email" required autoComplete="email" placeholder="Điền email" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} className="w-full border border-neutral-800 bg-neutral-950 py-2.5 pl-9 pr-3 text-xs text-white placeholder-neutral-600 transition-all focus:border-amber-400 focus:outline-none" />
                         </div>
                       </div>
 
-                      {/* Password Registration */}
+                      <div className="space-y-1 md:col-span-2">
+                        <label htmlFor="register-favorite-cinema" className="block text-[10px] font-sans font-black uppercase tracking-[0.18em] text-neutral-300">Rạp yêu thích</label>
+                        <select id="register-favorite-cinema" value={regFavoriteCinemaId} onChange={(e) => setRegFavoriteCinemaId(e.target.value)} disabled={cinemaLoadError} className="w-full border border-neutral-800 bg-neutral-950 px-3 py-2.5 text-xs text-white transition-all focus:border-amber-400 focus:outline-none disabled:cursor-not-allowed disabled:text-neutral-500">
+                          <option value="">{cinemaLoadError ? 'Không thể tải danh sách rạp' : 'Chọn rạp'}</option>
+                          {registrationCinemas.map((cinema) => <option key={cinema.id} value={cinema.id}>{cinema.name}</option>)}
+                        </select>
+                        {cinemaLoadError && <p className="text-[9px] text-neutral-500">Bạn vẫn có thể đăng ký mà không chọn rạp yêu thích.</p>}
+                      </div>
+
                       <div className="space-y-1">
-                        <label className="block text-[10px] font-sans font-black uppercase tracking-[0.18em] text-neutral-400">
-                          Đặt Mật Khẩu Khóa
-                        </label>
+                        <label htmlFor="register-password" className="block text-[10px] font-sans font-black uppercase tracking-[0.18em] text-neutral-300">Mật khẩu <span className="text-amber-400">*</span></label>
                         <div className="relative">
                           <Lock className="absolute left-3 top-2.5 h-3.5 w-3.5 text-neutral-600" />
-                          <input
-                            type={showRegPassword ? "text" : "password"}
-                            required
-                            placeholder="Tối thiểu 8 ký tự, có chữ hoa, chữ thường, số và ký tự đặc biệt..."
-                            value={regPassword}
-                            onChange={(e) => setRegPassword(e.target.value)}
-                            className="w-full border border-neutral-800 focus:border-amber-400 bg-neutral-950 py-2.5 pl-9 pr-10 text-xs text-white focus:outline-none transition-all placeholder-neutral-600"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => { playPing(350, 'sine', 0.05); setShowRegPassword(!showRegPassword); }}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-600 hover:text-white transition"
-                            aria-label={showRegPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-                          >
-                            {showRegPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                          </button>
+                          <input id="register-password" type={showRegPassword ? 'text' : 'password'} required autoComplete="new-password" placeholder="Mật khẩu" value={regPassword} onChange={(e) => setRegPassword(e.target.value)} className="w-full border border-neutral-800 bg-neutral-950 py-2.5 pl-9 pr-10 text-xs text-white placeholder-neutral-600 transition-all focus:border-amber-400 focus:outline-none" />
+                          <button type="button" onClick={() => { playPing(350, 'sine', 0.05); setShowRegPassword(!showRegPassword); }} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-600 transition hover:text-white" aria-label={showRegPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}>{showRegPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}</button>
                         </div>
                       </div>
 
-                    </div>
-
-                    {/* Favorite Genre Selection */}
-                    <div className="space-y-1.5">
-                      <span className="block text-[10px] font-sans font-black uppercase tracking-[0.18em] text-neutral-300">
-                        Gu phim yêu thích để nhận gợi ý phù hợp
-                      </span>
-                      <div className="flex flex-wrap gap-1.5" id="genre-box">
-                        {GENRE_PRESETS.map((genre) => (
-                          <button
-                            key={genre}
-                            type="button"
-                            onClick={() => { playPing(520, 'sine', 0.05); setSelectedGenre(genre); }}
-                            className={`px-3 py-1.5 text-[8.5px] uppercase tracking-wider font-bold transition-all ${selectedGenre === genre
-                              ? 'bg-amber-400 text-black font-extrabold'
-                              : 'bg-neutral-950 text-neutral-400 border border-neutral-850 hover:bg-neutral-900'
-                              }`}
-                          >
-                            {genre}
-                          </button>
-                        ))}
+                      <div className="space-y-1">
+                        <label htmlFor="register-confirm-password" className="block text-[10px] font-sans font-black uppercase tracking-[0.18em] text-neutral-300">Xác thực mật khẩu <span className="text-amber-400">*</span></label>
+                        <div className="relative">
+                          <Lock className="absolute left-3 top-2.5 h-3.5 w-3.5 text-neutral-600" />
+                          <input id="register-confirm-password" type={showRegPassword ? 'text' : 'password'} required autoComplete="new-password" placeholder="Xác thực mật khẩu" value={regConfirmPassword} onChange={(e) => setRegConfirmPassword(e.target.value)} className="w-full border border-neutral-800 bg-neutral-950 py-2.5 pl-9 pr-3 text-xs text-white placeholder-neutral-600 transition-all focus:border-amber-400 focus:outline-none" />
+                        </div>
                       </div>
                     </div>
 
-                    {/* Double constraints age + loyalty */}
+                    <div className="flex items-start gap-2 text-[10px] leading-relaxed text-neutral-400">
+                      <input id="register-privacy-policy" type="checkbox" checked={agreeTerms} onChange={(e) => setAgreeTerms(e.target.checked)} className="mt-0.5 h-3.5 w-3.5 accent-amber-400" />
+                      <div>
+                        <label htmlFor="register-privacy-policy" className="cursor-pointer">Tôi đã đọc và đồng ý với </label>
+                        <button type="button" onClick={() => setShowPrivacyPolicy((isVisible) => !isVisible)} aria-expanded={showPrivacyPolicy} aria-controls="register-privacy-policy-details" className="font-bold text-amber-400 underline underline-offset-2 hover:text-amber-300">Chính sách bảo mật</button>.
+                      </div>
+                    </div>
+
+                    {showPrivacyPolicy && (
+                      <section id="register-privacy-policy-details" aria-label="Nội dung Chính sách bảo mật" className="max-h-56 overflow-y-auto border border-amber-400/25 bg-amber-400/5 p-3 text-[10px] leading-relaxed text-neutral-300 custom-scrollbar">
+                        <h4 className="mb-2 flex items-center gap-1.5 font-sans text-[10px] font-black uppercase tracking-[0.16em] text-amber-300">
+                          <ShieldCheck className="h-3.5 w-3.5" /> Chính sách bảo mật
+                        </h4>
+                        <div className="space-y-2">
+                          <p>CinePremier thu thập thông tin đăng ký cần thiết để tạo tài khoản, xác minh email, đặt vé và hỗ trợ khách hàng.</p>
+                          <p>Thông tin cá nhân được bảo vệ trong hệ thống; chúng tôi không chia sẻ cho bên thứ ba, trừ trường hợp cần thiết để cung cấp dịch vụ hoặc theo yêu cầu pháp luật.</p>
+                          <p>Bạn có trách nhiệm cung cấp thông tin chính xác, bảo vệ mật khẩu và mã OTP của mình. Người dùng dưới 16 tuổi cần có sự đồng ý của cha mẹ hoặc người giám hộ hợp pháp.</p>
+                          <p>CinePremier có thể cập nhật chính sách theo thời gian; phiên bản mới sẽ được công bố trên hệ thống.</p>
+                        </div>
+                      </section>
+                    )}
 
                     {/* Large Register Button */}
                     <button
@@ -1262,7 +1245,7 @@ export default function AuthModal({
                       {isSubmitting ? (
                         <span className="h-4 w-4 border-2 border-black border-t-transparent animate-spin rounded-full inline-block"></span>
                       ) : (
-                        <>THÀNH LẬP THẺ VIP GOLD <ArrowRight className="h-4 w-4" /></>
+                        <>ĐĂNG KÝ <ArrowRight className="h-4 w-4" /></>
                       )}
                     </button>
 
@@ -1458,7 +1441,7 @@ export default function AuthModal({
         {/* Dynamic Interactive Footer displaying membership privileges */}
         <div className="border-t border-neutral-900 bg-[#060606] p-4 text-[11px] text-zinc-400 flex items-center justify-between font-mono">
           <span className="uppercase tracking-wider flex items-center gap-1">
-            <ShieldCheck className="h-3.5 w-3.5 text-amber-500" /> An Toàn - Nhất Quán
+            <ShieldCheck className="h-3.5 w-3.5 text-amber-500" /> An Toàn
           </span>
           <span className="text-right uppercase tracking-[0.1em]">CinePremier Club </span>
         </div>

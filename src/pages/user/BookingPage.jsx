@@ -1948,7 +1948,7 @@ export default function BookingPage() {
                   </div>
                 )}
                 <div className="flex justify-between text-base font-bold text-white border-t border-white/10 pt-3">
-                  <span>TỔNG THANH TOÁN:</span>
+                  <span>TỔNG TIỀN:</span>
                   <span className="font-mono text-amber-400 text-lg font-black">{formatVnd(displayTotal)}</span>
                 </div>
 
@@ -2304,9 +2304,6 @@ export default function BookingPage() {
                         <div>
                           <div className="flex items-center gap-1.5">
                             <span className="text-xs font-bold text-white uppercase">Người lớn</span>
-                            <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 bg-[#f5b800]/20 border border-[#f5b800]/50 text-[#f5b800]">
-                              🟡 NL
-                            </span>
                           </div>
                           <span className="text-[10px] text-neutral-400">Tiêu chuẩn</span>
                         </div>
@@ -2354,9 +2351,6 @@ export default function BookingPage() {
                         <div>
                           <div className="flex items-center gap-1.5">
                             <span className="text-xs font-bold text-white uppercase">Sinh viên</span>
-                            <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 bg-sky-500/20 border border-sky-500/50 text-sky-400">
-                              🔵 SV
-                            </span>
                           </div>
                           <span className="text-[10px] text-sky-300">Ưu đãi HSSV</span>
                         </div>
@@ -2419,7 +2413,7 @@ export default function BookingPage() {
                                 ? 'bg-rose-950/40 border-rose-500/40 text-rose-400'
                                 : 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
                             }`}>
-                              {isChildRestricted ? '⛔ CẤM TE' : '🟢 TE'}
+                              {isChildRestricted ? '⛔ CẤM TRẺ EM' : '🟢 TRẺ EM'}
                             </span>
                           </div>
                           <span className="text-[10px] text-neutral-400">Dưới 12 tuổi</span>
@@ -2869,15 +2863,15 @@ export default function BookingPage() {
                         <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap">
                           <span className="flex items-center gap-1.5 text-amber-400 font-semibold">
                             <span className="w-3.5 h-3 rounded-none bg-[#f5b800] border border-[#ffe082]" />
-                            Người lớn (NL)
+                            Người lớn
                           </span>
                           <span className="flex items-center gap-1.5 text-sky-400 font-semibold">
                             <span className="w-3.5 h-3 rounded-none bg-[#0284c7] border border-[#38bdf8]" />
-                            Sinh viên (SV)
+                            Sinh viên 
                           </span>
                           <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
                             <span className="w-3.5 h-3 rounded-none bg-[#059669] border border-[#34d399]" />
-                            Trẻ em (TE)
+                            Trẻ em 
                           </span>
                         </div>
                       </div>
@@ -3180,7 +3174,7 @@ export default function BookingPage() {
                       <div key={ticketType.type} className="flex justify-between items-center text-neutral-300">
                         <div className="flex items-center gap-1.5">
                           <span className="w-2.5 h-2.5 rounded-none" style={{ backgroundColor: theme.color }} />
-                          <span className="font-medium text-white">{ticketType.label} ({theme.shortLabel})</span>
+                          <span className="font-medium text-white">{ticketType.label} </span>
                         </div>
                         <span className="font-mono font-bold" style={{ color: theme.color }}>
                           {ticketQuantities[ticketType.type]} vé
@@ -3353,7 +3347,7 @@ export default function BookingPage() {
                 )}
 
                 <div className="flex justify-between text-base font-bold text-white border-t border-white/10 pt-3">
-                  <span>TỔNG THANH TOÁN:</span>
+                  <span>TỔNG Tiền:</span>
                   <span className="font-mono text-amber-400 text-lg font-black">{formatVnd(displayTotal)}</span>
                 </div>
 
