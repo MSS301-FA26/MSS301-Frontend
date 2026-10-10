@@ -21,12 +21,6 @@ export default function ManagerBookingsPage() {
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
-  // Refund Modal State
-  const [refundModalOpen, setRefundModalOpen] = useState(false);
-  const [refundTarget, setRefundTarget] = useState(null);
-  const [refundReason, setRefundReason] = useState('Kh?ch h?ng y?u c?u ho?n v?');
-  const [isRefunding, setIsRefunding] = useState(false);
-
   const token = () => getStoredAuth().accessToken;
 
   const loadBookings = async () => {
@@ -69,29 +63,6 @@ export default function ManagerBookingsPage() {
       // keep basic info
     } finally {
       setLoadingDetail(false);
-    }
-  };
-
-  const openRefundModal = (booking) => {
-    setRefundTarget(booking);
-    setRefundReason('Kh?ch h?ng y?u c?u ho?n v?');
-    setRefundModalOpen(true);
-  };
-
-  const handleConfirmRefund = async () => {
-    if (!refundTarget) return;
-    setIsRefunding(true);
-    try {
-      await adminService.refundBookingAdmin(token(), refundTarget.id, refundReason.trim());
-      showToast(`?? ho?n ti?n ${formatVND(refundTarget.totalAmount || refundTarget.finalAmount)} v?o CineWallet c?a kh?ch h?ng th?nh c?ng!`, 'success');
-      setRefundModalOpen(false);
-      setRefundTarget(null);
-      if (detailModalOpen) setDetailModalOpen(false);
-      loadBookings();
-    } catch (err) {
-      showToast(err.message || 'Kh?ng th? ho?n ti?n v?. Vui l?ng ki?m tra l?i.', 'error');
-    } finally {
-      setIsRefunding(false);
     }
   };
 
@@ -338,16 +309,6 @@ export default function ManagerBookingsPage() {
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.08]">
-              {(selectedBooking.status === 'PAID' || selectedBooking.status === 'CONFIRMED') && (
-                <button
-                  type="button"
-                  onClick={() => openRefundModal(selectedBooking)}
-                  className="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white font-medium rounded-lg text-xs transition-colors flex items-center gap-1.5"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  Ho?n v? v?o CineWallet
-                </button>
-              )}
               <button
                 type="button"
                 onClick={() => setDetailModalOpen(false)}
@@ -360,98 +321,6 @@ export default function ManagerBookingsPage() {
         </div>
       )}
 
-      {/* Refund Confirmation Modal */}
-      {refundModalOpen && refundTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-[#181818] border border-purple-500/30 rounded-xl max-w-md w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3 border-b border-white/[0.08] pb-3">
-              <div className="w-9 h-9 rounded-lg bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400">
-                <RotateCcw className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-bold text-white text-base">
-                  X?c nh?n ho?n ti?n v?
-                </h3>
-                <p className="text-xs text-neutral-400">
-                  ??n v? #{refundTarget.bookingCode || refundTarget.id}
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="bg-purple-950/20 border border-purple-500/20 p-3 rounded-lg space-y-1.5 text-purple-200">
-                <div className="flex justify-between">
-                  <span className="text-neutral-400">Kh?ch h?ng:</span>
-                  <span className="font-semibold text-white">{refundTarget.customerName || refundTarget.userFullName || 'Kh?ch h?ng'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-neutral-400">Phim:</span>
-                  <span className="text-white">{refundTarget.movieTitle || refundTarget.movieTitleSnapshot || '-'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-neutral-400">Gh?:</span>
-                  <span className="font-mono text-white">{refundTarget.seatCodes || refundTarget.seats || '-'}</span>
-                </div>
-                <div className="flex justify-between pt-1 border-t border-purple-500/20">
-                  <span className="font-semibold">S? ti?n ho?n v?o CineWallet:</span>
-                  <span className="font-mono font-black text-amber-400 text-sm">
-                    {formatVND(refundTarget.totalAmount || refundTarget.finalAmount)}
-                  </span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-medium text-neutral-300 mb-1">
-                  L? do ho?n ti?n:
-                </label>
-                <textarea
-                  value={refundReason}
-                  onChange={(e) => setRefundReason(e.target.value)}
-                  placeholder="Nh?p l? do ho?n v?..."
-                  rows={3}
-                  className="w-full bg-neutral-900 border border-white/[0.12] focus:border-purple-400 rounded-lg p-2.5 text-white text-xs outline-none resize-none"
-                />
-              </div>
-
-              <div className="flex items-start gap-2 p-2.5 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-300 text-[11px]">
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
-                <p>
-                  Ti?n v? s? ???c c?ng tr?c ti?p v?o <strong>CineWallet</strong> c?a kh?ch h?ng ngay l?p t?c v? c?c gh? ?? ch?n s? ???c gi?i ph?ng tr? l?i ph?ng chi?u.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t border-white/[0.08]">
-              <button
-                type="button"
-                onClick={() => setRefundModalOpen(false)}
-                disabled={isRefunding}
-                className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-medium rounded-lg text-xs transition-colors"
-              >
-                H?y b?
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmRefund}
-                disabled={isRefunding}
-                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded-lg text-xs transition-colors flex items-center gap-1.5 disabled:opacity-50"
-              >
-                {isRefunding ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    ?ang x? l?...
-                  </>
-                ) : (
-                  <>
-                    <RotateCcw className="w-3.5 h-3.5" />
-                    X?c nh?n ho?n ti?n
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

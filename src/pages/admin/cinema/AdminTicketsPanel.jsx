@@ -93,9 +93,6 @@ export default function AdminTicketsPanel({ ctx }) {
   const [cancelReason, setCancelReason] = useState('');
   const [isCancelling, setIsCancelling] = useState(false);
 
-  const [refundTarget, setRefundTarget] = useState(null);
-  const [refundReason, setRefundReason] = useState('');
-  const [isRefunding, setIsRefunding] = useState(false);
 
   // Audit Logs state
   const [auditLogs, setAuditLogs] = useState([]);
@@ -202,25 +199,6 @@ export default function AdminTicketsPanel({ ctx }) {
       showToast(err?.message || 'Không thể hủy vé.', 'error');
     } finally {
       setIsCancelling(false);
-    }
-  };
-
-  // Handle Refund Ticket
-  const handleConfirmRefund = async () => {
-    if (!refundTarget) return;
-    const token = getAdminToken();
-    if (!token) return;
-    setIsRefunding(true);
-    try {
-      await adminService.refundBookingAdmin(token, refundTarget.id, refundReason.trim());
-      showToast(`Đã hoàn tiền ${formatVnd(refundTarget.totalAmount)} cho đơn ${refundTarget.bookingCode} thành công.`, 'success');
-      setRefundTarget(null);
-      setRefundReason('');
-      loadBookings(page);
-    } catch (err) {
-      showToast(err?.message || 'Không thể hoàn tiền đơn này.', 'error');
-    } finally {
-      setIsRefunding(false);
     }
   };
 
@@ -462,20 +440,6 @@ export default function AdminTicketsPanel({ ctx }) {
                                 </button>
                               )}
 
-                              {/* Hoàn tiền */}
-                              {canRefund && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setRefundTarget(b);
-                                    setRefundReason('');
-                                  }}
-                                  className="border border-purple-500/40 bg-purple-950/20 px-2 py-1 text-[9px] font-bold text-purple-300 transition hover:bg-purple-500 hover:text-white"
-                                >
-                                  Hoàn tiền
-                                </button>
-                              )}
-
                               {b.status === 'REFUNDED' && (
                                 <span className="text-[9px] font-mono text-purple-400">Đã hoàn tất</span>
                               )}
@@ -708,61 +672,6 @@ export default function AdminTicketsPanel({ ctx }) {
         </div>
       )}
 
-      {/* Modal Hoàn tiền */}
-      {refundTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setRefundTarget(null)}>
-          <div className="w-full max-w-md border border-white/[0.12] bg-[#0d0d0d] p-6" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-[9px] font-black uppercase tracking-[0.25em] text-purple-400">Nghiệp vụ tài chính</p>
-                <h3 className="mt-1 text-base font-black uppercase tracking-wide text-white">
-                  Xác nhận Hoàn Tiền Vé {refundTarget.bookingCode}
-                </h3>
-              </div>
-              <button onClick={() => setRefundTarget(null)} disabled={isRefunding} className="text-neutral-400 hover:text-white">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <p className="mt-3 text-xs text-neutral-300">
-              Số tiền hoàn: <span className="font-bold text-emerald-400 text-sm">{formatVnd(refundTarget.totalAmount)}</span>
-            </p>
-            <div className="mt-2 border border-purple-500/20 bg-purple-950/20 p-3 text-[11px] text-purple-200">
-              Số tiền sẽ được hoàn trả về ví CineWallet của khách hàng. Trạng thái đơn chuyển sang <strong>REFUNDED</strong>. Hành động này không thể hoàn tác và ngăn chặn hoàn tiền kép.
-            </div>
-
-            <label className="mt-4 block text-[9px] font-black uppercase tracking-widest text-neutral-300">
-              Lý do hoàn tiền *
-            </label>
-            <textarea
-              value={refundReason}
-              onChange={(e) => setRefundReason(e.target.value)}
-              rows={3}
-              placeholder="Nhập lý do hoàn tiền (VD: Khách yêu cầu hoàn, sự cố phòng chiếu...)"
-              className="mt-1.5 w-full resize-none border border-white/10 bg-black px-3 py-2 text-xs text-white outline-none focus:border-purple-400"
-            />
-
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setRefundTarget(null)}
-                disabled={isRefunding}
-                className="border border-white/10 bg-black px-4 py-2 text-[10px] font-black uppercase tracking-widest text-neutral-300 hover:text-white"
-              >
-                Đóng
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmRefund}
-                disabled={isRefunding || !refundReason.trim()}
-                className="flex items-center gap-2 border border-purple-500 bg-purple-500/20 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-purple-200 transition hover:bg-purple-500 hover:text-white disabled:opacity-40"
-              >
-                {isRefunding ? 'Đang hoàn tiền...' : 'Xác nhận hoàn tiền'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

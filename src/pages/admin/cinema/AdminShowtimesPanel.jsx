@@ -104,7 +104,7 @@ export default function AdminShowtimesPanel({ ctx }) {
   useEffect(() => { getTokenRef.current = getAdminToken; }, [getAdminToken]);
 
   /* State */
-  const [date, setDate] = useState(todayStr());
+  const [date, setDate] = useState(() => getTomorrowStr());
   const [view, setView] = useState('day'); // 'day' | 'week'
   const [rooms, setRooms] = useState([]);
   const [adminMovies, setAdminMovies] = useState([]);
@@ -124,6 +124,11 @@ export default function AdminShowtimesPanel({ ctx }) {
   const [movieFilter, setMovieFilter] = useState('NOW_SHOWING'); // 'NOW_SHOWING' | 'UPCOMING' | 'ALL'
   const [loadingMovies, setLoadingMovies] = useState(false);
 
+  /* Date Validation Flags (Chính sách cấm tạo suất ở ngày hiện tại/quá khứ) */
+  const isToday = date === todayStr();
+  const isPast = date < todayStr();
+  const isTodayOrPast = date < getTomorrowStr();
+
   /* Draft Mode & Price Preview State */
   const [isDraftMode, setIsDraftMode] = useState(true);
   const [draftShows, setDraftShows] = useState([]);
@@ -136,6 +141,51 @@ export default function AdminShowtimesPanel({ ctx }) {
   const [addModal, setAddModal] = useState(null);
   const [copyModal, setCopyModal] = useState(false);
   const [cancelModal, setCancelModal] = useState(null);
+  const [confirmClearDraftsModal, setConfirmClearDraftsModal] = useState(false);
+
+  /* Price Matrix for Selected Showtime in Detail Panel */
+  const [detailPriceMatrix, setDetailPriceMatrix] = useState(null);
+  const [loadingDetailPrice, setLoadingDetailPrice] = useState(false);
+
+  useEffect(() => {
+    if (!selId) {
+      setDetailPriceMatrix(null);
+      return;
+    }
+    const s = findShowById(selId);
+    if (!s || !s.movieId || !s.roomId) {
+      setDetailPriceMatrix(null);
+      return;
+    }
+    const token = getTokenRef.current?.();
+    if (!token) return;
+
+    let cancelled = false;
+    setLoadingDetailPrice(true);
+    adminService.previewShowtimePrices(token, {
+      movieId: Number(s.movieId),
+      slots: [{
+        roomId: Number(s.roomId),
+        startTime: `${s.date}T${s.start || '09:00'}:00`,
+        tempId: String(s.id)
+      }]
+    }).then(res => {
+      if (cancelled) return;
+      const list = Array.isArray(res) ? res : (res?.data || []);
+      if (list.length > 0) {
+        setDetailPriceMatrix(list[0]);
+      } else {
+        setDetailPriceMatrix(null);
+      }
+    }).catch(err => {
+      console.warn('Lỗi lấy ma trận giá chi tiết:', err);
+      if (!cancelled) setDetailPriceMatrix(null);
+    }).finally(() => {
+      if (!cancelled) setLoadingDetailPrice(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [selId, shows, draftShows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Timeline Scroll */
   const tlWrapRef = useRef(null);
@@ -302,7 +352,10 @@ export default function AdminShowtimesPanel({ ctx }) {
         type: r.type || r.roomType || '2D',
         seats: r.totalSeats || r.seatCount || 80,
         active: r.active !== false && r.status !== 'INACTIVE',
-        price: r.price || DEFAULT_PRICES[r.type || '2D'] || DEFAULT_PRICES['2D']
+        standardPrice: Number(r.standardPrice || r.price?.std || 60000),
+        vipPrice: Number(r.vipPrice || r.price?.vip || 80000),
+        couplePrice: Number(r.couplePrice || r.price?.couple || 140000),
+        price: r.price || { std: Number(r.standardPrice || 60000), vip: Number(r.vipPrice || 80000), couple: Number(r.couplePrice || 140000) }
       }));
       setRooms(formatted);
     } catch (err) {
@@ -589,13 +642,26 @@ export default function AdminShowtimesPanel({ ctx }) {
   };
 
   const pickMovie = (id) => {
+    const m = M(id);
+    if (m?.release && date < m.release) {
+      showToast?.(`🚫 Phim "${m.title}" chưa tới ngày khởi chiếu (khởi chiếu từ ${m.release}).`, 'warning');
+      return;
+    }
     const next = selMovie === id ? null : id;
     setSelMovie(next);
     if (next) showToast?.('Đã chọn phim – click vào khoảng trống trên dòng phòng để đặt suất', 'info');
   };
 
   const quickAdd = async (roomId, movieId, start) => {
+    if (date < getTomorrowStr()) {
+      showToast?.('🚫 Quy định: Suất chiếu phải được lên lịch trước ít nhất 1 ngày (từ ngày mai trở đi).', 'error');
+      return;
+    }
     const m = M(movieId);
+    if (m?.release && date < m.release) {
+      showToast?.(`🚫 Phim "${m.title}" chưa tới ngày khởi chiếu (từ ${m.release}).`, 'warning');
+      return;
+    }
     const r = R(roomId);
     const fmt = m.formats.includes(r.type) ? r.type : (m.formats.includes('2D') ? '2D' : m.formats[0]);
     const candidate = {
@@ -654,6 +720,15 @@ export default function AdminShowtimesPanel({ ctx }) {
   const handleUpdate = async (key, val) => {
     const s = findShowById(selId);
     if (!s) return;
+    const isShowtimeOpened = s.status === 'open' || s.status === 'OPEN' || Number(s.sold || 0) > 0;
+    if (key === 'status' && isShowtimeOpened) {
+      showToast?.('Suất chiếu đang bán vé, không thể đổi trạng thái!', 'warning');
+      return;
+    }
+    if (key === 'movieId' && isShowtimeOpened) {
+      showToast?.('Suất chiếu đã mở bán vé, không thể đổi phim!', 'warning');
+      return;
+    }
     const cand = { ...s, [key]: val };
     if (key === 'movieId') {
       const m = M(val);
@@ -926,25 +1001,34 @@ export default function AdminShowtimesPanel({ ctx }) {
 
   const handleClearAllDrafts = () => {
     if (draftShows.length === 0) return;
-    if (!window.confirm(`Bạn có chắc chắn muốn hủy bỏ tất cả ${draftShows.length} suất chiếu bản thảo chưa lưu?`)) return;
+    setConfirmClearDraftsModal(true);
+  };
+
+  const executeClearAllDrafts = () => {
+    const count = draftShows.length;
     setDraftShows([]);
     setSelId(null);
-    showToast?.('Đã xóa toàn bộ bản thảo', 'info');
+    setConfirmClearDraftsModal(false);
+    showToast?.(`Đã hủy bỏ tất cả ${count} suất chiếu bản thảo`, 'info');
   };
 
   const handleNextSlot = () => {
     const s = shows.find(x => String(x.id) === String(selId));
     if (!s) return;
+    if (s.date < getTomorrowStr()) {
+      showToast?.('🚫 Không thể tạo thêm suất chiếu cho ngày hiện tại hoặc quá khứ.', 'warning');
+      return;
+    }
     const start = toT(Math.ceil((endOf(s) + CLEAN) / 5) * 5);
     quickAdd(s.roomId, s.movieId, start);
   };
 
 
 
-  /* Filtered Movies (Hỗ trợ lọc Phim đang chiếu từ BE) */
+  /* Filtered Movies (Ưu tiên phim có thể tạo suất chiếu lên đầu tiên) */
   const filteredMovies = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    return movies.filter(m => {
+    const list = movies.filter(m => {
       const matchSearch = !q || m.title.toLowerCase().includes(q);
       if (!matchSearch) return false;
       if (movieFilter === 'NOW_SHOWING') {
@@ -954,6 +1038,15 @@ export default function AdminShowtimesPanel({ ctx }) {
         return m.status === 'UPCOMING' || m.release > date;
       }
       return true;
+    });
+
+    // Sắp xếp: Ưu tiên phim có thể tạo suất chiếu (đã phát hành & chưa hết hạn) lên đầu tiên
+    return list.slice().sort((a, b) => {
+      const aValid = (!a.release || a.release <= date) && (!a.end || a.end >= date);
+      const bValid = (!b.release || b.release <= date) && (!b.end || b.end >= date);
+      if (aValid && !bValid) return -1;
+      if (!aValid && bValid) return 1;
+      return 0;
     });
   }, [movies, searchQuery, movieFilter, date]);
 
@@ -1211,6 +1304,19 @@ export default function AdminShowtimesPanel({ ctx }) {
           background: var(--primary-2);
           border-color: var(--primary);
           color: var(--primary);
+        }
+        .cinema-schedule-dark .btn.btn-banned {
+          background: rgba(239, 68, 68, 0.16) !important;
+          border-color: rgba(239, 68, 68, 0.45) !important;
+          color: #fca5a5 !important;
+          cursor: not-allowed !important;
+        }
+        .cinema-schedule-dark .btn.btn-banned:hover {
+          background: rgba(239, 68, 68, 0.26) !important;
+        }
+        .cinema-schedule-dark .datebox-card.is-past {
+          border-color: rgba(239, 68, 68, 0.4);
+          background: #1c1517;
         }
         .cinema-schedule-dark .btn.danger { color: var(--danger); }
         .cinema-schedule-dark .btn.danger:hover { background: rgba(220, 38, 38, 0.15); border-color: rgba(220, 38, 38, 0.3); }
@@ -1696,8 +1802,8 @@ export default function AdminShowtimesPanel({ ctx }) {
         {/* GROUP 2: Date Navigation Cluster */}
         <div className="toolbar-group">
           <button className="btn nav-arrow" onClick={() => shiftDay(-1)} title="Ngày trước">‹</button>
-          
-          <div className={`datebox-card ${date === todayStr() ? 'is-today' : ''}`}>
+
+          <div className={`datebox-card ${date === todayStr() ? 'is-today' : ''} ${isPast ? 'is-past' : ''}`}>
             <div className="date-input-wrap">
               <input
                 type="date"
@@ -1709,7 +1815,9 @@ export default function AdminShowtimesPanel({ ctx }) {
             </div>
             <div className="date-sub-badge">
               <span>{DOW[new Date(date + 'T00:00:00').getDay()]}</span>
-              {date === todayStr() && <span className="today-badge">• Hôm nay</span>}
+              {date === todayStr() && <span className="today-badge">• Hôm nay (Vận hành)</span>}
+              {isPast && <span style={{ color: '#f87171', fontWeight: 700 }}>• Quá khứ</span>}
+              {date >= getTomorrowStr() && <span style={{ color: '#34d399', fontWeight: 700 }}>• Mở tạo lịch</span>}
             </div>
           </div>
 
@@ -1759,9 +1867,19 @@ export default function AdminShowtimesPanel({ ctx }) {
             <span>Sao chép lịch</span>
           </button>
 
-          <button className="btn primary" onClick={() => setAddModal({ date })} title="Tạo suất chiếu mới">
-            <span style={{ fontSize: '15px', fontWeight: 900 }}>＋</span>
-            <span>Thêm suất chiếu</span>
+          <button
+            className={`btn ${isTodayOrPast ? 'btn-banned' : 'primary'}`}
+            onClick={() => {
+              if (isTodayOrPast) {
+                showToast?.('🚫 Hệ thống khóa tạo suất chiếu ở ngày hiện tại hoặc quá khứ. Suất chiếu bắt buộc phải lên lịch trước ít nhất 1 ngày (từ ngày mai trở đi).', 'warning');
+                return;
+              }
+              setAddModal({ date: date >= getTomorrowStr() ? date : getTomorrowStr() });
+            }}
+            title={isTodayOrPast ? "Chính sách: Khóa tạo suất chiếu ở ngày hiện tại/quá khứ (chỉ được tạo từ ngày mai trở đi)" : "Tạo suất chiếu mới"}
+          >
+            <span style={{ fontSize: '14px', fontWeight: 900 }}>{isTodayOrPast ? '🚫' : '＋'}</span>
+            <span>{isTodayOrPast ? (isToday ? 'Khóa tạo (Hôm nay)' : 'Khóa tạo (Quá khứ)') : 'Thêm suất chiếu'}</span>
           </button>
 
           <button
@@ -1777,6 +1895,46 @@ export default function AdminShowtimesPanel({ ctx }) {
           </button>
         </div>
       </header>
+
+      {/* ── BANNER KHÓA TẠO SUẤT CHIẾU Ở NGÀY HIỆN TẠI / QUÁ KHỨ ── */}
+      {isTodayOrPast && (
+        <div style={{
+          background: 'linear-gradient(90deg, rgba(239, 68, 68, 0.16), rgba(245, 184, 0, 0.08))',
+          borderBottom: '1px solid rgba(239, 68, 68, 0.35)',
+          padding: '9px 18px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '12px',
+          flexShrink: 0
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '18px' }}>🚫</span>
+            <div>
+              <div style={{ fontSize: '13px', color: '#fff', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>Chế độ theo dõi & vận hành ({isToday ? 'Ngày hiện tại' : 'Ngày quá khứ'})</span>
+                <span style={{ fontSize: '10px', background: 'rgba(239, 68, 68, 0.25)', color: '#f87171', border: '1px solid rgba(239, 68, 68, 0.4)', padding: '1px 6px', borderRadius: '4px', textTransform: 'uppercase', fontWeight: 800 }}>
+                  Khóa tạo suất chiếu
+                </span>
+              </div>
+              <p style={{ fontSize: '11.5px', color: '#94a3b8', margin: '2px 0 0 0' }}>
+                Quy định vận hành: Suất chiếu phải được lên lịch trước ít nhất 1 ngày (từ ngày mai trở đi). Ngày hôm nay chỉ phục vụ kiểm tra trạng thái vé và xử lý sự cố.
+              </p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+            <button
+              className="btn sm"
+              onClick={() => { setDate(getTomorrowStr()); setSelId(null); }}
+              title="Chuyển nhanh sang ngày mai để lên lịch chiếu"
+              style={{ background: '#f59e0b', color: '#000', fontWeight: 700, border: 'none', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
+            >
+              <span>👉</span>
+              <span>Lên lịch ngày mai ({getTomorrowStr()})</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── DRAFT ACTIONS BAR ── */}
       {draftShows.length > 0 && (
@@ -1847,6 +2005,23 @@ export default function AdminShowtimesPanel({ ctx }) {
             </button>
           </div>
           <div className="card-b">
+            {isTodayOrPast && (
+              <div style={{
+                background: 'rgba(239, 68, 68, 0.12)',
+                border: '1px solid rgba(239, 68, 68, 0.28)',
+                borderRadius: '8px',
+                padding: '6px 10px',
+                marginBottom: '10px',
+                fontSize: '11px',
+                color: '#fca5a5',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}>
+                <span>🚫</span>
+                <span>Khóa kéo thả lên lịch cho ngày {isToday ? 'hôm nay' : 'quá khứ'}</span>
+              </div>
+            )}
             {/* Filter Tabs: Đang chiếu / Sắp chiếu / Tất cả */}
             <div style={{ display: 'flex', gap: '4px', marginBottom: '8px' }}>
               <button
@@ -1914,15 +2089,22 @@ export default function AdminShowtimesPanel({ ctx }) {
             <div>
               {filteredMovies.map(m => {
                 const n = dayShows().filter(s => Number(s.movieId) === Number(m.id) && s.status !== 'cancel').length;
-                const soon = m.status === 'UPCOMING' || m.release > date;
+                const isUnreleased = Boolean(m.release && date < m.release);
+                const isEnded = Boolean(m.end && date > m.end);
+                const isInvalidForDate = isUnreleased || isEnded;
+                const soon = m.status === 'UPCOMING' || isUnreleased;
                 const isSel = selMovie === m.id;
 
                 return (
                   <div
                     key={m.id}
                     className={`movie ${isSel ? 'sel' : ''}`}
-                    draggable
+                    draggable={!isInvalidForDate && !isTodayOrPast}
                     onDragStart={(e) => {
+                      if (isInvalidForDate || isTodayOrPast) {
+                        e.preventDefault();
+                        return;
+                      }
                       e.dataTransfer.setData('movieId', String(m.id));
                       window._dragMovieId = m.id;
                       window._dragShowId = null;
@@ -1935,8 +2117,35 @@ export default function AdminShowtimesPanel({ ctx }) {
                       window._dragShowId = null;
                       setDraggingShowId(null);
                     }}
-                    onClick={() => pickMovie(m.id)}
-                    style={{ opacity: soon ? 0.6 : 1 }}
+                    onClick={() => {
+                      if (isUnreleased) {
+                        showToast?.(`🚫 Phim "${m.title}" chưa tới ngày khởi chiếu (khởi chiếu từ ${m.release}). Vui lòng chọn ngày chiếu sau ${m.release}!`, 'warning');
+                        return;
+                      }
+                      if (isEnded) {
+                        showToast?.(`⚠️ Phim "${m.title}" đã hết hạn chiếu từ ngày ${m.end}.`, 'warning');
+                        return;
+                      }
+                      if (isTodayOrPast) {
+                        showToast?.('🚫 Không thể chọn phim lên lịch cho ngày hiện tại hoặc quá khứ.', 'warning');
+                        return;
+                      }
+                      pickMovie(m.id);
+                    }}
+                    style={{
+                      opacity: isInvalidForDate ? 0.42 : soon ? 0.7 : 1,
+                      cursor: isInvalidForDate ? 'not-allowed' : 'pointer',
+                      filter: isInvalidForDate ? 'grayscale(0.55)' : undefined
+                    }}
+                    title={
+                      isUnreleased
+                        ? `Phim chưa tới ngày khởi chiếu (khởi chiếu từ ${m.release}). Không thể lên lịch cho ngày ${date}.`
+                        : isEnded
+                          ? `Phim đã hết hạn chiếu (hạn đến ${m.end}).`
+                          : isTodayOrPast
+                            ? 'Ngày hiện tại đang khóa tạo mới.'
+                            : 'Click để chọn hoặc kéo thả vào phòng chiếu'
+                    }
                   >
                     <div className="poster" style={{ background: `linear-gradient(160deg, ${m.color}, ${m.color}99)`, overflow: 'hidden' }}>
                       {m.posterUrl ? (
@@ -1960,7 +2169,19 @@ export default function AdminShowtimesPanel({ ctx }) {
                         {m.hot && <span className="tag hot">HOT</span>}
                       </div>
                       <div className="m">
-                        {soon ? `Khởi chiếu ${m.release.split('-').reverse().join('/')}` : `${n} suất hôm nay`}
+                        {isUnreleased ? (
+                          <span style={{ color: '#f87171', fontWeight: 700, fontSize: '10.5px' }}>
+                            🚫 Chưa chiếu (từ {m.release.split('-').reverse().join('/')})
+                          </span>
+                        ) : isEnded ? (
+                          <span style={{ color: '#f87171', fontWeight: 700, fontSize: '10.5px' }}>
+                            ⚠️ Hết hạn ({m.end.split('-').reverse().join('/')})
+                          </span>
+                        ) : soon ? (
+                          `Khởi chiếu ${m.release.split('-').reverse().join('/')}`
+                        ) : (
+                          `${n} suất hôm nay`
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2081,6 +2302,9 @@ export default function AdminShowtimesPanel({ ctx }) {
                         style={{ width: `calc(var(--hourW) * ${CLOSE - OPEN})` }}
                         onClick={(e) => {
                           if (!r.active) return showToast?.('Phòng đang tạm ngưng', 'warning');
+                          if (isTodayOrPast) {
+                            return showToast?.('🚫 Không thể tạo suất chiếu ở ngày hiện tại hoặc quá khứ. Vui lòng bấm "Lên lịch ngày mai" để điều phối!', 'warning');
+                          }
                           const x = e.clientX - e.currentTarget.getBoundingClientRect().left;
                           const mins = Math.round((OPEN * 60 + (x / 96) * 60) / 5) * 5;
                           const start = toT(mins);
@@ -2093,6 +2317,10 @@ export default function AdminShowtimesPanel({ ctx }) {
                         onDragOver={(e) => {
                           e.preventDefault();
                           if (!r.active) return;
+                          if (isTodayOrPast && !window._dragShowId) {
+                            e.dataTransfer.dropEffect = 'none';
+                            return;
+                          }
                           e.currentTarget.classList.add('over');
                           const rect = e.currentTarget.getBoundingClientRect();
                           const x = e.clientX - rect.left;
@@ -2133,6 +2361,9 @@ export default function AdminShowtimesPanel({ ctx }) {
                           const sid = e.dataTransfer.getData('showId') || window._dragShowId;
 
                           if (mid && !sid) {
+                            if (isTodayOrPast) {
+                              return showToast?.('🚫 Không thể kéo thả tạo suất chiếu ở ngày hiện tại hoặc quá khứ.', 'warning');
+                            }
                             quickAdd(r.id, Number(mid), start);
                           } else if (sid) {
                             const curShow = findShowById(sid);
@@ -2423,362 +2654,526 @@ export default function AdminShowtimesPanel({ ctx }) {
               </button>
             </div>
 
-          <div className="card-b">
-            {/* TAB 0 */}
-            {tabIdx === 0 && (() => {
-              const s = findShowById(selId);
-              if (!s) {
-                return (
-                  <div className="empty">
-                    <i>🎟️</i>
-                    Chọn một suất chiếu trên lịch để xem / chỉnh sửa.<br />
-                    Hoặc kéo phim vào dòng phòng để tạo suất mới.
-                  </div>
-                );
-              }
-
-              const m = M(s.movieId);
-              const r = R(s.roomId);
-              const v = validate(s, s.id);
-              const end = toT(endOf(s));
-              const stMap = { open: 'Đang bán vé', plan: 'Đã lên lịch', cancel: 'Đã huỷ', done: 'Đã chiếu' };
-              const pct = r.seats > 0 ? Math.round((s.sold / r.seats) * 100) : 0;
-              const prices = s.price || r.price || DEFAULT_PRICES[s.fmt] || DEFAULT_PRICES['2D'];
-
-              return (
-                <div>
-                  {s.isDraft && (
-                    <div style={{
-                      background: 'rgba(245, 184, 0, 0.12)',
-                      border: '1px dashed #f5b800',
-                      padding: '10px 12px',
-                      borderRadius: '6px',
-                      marginBottom: '14px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '8px'
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: '12px', color: '#f5b800', fontWeight: 800 }}>
-                          📝 Suất Chiếu Bản Thảo (Chưa Lưu)
-                        </span>
-                        <span style={{ fontSize: '10.5px', background: 'rgba(245, 184, 0, 0.2)', color: '#f5b800', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
-                          DRAFT
-                        </span>
-                      </div>
-                      <div style={{ display: 'flex', gap: '6px' }}>
-                        <button
-                          className="btn sm"
-                          style={{ flex: 1, fontSize: '11px', padding: '4px 6px', background: '#161b22', border: '1px solid rgba(255,255,255,0.2)' }}
-                          onClick={() => handlePreviewPrices([s])}
-                          title="Xem trước giá vé tính toán cho suất này"
-                        >
-                          👁️ Xem giá
-                        </button>
-                        <button
-                          className="btn primary sm"
-                          style={{ flex: 1, fontSize: '11px', padding: '4px 6px' }}
-                          onClick={() => handleSaveSingleDraft(s)}
-                          title="Lưu ngay suất chiếu này vào hệ thống"
-                        >
-                          💾 Lưu ngay
-                        </button>
-                        <button
-                          className="btn sm"
-                          style={{ fontSize: '11px', padding: '4px 8px', color: '#f85149', borderColor: 'rgba(248,81,73,0.3)' }}
-                          onClick={() => handleDeleteDraft(s.id)}
-                          title="Xóa suất bản thảo này"
-                        >
-                          ✕
-                        </button>
-                      </div>
+            <div className="card-b">
+              {/* TAB 0 */}
+              {tabIdx === 0 && (() => {
+                const s = findShowById(selId);
+                if (!s) {
+                  return (
+                    <div className="empty">
+                      <i>🎟️</i>
+                      Chọn một suất chiếu trên lịch để xem / chỉnh sửa.<br />
+                      Hoặc kéo phim vào dòng phòng để tạo suất mới.
                     </div>
-                  )}
+                  );
+                }
 
-                  <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
-                    <div className="poster" style={{ background: m.color, width: '44px', height: '60px' }}>
-                      {m.title.charAt(0)}
-                    </div>
-                    <div>
-                      <b style={{ fontSize: '14px', color: '#fff' }}>{m.title}</b>
-                      <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '3px' }}>
-                        {m.dur} phút • {m.age} • {m.formats.join('/')}
-                      </div>
-                      <span className={`status st-${s.status}`} style={{ marginTop: '6px' }}>
-                        {stMap[s.status]}
-                      </span>
-                    </div>
-                  </div>
+                const m = M(s.movieId);
+                const r = R(s.roomId);
+                const v = validate(s, s.id);
+                const end = toT(endOf(s));
+                const stMap = { open: 'Đang bán vé', plan: 'Đã lên lịch', cancel: 'Đã huỷ', done: 'Đã chiếu' };
+                const pct = r.seats > 0 ? Math.round((s.sold / r.seats) * 100) : 0;
+                const prices = s.price || r.price || DEFAULT_PRICES[s.fmt] || DEFAULT_PRICES['2D'];
 
-                  {v.errs.map((e, i) => (
-                    <div key={i} className="alert err">⛔ {e}</div>
-                  ))}
-                  {v.warns.map((w, i) => (
-                    <div key={i} className="alert warn">⚠️ {w}</div>
-                  ))}
-
-                  <div className="field">
-                    <label>Phim</label>
-                    <select value={s.movieId} onChange={(e) => handleUpdate('movieId', Number(e.target.value))}>
-                      {movies.map(x => (
-                        <option key={x.id} value={x.id}>{x.title}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="row2">
-                    <div className="field">
-                      <label>Phòng</label>
-                      <select value={s.roomId} onChange={(e) => handleUpdate('roomId', Number(e.target.value))}>
-                        {rooms.map(x => (
-                          <option key={x.id} value={x.id}>{x.name} ({x.type})</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="field">
-                      <label>Ngày</label>
-                      <input type="date" value={s.date} onChange={(e) => handleUpdate('date', e.target.value)} />
-                    </div>
-                  </div>
-
-                  <div className="row3">
-                    <div className="field">
-                      <label>Bắt đầu</label>
-                      <input type="time" step="300" value={s.start} onChange={(e) => handleUpdate('start', e.target.value)} />
-                    </div>
-                    <div className="field">
-                      <label>Kết thúc</label>
-                      <input value={end} disabled style={{ background: '#1c2128', color: 'var(--muted)' }} />
-                    </div>
-                    <div className="field">
-                      <label>Trống tới</label>
-                      <input value={toT(endOf(s) + CLEAN)} disabled style={{ background: '#1c2128', color: 'var(--muted)' }} />
-                    </div>
-                  </div>
-
-                  <div className="row2">
-                    <div className="field">
-                      <label>Định dạng</label>
-                      <select value={s.fmt} onChange={(e) => handleUpdate('fmt', e.target.value)}>
-                        {['2D', '3D', 'IMAX', '4DX'].map(f => (
-                          <option key={f} value={f}>{f}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div className="field">
-                      <label>Ngôn ngữ</label>
-                      <select value={s.lang} onChange={(e) => handleUpdate('lang', e.target.value)}>
-                        {['Phụ đề', 'Lồng tiếng', 'Tiếng Việt'].map(f => (
-                          <option key={f} value={f}>{f}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="field">
-                    <label>Trạng thái</label>
-                    <select value={s.status} onChange={(e) => handleUpdate('status', e.target.value)}>
-                      {Object.entries(stMap).map(([k, vv]) => (
-                        <option key={k} value={k}>{vv}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="field">
-                    <label>Ghi chú</label>
-                    <input value={s.note || ''} placeholder="VD: suất chiếu sớm, ưu đãi thành viên..." onChange={(e) => handleUpdate('note', e.target.value)} />
-                  </div>
-
-                  <div className="kv">
-                    <span>Vé đã bán</span>
-                    <b>{s.sold}/{r.seats} ({pct}%)</b>
-                  </div>
-                  <div className="occ"><i style={{ width: `${pct}%` }} /></div>
-
-                  <div className="kv" style={{ marginTop: '8px' }}>
-                    <span>Giá vé (thường / VIP)</span>
-                    <b>{fmtVN(prices.std)} / {fmtVN(prices.vip)} đ</b>
-                  </div>
-                  <div className="kv">
-                    <span>Doanh thu ước tính</span>
-                    <b>{fmtVN(s.sold * prices.std)} đ</b>
-                  </div>
-                  <div className="kv">
-                    <span>Gồm quảng cáo / dọn phòng</span>
-                    <b style={{ color: '#fff' }}>{ADS}′ / {CLEAN}′</b>
-                  </div>
-
-                  {s.status !== 'cancel' && !s.isDraft && (
-                    <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid var(--line)' }}>
-                      <div style={{ fontSize: '11px', color: '#f87171', fontWeight: 700, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span>⚠️ THAO TÁC SỰ CỐ KHẨN CẤP:</span>
-                      </div>
-                      <button
-                        className="btn danger"
-                        style={{
-                          width: '100%',
-                          justifyContent: 'center',
-                          padding: '10px 12px',
-                          fontSize: '12px',
-                          fontWeight: 'bold',
-                          background: 'rgba(239, 68, 68, 0.15)',
-                          border: '1px solid rgba(239, 68, 68, 0.5)',
-                          color: '#f87171',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          borderRadius: '6px',
-                          cursor: 'pointer',
-                          boxShadow: '0 2px 8px rgba(239, 68, 68, 0.15)'
-                        }}
-                        onClick={handleCancelShowtimeWithRefund}
-                        title="Hủy suất chiếu do sự cố và tự động hoàn tiền toàn bộ vé vào CineWallet của khách hàng"
-                      >
-                        <span>⚠️ HỦY & HOÀN TIỀN SỰ CỐ</span>
-                      </button>
-                      <div style={{ fontSize: '10.5px', color: 'var(--muted)', marginTop: '5px', textAlign: 'center' }}>
-                        Tự động hoàn tiền vào CineWallet & giải phóng toàn bộ ghế
-                      </div>
-                    </div>
-                  )}
-
-                  <div style={{ display: 'flex', gap: '6px', marginTop: '14px' }}>
-                    <button
-                      className="btn"
-                      style={{ flex: 1, justifyContent: 'center', padding: '8px 6px', fontSize: '12px' }}
-                      onClick={() => setAddModal({ roomId: s.roomId, movieId: s.movieId, date: s.date })}
-                    >
-                      ⧉ Nhân bản…
-                    </button>
-                    <button
-                      className="btn"
-                      style={{ flex: 1, justifyContent: 'center', padding: '8px 6px', fontSize: '12px' }}
-                      onClick={handleNextSlot}
-                    >
-                      ⏭ Suất kế tiếp
-                    </button>
-                    <button
-                      className="btn danger"
-                      style={{ padding: '8px 10px' }}
-                      onClick={handleDelete}
-                      title="Xoá suất chiếu"
-                    >
-                      🗑
-                    </button>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* TAB 1 */}
-            {tabIdx === 1 && (() => {
-              const ds = dayShows();
-              const byMovie = Array.from(new Set(ds.map(s => s.movieId))).map(id => ({
-                m: M(id),
-                n: ds.filter(s => Number(s.movieId) === Number(id) && s.status !== 'cancel').length,
-                sold: ds.filter(s => Number(s.movieId) === Number(id)).reduce((a, s) => a + s.sold, 0)
-              })).sort((a, b) => b.n - a.n);
-
-              const notIn = movies.filter(m => m.release <= date && m.end >= date && !ds.some(s => Number(s.movieId) === Number(m.id)));
-
-              return (
-                <div>
-                  <h4 style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '10px' }}>THEO PHÒNG</h4>
-                  {rooms.map(r => {
-                    const rs = ds.filter(s => Number(s.roomId) === Number(r.id) && s.status !== 'cancel')
-                      .sort((a, b) => a.start.localeCompare(b.start));
-                    const gaps = [];
-                    let cur = OPEN * 60;
-                    rs.forEach(s => {
-                      const st = toMin(s.start);
-                      if (st - cur >= 60) gaps.push(`${toT(cur)}–${toT(st)}`);
-                      cur = endOf(s) + CLEAN;
-                    });
-                    if (CLOSE * 60 - cur >= 90) gaps.push(`${toT(cur)}–đóng cửa`);
-
-                    const sold = rs.reduce((a, s) => a + s.sold, 0);
-                    const cap = rs.length * r.seats;
-
-                    return (
-                      <div key={r.id} style={{ marginBottom: '14px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
-                          <span>{r.name} <small style={{ color: 'var(--muted)', fontWeight: 500 }}>{r.type}</small></span>
-                          <span>{rs.length} suất</span>
-                        </div>
-                        <div className="occ"><i style={{ width: `${cap ? (sold / cap) * 100 : 0}%` }} /></div>
-                        <div style={{ fontSize: '11.5px', color: 'var(--muted)', marginTop: '4px' }}>
-                          Lấp đầy {cap ? Math.round((sold / cap) * 100) : 0}% • {rs.length ? `${rs[0].start} → ${toT(endOf(rs[rs.length - 1]))}` : 'Chưa có suất'}
-                        </div>
-                        {gaps.length > 0 && (
-                          <div style={{ fontSize: '11.5px', color: '#f59e0b', marginTop: '3px' }}>
-                            ⏱ Khoảng trống: {gaps.join(', ')}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-
-                  <h4 style={{ fontSize: '12px', color: 'var(--muted)', margin: '14px 0 8px' }}>THEO PHIM</h4>
-                  <div className="list">
-                    {byMovie.map(x => (
-                      <div key={x.m.id} className="li">
-                        <i style={{ background: x.m.color }} />
-                        <span className="t">{x.m.title}</span>
-                        <small>{x.n} suất • {x.sold} vé</small>
-                      </div>
-                    ))}
-                    {byMovie.length === 0 && <div className="empty">Chưa có suất</div>}
-                  </div>
-
-                  {notIn.length > 0 && (
-                    <div className="alert warn" style={{ marginTop: '12px' }}>
-                      Phim đang chiếu nhưng <b>chưa có suất</b> hôm nay: {notIn.map(m => m.title).join(', ')}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* TAB 2 */}
-            {tabIdx === 2 && (() => {
-              if (allConflicts.length === 0) {
                 return (
                   <div>
-                    <div className="alert ok">✓ Lịch chiếu ngày này không có xung đột.</div>
-                    <div className="empty" style={{ padding: '20px' }}>
-                      Hệ thống kiểm tra: trùng giờ + thời gian dọn phòng, định dạng phim/phòng, ngày khởi chiếu, giờ mở/đóng cửa, phim cùng lúc, khung giờ phù hợp độ tuổi.
+                    {s.isDraft && (
+                      <div style={{
+                        background: 'rgba(245, 184, 0, 0.12)',
+                        border: '1px dashed #f5b800',
+                        padding: '10px 12px',
+                        borderRadius: '6px',
+                        marginBottom: '14px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '8px'
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <span style={{ fontSize: '12px', color: '#f5b800', fontWeight: 800 }}>
+                            📝 Suất Chiếu Bản Thảo (Chưa Lưu)
+                          </span>
+                          <span style={{ fontSize: '10.5px', background: 'rgba(245, 184, 0, 0.2)', color: '#f5b800', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                            DRAFT
+                          </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <button
+                            className="btn sm"
+                            style={{ flex: 1, fontSize: '11px', padding: '4px 6px', background: '#161b22', border: '1px solid rgba(255,255,255,0.2)' }}
+                            onClick={() => handlePreviewPrices([s])}
+                            title="Xem trước giá vé tính toán cho suất này"
+                          >
+                            👁️ Xem giá
+                          </button>
+                          <button
+                            className="btn primary sm"
+                            style={{ flex: 1, fontSize: '11px', padding: '4px 6px' }}
+                            onClick={() => handleSaveSingleDraft(s)}
+                            title="Lưu ngay suất chiếu này vào hệ thống"
+                          >
+                            💾 Lưu ngay
+                          </button>
+                          <button
+                            className="btn sm"
+                            style={{ fontSize: '11px', padding: '4px 8px', color: '#f85149', borderColor: 'rgba(248,81,73,0.3)' }}
+                            onClick={() => handleDeleteDraft(s.id)}
+                            title="Xóa suất bản thảo này"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
+                      <div className="poster" style={{ background: m.color, width: '44px', height: '60px' }}>
+                        {m.title.charAt(0)}
+                      </div>
+                      <div>
+                        <b style={{ fontSize: '14px', color: '#fff' }}>{m.title}</b>
+                        <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '3px' }}>
+                          {m.dur} phút • {m.age} • {m.formats.join('/')}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '6px', flexWrap: 'wrap' }}>
+                          <span className={`status st-${s.status}`}>
+                            {stMap[s.status]}
+                          </span>
+                          {Number(s.sold || 0) > 0 && (
+                            <span style={{ fontSize: '11px', color: '#38bdf8', fontWeight: 700, background: 'rgba(56, 189, 248, 0.12)', padding: '2px 7px', borderRadius: '4px', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
+                              🎟️ {s.sold}/{r.seats} vé ({pct}%)
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {v.errs.map((e, i) => (
+                      <div key={i} className="alert err">⛔ {e}</div>
+                    ))}
+                    {v.warns.map((w, i) => (
+                      <div key={i} className="alert warn">⚠️ {w}</div>
+                    ))}
+
+                    <div className="field">
+                      <label>Phim</label>
+                      {(() => {
+                        const isShowtimeOpened = s.status === 'open' || s.status === 'OPEN' || Number(s.sold || 0) > 0;
+                        return (
+                          <>
+                            <select
+                              value={s.movieId}
+                              disabled={isShowtimeOpened}
+                              onChange={(e) => handleUpdate('movieId', Number(e.target.value))}
+                              style={
+                                isShowtimeOpened
+                                  ? { opacity: 0.6, cursor: 'not-allowed', background: '#161b22', borderColor: 'rgba(255,255,255,0.1)' }
+                                  : {}
+                              }
+                              title={
+                                isShowtimeOpened
+                                  ? `Suất chiếu đã mở bán (${s.sold || 0} vé đã bán), không thể đổi phim`
+                                  : 'Đổi phim cho suất chiếu'
+                              }
+                            >
+                              {movies.map(x => (
+                                <option key={x.id} value={x.id}>{x.title}</option>
+                              ))}
+                            </select>
+                            {isShowtimeOpened && (
+                              <span style={{ fontSize: '10.5px', color: '#f59e0b', display: 'block', marginTop: '3px', fontWeight: 600 }}>
+                                🔒 Suất chiếu đã mở bán vé ({s.sold || 0} vé đã bán)
+                              </span>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="row2">
+                      <div className="field">
+                        <label>Phòng</label>
+                        <select value={s.roomId} onChange={(e) => handleUpdate('roomId', Number(e.target.value))}>
+                          {rooms.map(x => (
+                            <option key={x.id} value={x.id}>{x.name} ({x.type})</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="field">
+                        <label>Ngày</label>
+                        <input type="date" value={s.date} onChange={(e) => handleUpdate('date', e.target.value)} />
+                      </div>
+                    </div>
+
+                    <div className="row3">
+                      <div className="field">
+                        <label>Bắt đầu (24h)</label>
+                        <input
+                          type="text"
+                          value={s.start || ''}
+                          placeholder="18:00"
+                          maxLength={5}
+                          style={{ fontFamily: 'monospace', fontWeight: 700, textAlign: 'center' }}
+                          title="Định dạng 24h: HH:mm (VD: 18:00, 09:30)"
+                          onChange={(e) => {
+                            let v = e.target.value.replace(/[;.]/g, ':');
+                            handleUpdate('start', v);
+                          }}
+                          onBlur={(e) => {
+                            let val = (e.target.value || '').trim().replace(/[;.]/g, ':');
+                            if (/^\d{1,2}$/.test(val)) {
+                              val = val.padStart(2, '0') + ':00';
+                              handleUpdate('start', val);
+                            } else if (/^\d{1,2}:\d{1,2}$/.test(val)) {
+                              const [hh, mm] = val.split(':');
+                              val = hh.padStart(2, '0') + ':' + mm.padStart(2, '0');
+                              handleUpdate('start', val);
+                            }
+                          }}
+                        />
+                      </div>
+                      <div className="field">
+                        <label>Kết thúc</label>
+                        <input value={end} disabled style={{ background: '#1c2128', color: 'var(--muted)', textAlign: 'center', fontFamily: 'monospace' }} />
+                      </div>
+                      <div className="field">
+                        <label>Trống tới</label>
+                        <input value={toT(endOf(s) + CLEAN)} disabled style={{ background: '#1c2128', color: 'var(--muted)', textAlign: 'center', fontFamily: 'monospace' }} />
+                      </div>
+                    </div>
+
+                    <div className="field">
+                      <label>Trạng thái</label>
+                      {(() => {
+                        const isShowtimeOpened = s.status === 'open' || s.status === 'OPEN' || Number(s.sold || 0) > 0;
+                        return (
+                          <>
+                            <select
+                              value={s.status}
+                              disabled={isShowtimeOpened}
+                              onChange={(e) => handleUpdate('status', e.target.value)}
+                              style={
+                                isShowtimeOpened
+                                  ? { opacity: 0.6, cursor: 'not-allowed', background: '#161b22', borderColor: 'rgba(255,255,255,0.1)' }
+                                  : {}
+                              }
+                              title={
+                                isShowtimeOpened
+                                  ? 'Suất chiếu đang bán vé, không thể đổi trạng thái'
+                                  : 'Thay đổi trạng thái suất chiếu'
+                              }
+                            >
+                              {Object.entries(stMap).map(([k, vv]) => (
+                                <option key={k} value={k}>{vv}</option>
+                              ))}
+                            </select>
+                            {isShowtimeOpened && (
+                              <span style={{ fontSize: '10.5px', color: '#f59e0b', display: 'block', marginTop: '3px', fontWeight: 600 }}>
+                                🔒 Suất chiếu đang bán vé, không thể đổi trạng thái.
+                              </span>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </div>
+
+                    {/* THÔNG TIN BẢNG GIÁ VÉ CHI TIẾT (NGƯỜI LỚN, HSSV, TRẺ EM x GHẾ THƯỜNG, GHẾ VIP, GHẾ ĐÔI) */}
+                    {(() => {
+                      const formatPrice = (val) => {
+                        if (val === null || val === undefined || val === '') return '0đ';
+                        return `${Number(val).toLocaleString('vi-VN')}đ`;
+                      };
+
+                      const stdBase = detailPriceMatrix?.roomStandardPrice ?? s.raw?.basePrice ?? r?.standardPrice ?? prices?.std ?? 60000;
+                      const vipBase = detailPriceMatrix?.roomVipPrice ?? s.raw?.vipPrice ?? r?.vipPrice ?? prices?.vip ?? 80000;
+                      const coupleBase = detailPriceMatrix?.roomCouplePrice ?? s.raw?.couplePrice ?? r?.couplePrice ?? 140000;
+
+                      const childAdd = detailPriceMatrix?.childAdditional ?? 0;
+                      const studentAdd = detailPriceMatrix?.studentAdditional ?? 10000;
+                      const adultAdd = detailPriceMatrix?.adultAdditional ?? 20000;
+
+                      const childStd = detailPriceMatrix?.childStandardPrice ?? s.raw?.childStandardPrice ?? (stdBase + childAdd);
+                      const studentStd = detailPriceMatrix?.studentStandardPrice ?? s.raw?.studentStandardPrice ?? (stdBase + studentAdd);
+                      const adultStd = detailPriceMatrix?.adultStandardPrice ?? s.raw?.adultStandardPrice ?? (stdBase + adultAdd);
+
+                      const childVip = detailPriceMatrix?.childVipPrice ?? s.raw?.childVipPrice ?? (vipBase + childAdd);
+                      const studentVip = detailPriceMatrix?.studentVipPrice ?? s.raw?.studentVipPrice ?? (vipBase + studentAdd);
+                      const adultVip = detailPriceMatrix?.adultVipPrice ?? s.raw?.adultVipPrice ?? (vipBase + adultAdd);
+
+                      const childCouple = detailPriceMatrix?.childChildCouplePrice ?? s.raw?.childCouplePrice ?? (coupleBase + childAdd * 2);
+                      const studentCouple = detailPriceMatrix?.studentStudentCouplePrice ?? s.raw?.studentCouplePrice ?? (coupleBase + studentAdd * 2);
+                      const adultCouple = detailPriceMatrix?.adultAdultCouplePrice ?? s.raw?.adultCouplePrice ?? (coupleBase + adultAdd * 2);
+
+                      return (
+                        <div style={{
+                          marginTop: '14px',
+                          background: '#161b22',
+                          border: '1px solid var(--line)',
+                          borderRadius: '8px',
+                          overflow: 'hidden',
+                          boxShadow: '0 4px 12px rgba(0,0,0,0.25)'
+                        }}>
+                          <div style={{
+                            padding: '8px 12px',
+                            background: 'rgba(255, 255, 255, 0.04)',
+                            borderBottom: '1px solid var(--line)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between'
+                          }}>
+                            <span style={{ fontSize: '11px', fontWeight: 800, color: '#f5b800', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                              🎫 Giá vé theo đối tượng & loại ghế
+                            </span>
+                            {loadingDetailPrice ? (
+                              <span style={{ fontSize: '10px', color: 'var(--muted)' }}>⏳ Đang tải...</span>
+                            ) : (
+                              <span style={{ fontSize: '10px', color: '#8b949e' }}>Cụm rạp</span>
+                            )}
+                          </div>
+
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px', textAlign: 'center' }}>
+                            <thead>
+                              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.08)', color: 'var(--muted)', background: 'rgba(0,0,0,0.25)' }}>
+                                <th style={{ padding: '7px 8px', textAlign: 'left', fontWeight: 600 }}>Loại ghế</th>
+                                <th style={{ padding: '7px 6px', color: '#38bdf8', fontWeight: 700 }}>Trẻ em</th>
+                                <th style={{ padding: '7px 6px', color: '#34d399', fontWeight: 700 }}>Sinh viên</th>
+                                <th style={{ padding: '7px 6px', color: '#fbbf24', fontWeight: 700 }}>Người lớn</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                <td style={{ padding: '7px 8px', textAlign: 'left', fontWeight: 700, color: '#f1f5f9' }}>
+                                  Thường
+                                </td>
+                                <td style={{ padding: '7px 6px', fontWeight: 800, color: '#38bdf8', fontFamily: 'monospace' }}>
+                                  {formatPrice(childStd)}
+                                </td>
+                                <td style={{ padding: '7px 6px', fontWeight: 800, color: '#34d399', fontFamily: 'monospace' }}>
+                                  {formatPrice(studentStd)}
+                                </td>
+                                <td style={{ padding: '7px 6px', fontWeight: 800, color: '#fbbf24', fontFamily: 'monospace' }}>
+                                  {formatPrice(adultStd)}
+                                </td>
+                              </tr>
+                              <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                <td style={{ padding: '7px 8px', textAlign: 'left', fontWeight: 700, color: '#f5b800' }}>
+                                  Ghế VIP
+                                </td>
+                                <td style={{ padding: '7px 6px', fontWeight: 800, color: '#38bdf8', fontFamily: 'monospace' }}>
+                                  {formatPrice(childVip)}
+                                </td>
+                                <td style={{ padding: '7px 6px', fontWeight: 800, color: '#34d399', fontFamily: 'monospace' }}>
+                                  {formatPrice(studentVip)}
+                                </td>
+                                <td style={{ padding: '7px 6px', fontWeight: 800, color: '#fbbf24', fontFamily: 'monospace' }}>
+                                  {formatPrice(adultVip)}
+                                </td>
+                              </tr>
+                              <tr>
+                                <td style={{ padding: '7px 8px', textAlign: 'left', fontWeight: 700, color: '#ec4899' }}>
+                                  Ghế Đôi
+                                </td>
+                                <td style={{ padding: '7px 6px', fontWeight: 800, color: '#38bdf8', fontFamily: 'monospace' }}>
+                                  {formatPrice(childCouple)}
+                                </td>
+                                <td style={{ padding: '7px 6px', fontWeight: 800, color: '#34d399', fontFamily: 'monospace' }}>
+                                  {formatPrice(studentCouple)}
+                                </td>
+                                <td style={{ padding: '7px 6px', fontWeight: 800, color: '#fbbf24', fontFamily: 'monospace' }}>
+                                  {formatPrice(adultCouple)}
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                      );
+                    })()}
+
+                    {s.status !== 'cancel' && !s.isDraft && (
+                      <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid var(--line)' }}>
+                        <div style={{ fontSize: '11px', color: '#f87171', fontWeight: 700, marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <span>⚠️ THAO TÁC SỰ CỐ KHẨN CẤP:</span>
+                        </div>
+                        <button
+                          className="btn danger"
+                          style={{
+                            width: '100%',
+                            justifyContent: 'center',
+                            padding: '10px 12px',
+                            fontSize: '12px',
+                            fontWeight: 'bold',
+                            background: 'rgba(239, 68, 68, 0.15)',
+                            border: '1px solid rgba(239, 68, 68, 0.5)',
+                            color: '#f87171',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 8px rgba(239, 68, 68, 0.15)'
+                          }}
+                          onClick={handleCancelShowtimeWithRefund}
+                          title="Hủy suất chiếu do sự cố và tự động hoàn tiền toàn bộ vé vào CineWallet của khách hàng"
+                        >
+                          <span>⚠️ HỦY & HOÀN TIỀN SỰ CỐ</span>
+                        </button>
+                        <div style={{ fontSize: '10.5px', color: 'var(--muted)', marginTop: '5px', textAlign: 'center' }}>
+                          Tự động hoàn tiền vào CineWallet & giải phóng toàn bộ ghế
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', gap: '6px', marginTop: '14px' }}>
+                      <button
+                        className="btn"
+                        style={{ flex: 1, justifyContent: 'center', padding: '8px 6px', fontSize: '12px' }}
+                        onClick={() => setAddModal({
+                          roomId: s.roomId,
+                          movieId: s.movieId,
+                          date: s.date < getTomorrowStr() ? getTomorrowStr() : s.date
+                        })}
+                        title={s.date < getTomorrowStr() ? "Nhân bản sang ngày mai (vì ngày hiện tại bị khóa tạo)" : "Nhân bản suất chiếu"}
+                      >
+                        ⧉ Nhân bản…
+                      </button>
+                      <button
+                        className="btn"
+                        style={{
+                          flex: 1,
+                          justifyContent: 'center',
+                          padding: '8px 6px',
+                          fontSize: '12px',
+                          opacity: s.date < getTomorrowStr() ? 0.45 : 1,
+                          cursor: s.date < getTomorrowStr() ? 'not-allowed' : 'pointer'
+                        }}
+                        disabled={s.date < getTomorrowStr()}
+                        onClick={handleNextSlot}
+                        title={s.date < getTomorrowStr() ? "Khóa tạo suất kế tiếp cho ngày hiện tại/quá khứ" : "Tạo suất kế tiếp"}
+                      >
+                        ⏭ Suất kế tiếp
+                      </button>
+                      <button
+                        className="btn danger"
+                        style={{ padding: '8px 10px' }}
+                        onClick={handleDelete}
+                        title="Xoá suất chiếu"
+                      >
+                        🗑
+                      </button>
                     </div>
                   </div>
                 );
-              }
+              })()}
 
-              return (
-                <div className="list">
-                  {allConflicts.map((x, idx) => (
-                    <div
-                      key={idx}
-                      className="li"
-                      style={{ flexDirection: 'column', alignItems: 'stretch', gap: '4px' }}
-                      onClick={() => { setSelId(x.s.id); setTabIdx(0); setIsRightPanelOpen(true); }}
-                    >
-                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        <i style={{ background: M(x.s.movieId).color }} />
-                        <b className="t">{x.s.start} • {M(x.s.movieId).title}</b>
-                        <small>{R(x.s.roomId).name}</small>
-                      </div>
-                      {x.errs.map((e, ei) => (
-                        <div key={ei} style={{ color: '#f87171', fontSize: '12px' }}>⛔ {e}</div>
+              {/* TAB 1 */}
+              {tabIdx === 1 && (() => {
+                const ds = dayShows();
+                const byMovie = Array.from(new Set(ds.map(s => s.movieId))).map(id => ({
+                  m: M(id),
+                  n: ds.filter(s => Number(s.movieId) === Number(id) && s.status !== 'cancel').length,
+                  sold: ds.filter(s => Number(s.movieId) === Number(id)).reduce((a, s) => a + s.sold, 0)
+                })).sort((a, b) => b.n - a.n);
+
+                const notIn = movies.filter(m => m.release <= date && m.end >= date && !ds.some(s => Number(s.movieId) === Number(m.id)));
+
+                return (
+                  <div>
+                    <h4 style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '10px' }}>THEO PHÒNG</h4>
+                    {rooms.map(r => {
+                      const rs = ds.filter(s => Number(s.roomId) === Number(r.id) && s.status !== 'cancel')
+                        .sort((a, b) => a.start.localeCompare(b.start));
+                      const gaps = [];
+                      let cur = OPEN * 60;
+                      rs.forEach(s => {
+                        const st = toMin(s.start);
+                        if (st - cur >= 60) gaps.push(`${toT(cur)}–${toT(st)}`);
+                        cur = endOf(s) + CLEAN;
+                      });
+                      if (CLOSE * 60 - cur >= 90) gaps.push(`${toT(cur)}–đóng cửa`);
+
+                      const sold = rs.reduce((a, s) => a + s.sold, 0);
+                      const cap = rs.length * r.seats;
+
+                      return (
+                        <div key={r.id} style={{ marginBottom: '14px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 600 }}>
+                            <span>{r.name} <small style={{ color: 'var(--muted)', fontWeight: 500 }}>{r.type}</small></span>
+                            <span>{rs.length} suất</span>
+                          </div>
+                          <div className="occ"><i style={{ width: `${cap ? (sold / cap) * 100 : 0}%` }} /></div>
+                          <div style={{ fontSize: '11.5px', color: 'var(--muted)', marginTop: '4px' }}>
+                            Lấp đầy {cap ? Math.round((sold / cap) * 100) : 0}% • {rs.length ? `${rs[0].start} → ${toT(endOf(rs[rs.length - 1]))}` : 'Chưa có suất'}
+                          </div>
+                          {gaps.length > 0 && (
+                            <div style={{ fontSize: '11.5px', color: '#f59e0b', marginTop: '3px' }}>
+                              ⏱ Khoảng trống: {gaps.join(', ')}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    <h4 style={{ fontSize: '12px', color: 'var(--muted)', margin: '14px 0 8px' }}>THEO PHIM</h4>
+                    <div className="list">
+                      {byMovie.map(x => (
+                        <div key={x.m.id} className="li">
+                          <i style={{ background: x.m.color }} />
+                          <span className="t">{x.m.title}</span>
+                          <small>{x.n} suất • {x.sold} vé</small>
+                        </div>
                       ))}
-                      {x.warns.map((w, wi) => (
-                        <div key={wi} style={{ color: '#fde047', fontSize: '12px' }}>⚠️ {w}</div>
-                      ))}
+                      {byMovie.length === 0 && <div className="empty">Chưa có suất</div>}
                     </div>
-                  ))}
-                </div>
-              );
-            })()}
-          </div>
-        </section>
+
+                    {notIn.length > 0 && (
+                      <div className="alert warn" style={{ marginTop: '12px' }}>
+                        Phim đang chiếu nhưng <b>chưa có suất</b> hôm nay: {notIn.map(m => m.title).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* TAB 2 */}
+              {tabIdx === 2 && (() => {
+                if (allConflicts.length === 0) {
+                  return (
+                    <div>
+                      <div className="alert ok">✓ Lịch chiếu ngày này không có xung đột.</div>
+                      <div className="empty" style={{ padding: '20px' }}>
+                        Hệ thống kiểm tra: trùng giờ + thời gian dọn phòng, định dạng phim/phòng, ngày khởi chiếu, giờ mở/đóng cửa, phim cùng lúc, khung giờ phù hợp độ tuổi.
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="list">
+                    {allConflicts.map((x, idx) => (
+                      <div
+                        key={idx}
+                        className="li"
+                        style={{ flexDirection: 'column', alignItems: 'stretch', gap: '4px' }}
+                        onClick={() => { setSelId(x.s.id); setTabIdx(0); setIsRightPanelOpen(true); }}
+                      >
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          <i style={{ background: M(x.s.movieId).color }} />
+                          <b className="t">{x.s.start} • {M(x.s.movieId).title}</b>
+                          <small>{R(x.s.roomId).name}</small>
+                        </div>
+                        {x.errs.map((e, ei) => (
+                          <div key={ei} style={{ color: '#f87171', fontSize: '12px' }}>⛔ {e}</div>
+                        ))}
+                        {x.warns.map((w, wi) => (
+                          <div key={wi} style={{ color: '#fde047', fontSize: '12px' }}>⚠️ {w}</div>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          </section>
         )}
       </main>
 
@@ -2790,6 +3185,7 @@ export default function AdminShowtimesPanel({ ctx }) {
             movies={movies}
             rooms={rooms}
             onClose={() => setAddModal(null)}
+            showToast={showToast}
             onSuccess={() => {
               setAddModal(null);
               showToast?.('✓ Đã tạo suất chiếu thành công', 'success');
@@ -2815,6 +3211,7 @@ export default function AdminShowtimesPanel({ ctx }) {
             date={date}
             shows={shows}
             onClose={() => setCopyModal(false)}
+            showToast={showToast}
             onSuccess={(targetDate) => {
               setDate(targetDate);
               setCopyModal(false);
@@ -2837,6 +3234,99 @@ export default function AdminShowtimesPanel({ ctx }) {
             onSaveAll={handleSaveAllDrafts}
             isSaving={isSavingAllDrafts}
           />
+        </div>
+      )}
+
+      {/* Modal Xác nhận Hủy tất cả Bản thảo (Đồng bộ phong cách hệ thống) */}
+      {confirmClearDraftsModal && (
+        <div
+          className="modal-bg"
+          onClick={(e) => {
+            if (e.target.classList.contains('modal-bg')) setConfirmClearDraftsModal(false);
+          }}
+        >
+          <div
+            className="modal"
+            style={{
+              maxWidth: '450px',
+              border: '1px solid rgba(239, 68, 68, 0.45)',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.8), 0 0 25px rgba(239, 68, 68, 0.2)'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+              <div
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '10px',
+                  background: 'rgba(239, 68, 68, 0.15)',
+                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: '20px',
+                  flexShrink: 0
+                }}
+              >
+                🗑️
+              </div>
+              <div>
+                <h3 style={{ margin: 0, color: '#f87171', fontSize: '15px', fontWeight: 800 }}>
+                  Hủy bỏ suất chiếu bản thảo
+                </h3>
+                <span style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                  Xác nhận thao tác trên lịch chiếu
+                </span>
+              </div>
+            </div>
+
+            <p style={{ color: '#e6edf3', fontSize: '13px', lineHeight: 1.6, margin: '0 0 14px 0' }}>
+              Bạn có chắc chắn muốn hủy bỏ tất cả{' '}
+              <strong style={{ color: '#f5b800', fontWeight: 700 }}>
+                {draftShows.length} suất chiếu bản thảo
+              </strong>{' '}
+              chưa lưu?
+            </p>
+
+            <div
+              style={{
+                background: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                borderRadius: '8px',
+                padding: '10px 12px',
+                fontSize: '11.5px',
+                color: '#fca5a5',
+                marginBottom: '18px',
+                lineHeight: 1.5
+              }}
+            >
+              ⚠️ <strong>Lưu ý:</strong> Các suất chiếu bản thảo này chưa được lưu vào hệ thống. Thao tác này sẽ giải phóng toàn bộ các khung giờ dự kiến hiện tại.
+            </div>
+
+            <div className="acts" style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                className="btn"
+                type="button"
+                onClick={() => setConfirmClearDraftsModal(false)}
+              >
+                Giữ lại
+              </button>
+              <button
+                className="btn danger"
+                type="button"
+                onClick={executeClearAllDrafts}
+                style={{
+                  background: '#dc2626',
+                  color: '#fff',
+                  fontWeight: 700,
+                  padding: '8px 16px',
+                  borderRadius: '6px'
+                }}
+              >
+                Xác nhận hủy ({draftShows.length})
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -2962,18 +3452,59 @@ export default function AdminShowtimesPanel({ ctx }) {
 
 /* ================= SUB-MODAL COMPONENTS ================= */
 
-function AddModalContent({ params, movies, rooms, onClose, onSuccess, onAddDraft, getAdminToken, validate, M, R, endOf }) {
-  const [movieId, setMovieId] = useState(params.movieId || movies[0]?.id || 1);
+function AddModalContent({ params, movies, rooms, onClose, onSuccess, onAddDraft, getAdminToken, validate, M, R, endOf, showToast }) {
+  const [date, setDate] = useState(() => {
+    const target = params?.date || getTomorrowStr();
+    return target < getTomorrowStr() ? getTomorrowStr() : target;
+  });
+
+  const getInitialMovieId = () => {
+    if (params?.movieId) {
+      const pm = M(params.movieId);
+      if (!pm?.release || pm.release <= (params?.date || getTomorrowStr())) return Number(params.movieId);
+    }
+    const valid = movies.find(x => (!x.release || x.release <= date) && (!x.end || x.end >= date));
+    return valid ? Number(valid.id) : (params?.movieId ? Number(params.movieId) : (movies[0]?.id ? Number(movies[0].id) : 1));
+  };
+
+  const [movieId, setMovieId] = useState(getInitialMovieId);
   const [roomId, setRoomId] = useState(params.roomId || rooms[0]?.id || 1);
-  const [date, setDate] = useState(params.date || todayStr());
+
+  // Sắp xếp các phim có thể tạo suất chiếu lên đầu tiên trong dropdown
+  const sortedModalMovies = useMemo(() => {
+    return movies.slice().sort((a, b) => {
+      const aValid = (!a.release || a.release <= date) && (!a.end || a.end >= date);
+      const bValid = (!b.release || b.release <= date) && (!b.end || b.end >= date);
+      if (aValid && !bValid) return -1;
+      if (!aValid && bValid) return 1;
+      return 0;
+    });
+  }, [movies, date]);
+
+  // Tự động chuyển sang phim hợp lệ đầu tiên nếu phim hiện tại không thể tạo suất cho ngày này
+  useEffect(() => {
+    const curM = M(movieId);
+    const isCurValid = curM && (!curM.release || curM.release <= date) && (!curM.end || curM.end >= date);
+    if (!isCurValid && sortedModalMovies.length > 0) {
+      const firstValid = sortedModalMovies.find(x => (!x.release || x.release <= date) && (!x.end || x.end >= date));
+      if (firstValid && Number(firstValid.id) !== Number(movieId)) {
+        setMovieId(Number(firstValid.id));
+      }
+    }
+  }, [date, sortedModalMovies]); // eslint-disable-line react-hooks/exhaustive-deps
   const [times, setTimes] = useState(new Set(params.start ? [params.start] : ['09:00', '13:30', '18:00']));
   const [customTime, setCustomTime] = useState('09:00');
   const [fmt, setFmt] = useState('2D');
   const [lang, setLang] = useState('Phụ đề');
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
 
   const m = M(movieId);
   const r = R(roomId);
+  const isMovieUnreleased = Boolean(m?.release && date < m.release);
+  const isMovieEnded = Boolean(m?.end && date > m.end);
+  const isDateBanned = Boolean(date < getTomorrowStr());
+  const isFormInvalid = isDateBanned || isMovieUnreleased || isMovieEnded;
 
   const sug = ['09:00', '11:30', '14:00', '16:30', '19:00', '21:30'];
   const allTimes = useMemo(() => Array.from(new Set([...sug, ...times])).sort(), [times]);
@@ -3008,9 +3539,38 @@ function AddModalContent({ params, movies, rooms, onClose, onSuccess, onAddDraft
   }, [times, date, roomId, movieId, fmt, lang]);
 
   const handleAddToDraft = () => {
-    if (candidates.length === 0) return alert('Chọn ít nhất một giờ bắt đầu');
+    if (isDateBanned) {
+      const msg = 'Quy định: Suất chiếu phải được lên lịch trước ít nhất 1 ngày (từ ngày mai trở đi).';
+      setFormError(msg);
+      showToast?.('🚫 ' + msg, 'error');
+      return;
+    }
+    if (isMovieUnreleased) {
+      const msg = `Phim "${m?.title}" chưa tới ngày khởi chiếu (khởi chiếu từ ${m?.release}).`;
+      setFormError(msg);
+      showToast?.('🚫 ' + msg, 'error');
+      return;
+    }
+    if (isMovieEnded) {
+      const msg = `Phim "${m?.title}" đã hết hạn chiếu (từ ${m?.end}).`;
+      setFormError(msg);
+      showToast?.('⚠️ ' + msg, 'warning');
+      return;
+    }
+    if (candidates.length === 0) {
+      const msg = 'Vui lòng chọn ít nhất một giờ bắt đầu.';
+      setFormError(msg);
+      showToast?.('⚠️ ' + msg, 'warning');
+      return;
+    }
     const ok = candidates.filter(s => validate(s).errs.length === 0);
-    if (ok.length === 0) return alert('✕ Không có suất nào hợp lệ (bị xung đột giờ hoặc phòng)');
+    if (ok.length === 0) {
+      const firstErr = validate(candidates[0]).errs[0] || 'Bị xung đột giờ hoặc phòng';
+      setFormError(firstErr);
+      showToast?.('✕ ' + firstErr, 'error');
+      return;
+    }
+    setFormError('');
     const drafts = ok.map(s => ({
       ...s,
       id: 'draft_' + Math.random().toString(36).slice(2, 9),
@@ -3020,19 +3580,37 @@ function AddModalContent({ params, movies, rooms, onClose, onSuccess, onAddDraft
   };
 
   const handleSubmit = async () => {
-    if (candidates.length === 0) return alert('Chọn ít nhất một giờ bắt đầu');
-    
-    // Kiểm tra quy định tạo trước ít nhất 1 ngày
-    const tomorrow = getTomorrowStr();
-    if (date < tomorrow || candidates.some(c => c.date < tomorrow)) {
-      alert('✕ Quy định: Suất chiếu phải được lên lịch trước ít nhất 1 ngày (từ ngày mai trở đi).');
+    if (isDateBanned) {
+      const msg = 'Quy định: Suất chiếu phải được lên lịch trước ít nhất 1 ngày (từ ngày mai trở đi).';
+      setFormError(msg);
+      showToast?.('🚫 ' + msg, 'error');
+      return;
+    }
+    if (isMovieUnreleased) {
+      const msg = `Phim "${m?.title}" chưa tới ngày khởi chiếu (khởi chiếu từ ${m?.release}).`;
+      setFormError(msg);
+      showToast?.('🚫 ' + msg, 'error');
+      return;
+    }
+    if (isMovieEnded) {
+      const msg = `Phim "${m?.title}" đã hết hạn chiếu (từ ${m?.end}).`;
+      setFormError(msg);
+      showToast?.('⚠️ ' + msg, 'warning');
+      return;
+    }
+    if (candidates.length === 0) {
+      const msg = 'Vui lòng chọn ít nhất một khung giờ bắt đầu.';
+      setFormError(msg);
+      showToast?.('⚠️ ' + msg, 'warning');
       return;
     }
 
     const ok = candidates.filter(s => validate(s).errs.length === 0);
     if (ok.length === 0) {
       const firstErr = validate(candidates[0]).errs[0] || 'Bị xung đột giờ hoặc phòng';
-      return alert(`✕ Không có suất nào hợp lệ: ${firstErr}`);
+      setFormError(firstErr);
+      showToast?.('✕ ' + firstErr, 'error');
+      return;
     }
 
     setSaving(true);
@@ -3064,7 +3642,9 @@ function AddModalContent({ params, movies, rooms, onClose, onSuccess, onAddDraft
 
     setSaving(false);
     if (errorList.length > 0) {
-      alert(`✕ Không thể tạo suất chiếu:\n\n${errorList.join('\n')}`);
+      const errMsg = errorList.join('; ');
+      setFormError(errMsg);
+      showToast?.('✕ Lỗi tạo suất chiếu: ' + errMsg, 'error');
       return;
     }
     onSuccess();
@@ -3076,12 +3656,30 @@ function AddModalContent({ params, movies, rooms, onClose, onSuccess, onAddDraft
       <p>Giờ kết thúc tự tính = bắt đầu + thời lượng + {ADS}′ quảng cáo. Có thể tạo nhiều suất một lần.</p>
 
       <div className="field">
-        <label>Phim</label>
-        <select value={movieId} onChange={(e) => setMovieId(Number(e.target.value))}>
-          {movies.map(x => (
-            <option key={x.id} value={x.id}>{x.title} ({x.dur}′)</option>
-          ))}
+        <label>Phim (Ưu tiên phim có thể tạo suất lên đầu)</label>
+        <select
+          value={movieId}
+          onChange={(e) => {
+            setMovieId(Number(e.target.value));
+            setFormError('');
+          }}
+        >
+          {sortedModalMovies.map(x => {
+            const unreleased = Boolean(x.release && date < x.release);
+            const ended = Boolean(x.end && date > x.end);
+            const isDisabled = unreleased || ended;
+            return (
+              <option key={x.id} value={x.id} disabled={isDisabled}>
+                {x.title} {unreleased ? `🚫 [Chưa chiếu - từ ${x.release}]` : ended ? `⚠️ [Đã hết hạn]` : `(${x.dur}′)`}
+              </option>
+            );
+          })}
         </select>
+        {isMovieUnreleased && (
+          <span style={{ fontSize: '11px', color: '#f87171', display: 'block', marginTop: '3px', fontWeight: 600 }}>
+            🚫 Phim chưa khởi chiếu cho ngày {date}. Ngày khởi chiếu: {m?.release}
+          </span>
+        )}
       </div>
 
       <div className="row2">
@@ -3096,6 +3694,11 @@ function AddModalContent({ params, movies, rooms, onClose, onSuccess, onAddDraft
         <div className="field">
           <label>Ngày</label>
           <input type="date" min={getTomorrowStr()} value={date} onChange={(e) => setDate(e.target.value)} />
+          {date < getTomorrowStr() && (
+            <span style={{ fontSize: '11px', color: '#f87171', display: 'block', marginTop: '3px' }}>
+              ⚠️ Suất chiếu chỉ được lên lịch từ ngày {getTomorrowStr()} trở đi
+            </span>
+          )}
         </div>
       </div>
 
@@ -3144,6 +3747,31 @@ function AddModalContent({ params, movies, rooms, onClose, onSuccess, onAddDraft
         </div>
       </div>
 
+      {/* Policy Alert Banner in Modal */}
+      {isDateBanned && (
+        <div className="alert err" style={{ marginBottom: 12 }}>
+          🚫 <b>Chính sách vận hành:</b> Suất chiếu chỉ được lên lịch trước ít nhất 1 ngày (từ ngày {getTomorrowStr()} trở đi). Ngày hiện tại hoặc quá khứ bị khóa tạo mới.
+        </div>
+      )}
+
+      {isMovieUnreleased && (
+        <div className="alert err" style={{ marginBottom: 12 }}>
+          🚫 <b>Phim chưa khởi chiếu:</b> Phim "{m?.title}" chỉ bắt đầu khởi chiếu từ ngày <b>{m?.release}</b>. Ngày suất chiếu hiện tại ({date}) chưa tới ngày khởi chiếu nên không thể tạo suất. Vui lòng chọn phim khác hoặc đổi ngày chiếu sang sau ngày khởi chiếu.
+        </div>
+      )}
+
+      {isMovieEnded && (
+        <div className="alert err" style={{ marginBottom: 12 }}>
+          ⚠️ <b>Phim đã hết hạn chiếu:</b> Phim "{m?.title}" đã kết thúc đợt chiếu vào ngày <b>{m?.end}</b>.
+        </div>
+      )}
+
+      {formError && (
+        <div className="alert err" style={{ marginBottom: 12 }}>
+          ✕ {formError}
+        </div>
+      )}
+
       {/* Preview */}
       <div>
         {candidates.map(s => {
@@ -3162,14 +3790,28 @@ function AddModalContent({ params, movies, rooms, onClose, onSuccess, onAddDraft
           <button
             type="button"
             className="btn"
-            disabled={saving}
+            disabled={saving || isFormInvalid}
             onClick={handleAddToDraft}
-            style={{ border: '1px dashed #f5b800', color: '#f5b800', background: 'rgba(245,184,0,0.06)' }}
+            style={{
+              border: '1px dashed #f5b800',
+              color: '#f5b800',
+              background: 'rgba(245,184,0,0.06)',
+              opacity: isFormInvalid ? 0.45 : 1,
+              cursor: isFormInvalid ? 'not-allowed' : 'pointer'
+            }}
           >
             📝 Lưu vào Bản thảo
           </button>
         )}
-        <button className="btn primary" disabled={saving} onClick={handleSubmit}>
+        <button
+          className="btn primary"
+          disabled={saving || isFormInvalid}
+          onClick={handleSubmit}
+          style={{
+            opacity: isFormInvalid ? 0.45 : 1,
+            cursor: isFormInvalid ? 'not-allowed' : 'pointer'
+          }}
+        >
           {saving ? 'Đang gửi API...' : 'Tạo & Lưu ngay'}
         </button>
       </div>
@@ -3186,7 +3828,16 @@ function CopyModalContent({ date, shows, onClose, onSuccess, getAdminToken, vali
 
   const doCopy = async () => {
     const src = shows.filter(s => s.date === from && s.status !== 'cancel');
-    if (!src.length) return alert('Ngày nguồn không có suất');
+    if (!src.length) {
+      showToast?.('Ngày nguồn không có suất chiếu nào để sao chép', 'warning');
+      return;
+    }
+
+    const tomorrow = getTomorrowStr();
+    if (to < tomorrow) {
+      showToast?.('🚫 Quy định: Suất chiếu chỉ được lên lịch trước ít nhất 1 ngày (từ ngày mai trở đi).', 'error');
+      return;
+    }
 
     setSaving(true);
     const token = getAdminToken?.();
@@ -3250,7 +3901,20 @@ function CopyModalContent({ date, shows, onClose, onSuccess, getAdminToken, vali
 
       <div className="acts">
         <button className="btn" onClick={onClose}>Huỷ</button>
-        <button className="btn primary" disabled={saving} onClick={doCopy}>
+        {to < getTomorrowStr() && (
+          <span style={{ fontSize: '11px', color: '#f87171', marginRight: 'auto' }}>
+            ⚠️ Ngày đích phải từ {getTomorrowStr()} trở đi
+          </span>
+        )}
+        <button
+          className="btn primary"
+          disabled={saving || to < getTomorrowStr()}
+          onClick={doCopy}
+          style={{
+            opacity: to < getTomorrowStr() ? 0.45 : 1,
+            cursor: to < getTomorrowStr() ? 'not-allowed' : 'pointer'
+          }}
+        >
           {saving ? 'Đang sao chép...' : 'Sao chép'}
         </button>
       </div>
@@ -3275,8 +3939,15 @@ function AutoModalContent({ date, rooms, movies, onClose, onSuccess, getAdminTok
   };
 
   const doAuto = async () => {
+    if (date < getTomorrowStr()) {
+      showToast?.('🚫 Quy định: Suất chiếu chỉ được lên lịch trước ít nhất 1 ngày (từ ngày mai trở đi).', 'error');
+      return;
+    }
     const ids = Array.from(selectedMovieIds);
-    if (!ids.length) return alert('Chọn ít nhất 1 phim');
+    if (!ids.length) {
+      showToast?.('Vui lòng chọn ít nhất 1 phim để tự động xếp lịch', 'warning');
+      return;
+    }
     const r = R(roomId);
     let t = toMin(start);
     let i = 0, guard = 0;
@@ -3381,9 +4052,23 @@ function AutoModalContent({ date, rooms, movies, onClose, onSuccess, getAdminTok
         </select>
       </div>
 
+      {date < getTomorrowStr() && (
+        <div className="alert err" style={{ marginBottom: 12 }}>
+          🚫 <b>Không thể xếp lịch:</b> Ngày đã chọn ({date}) là ngày hiện tại hoặc quá khứ. Tính năng tự động xếp lịch chỉ khả dụng từ ngày {getTomorrowStr()} trở đi.
+        </div>
+      )}
+
       <div className="acts">
         <button className="btn" onClick={onClose}>Huỷ</button>
-        <button className="btn primary" disabled={saving} onClick={doAuto}>
+        <button
+          className="btn primary"
+          disabled={saving || date < getTomorrowStr()}
+          onClick={doAuto}
+          style={{
+            opacity: date < getTomorrowStr() ? 0.45 : 1,
+            cursor: date < getTomorrowStr() ? 'not-allowed' : 'pointer'
+          }}
+        >
           {saving ? 'Đang xếp lịch...' : 'Xếp lịch'}
         </button>
       </div>
