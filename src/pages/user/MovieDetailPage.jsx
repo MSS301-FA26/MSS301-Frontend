@@ -18,6 +18,7 @@ import { bookingService } from '../../services/bookingService';
 import { reviewService } from '../../services/reviewService';
 import { recommendationService } from '../../services/recommendationService';
 import { chatService } from '../../services/chatService';
+import ReactMarkdown from 'react-markdown';
 import MovieCard from '../../components/common/MovieCard';
 import { toLocalDateKey, getShowtimeDates } from '../../utils/showtimeDates';
 
@@ -732,7 +733,7 @@ export default function MovieDetailPage() {
       });
       setTrailerChatMessages((prev) => {
         const next = [...prev];
-        next[next.length - 1] = { role: 'bot', text: res?.message || 'Xin lỗi, tôi chưa có câu trả lời phù hợp.' };
+        next[next.length - 1] = { role: 'bot', text: res?.reply || res?.message || 'Xin lỗi, tôi chưa có câu trả lời phù hợp.' };
         return next;
       });
     } catch {
@@ -2140,7 +2141,28 @@ export default function MovieDetailPage() {
                         ? 'bg-[#F7C600] text-black font-medium rounded-tr-sm'
                         : 'bg-[#15151B] border border-white/10 text-neutral-200 rounded-tl-sm'
                     }`}>
-                      {msg.text}
+                      {msg.role === 'user' ? (
+                        msg.text
+                      ) : (
+                        <ReactMarkdown
+                          components={{
+                            p: ({ children }) => <p className="mb-1.5 last:mb-0 leading-relaxed">{children}</p>,
+                            strong: ({ children }) => <strong className="font-semibold text-[#F7C600]">{children}</strong>,
+                            em: ({ children }) => <em className="italic text-amber-200">{children}</em>,
+                            ul: ({ children }) => <ul className="list-disc pl-4 mb-1.5 space-y-0.5">{children}</ul>,
+                            ol: ({ children }) => <ol className="list-decimal pl-4 mb-1.5 space-y-0.5">{children}</ol>,
+                            li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                            a: ({ href, children }) => (
+                              <a href={href} target="_blank" rel="noreferrer" className="text-[#F7C600] underline hover:text-amber-300">
+                                {children}
+                              </a>
+                            ),
+                            code: ({ children }) => <code className="bg-white/10 px-1 py-0.5 rounded text-[11px] font-mono">{children}</code>
+                          }}
+                        >
+                          {msg.text}
+                        </ReactMarkdown>
+                      )}
                     </div>
                   </div>
                 ))}

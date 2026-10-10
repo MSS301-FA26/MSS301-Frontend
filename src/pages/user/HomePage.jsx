@@ -18,6 +18,7 @@ import { movieService } from '../../services/movieService';
 import { loyaltyService } from '../../services/loyaltyService';
 import { chatService } from '../../services/chatService';
 import { heroBannerService } from '../../services/heroBannerService';
+import ReactMarkdown from 'react-markdown';
 
 const STATIC_FALLBACK_BANNERS = [
   {
@@ -768,7 +769,7 @@ export default function HomePage({
         const next = [...prev];
         next[next.length - 1] = {
           role: 'bot',
-          text: res?.message || 'Tôi đã tìm thấy thông tin phim phù hợp cho bạn.',
+          text: res?.reply || res?.data?.reply || res?.message || 'Tôi đã tìm thấy thông tin phim phù hợp cho bạn.',
           data: res?.data || null
         };
         return next;
@@ -1460,7 +1461,45 @@ export default function HomePage({
                         : 'bg-neutral-900 border border-white/10 text-neutral-200'
                     }`}
                   >
-                    {msg.text}
+                    {msg.role === 'user' ? (
+                      msg.text
+                    ) : (
+                      <ReactMarkdown
+                        components={{
+                          p: ({ children }) => <p className="mb-1.5 last:mb-0 leading-relaxed">{children}</p>,
+                          strong: ({ children }) => <strong className="font-semibold text-purple-300">{children}</strong>,
+                          em: ({ children }) => <em className="italic text-purple-200">{children}</em>,
+                          ul: ({ children }) => <ul className="list-disc pl-4 mb-1.5 space-y-0.5">{children}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal pl-4 mb-1.5 space-y-0.5">{children}</ol>,
+                          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                          a: ({ href, children }) => (
+                            <a href={href} target="_blank" rel="noreferrer" className="text-purple-400 underline hover:text-purple-300">
+                              {children}
+                            </a>
+                          ),
+                          code: ({ children }) => <code className="bg-white/10 px-1 py-0.5 rounded text-[11px] font-mono">{children}</code>
+                        }}
+                      >
+                        {msg.text}
+                      </ReactMarkdown>
+                    )}
+                    {Array.isArray(msg.data?.movies) && msg.data.movies.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-white/10 flex flex-wrap gap-1.5">
+                        {msg.data.movies.map((m, mIdx) => (
+                          <button
+                            key={mIdx}
+                            onClick={() => {
+                              setChatOpen(false);
+                              onSelectMovie(m.movieId || m.id);
+                            }}
+                            className="px-2 py-1 bg-purple-900/60 hover:bg-purple-800 border border-purple-500/40 text-[10px] text-white rounded transition flex items-center gap-1 cursor-pointer"
+                          >
+                            <span>🎬</span>
+                            <span className="font-semibold truncate max-w-[140px]">{m.title}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
