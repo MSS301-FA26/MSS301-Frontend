@@ -7,7 +7,6 @@ import {
   Heart, Sparkle, AlertCircle
 } from 'lucide-react';
 import { authService, saveAuthSession } from '../../services/authService';
-import { movieService } from '../../services/movieService';
 import { useAuthStore } from '../../stores/useAuthStore';
 import {
   MAX_NAME_LENGTH,
@@ -72,9 +71,6 @@ export default function AuthModal({
   const [regUsername, setRegUsername] = useState('');
   const [regIdentityNumber, setRegIdentityNumber] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
-  const [regFavoriteCinemaId, setRegFavoriteCinemaId] = useState('');
-  const [registrationCinemas, setRegistrationCinemas] = useState([]);
-  const [cinemaLoadError, setCinemaLoadError] = useState(false);
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [regOtp, setRegOtp] = useState('');
   const [registerStep, setRegisterStep] = useState('form'); // 'form' | 'verify'
@@ -365,29 +361,6 @@ export default function AuthModal({
     }
   };
 
-  useEffect(() => {
-    if (!isOpen || activeTab !== 'register' || registerStep !== 'form') return undefined;
-
-    let cancelled = false;
-    setCinemaLoadError(false);
-
-    movieService.getPublicCinemas()
-      .then((cinemas) => {
-        if (!cancelled) {
-          setRegistrationCinemas(
-            cinemas.filter((cinema) => !cinema.status || cinema.status === 'ACTIVE')
-          );
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setCinemaLoadError(true);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeTab, isOpen, registerStep]);
-
   const handleRegister = async (e) => {
     e.preventDefault();
     const cleanName = regName.trim();
@@ -436,10 +409,9 @@ export default function AuthModal({
         password: cleanPassword,
         fullName: cleanName,
         phone: cleanPhone,
-          birthYear: Number(regDateOfBirth.slice(0, 4)),
-          username: cleanUsername,
-          identityNumber: cleanIdentityNumber,
-          preferredCinemaId: regFavoriteCinemaId ? Number(regFavoriteCinemaId) : null
+        birthYear: Number(regDateOfBirth.slice(0, 4)),
+        username: cleanUsername,
+        identityNumber: cleanIdentityNumber
       });
 
       setPendingRegistration({
@@ -490,16 +462,6 @@ export default function AuthModal({
         avatar: pendingRegistration?.avatar || selectedAvatar,
         genre: pendingRegistration?.genre || selectedGenre
       };
-
-      const favoriteCinema = registrationCinemas.find(
-        (cinema) => String(cinema.id) === String(regFavoriteCinemaId)
-      );
-      if (favoriteCinema) {
-        localStorage.setItem('preferredCinema', JSON.stringify({
-          id: favoriteCinema.id,
-          name: favoriteCinema.name
-        }));
-      }
 
       completeLogin(decoratedUser);
       playPing(987.77, 'sine', 0.4);
@@ -1185,15 +1147,6 @@ export default function AuthModal({
                           <Mail className="absolute left-3 top-2.5 h-3.5 w-3.5 text-neutral-600" />
                           <input id="register-email" type="email" required autoComplete="email" placeholder="Điền email" value={regEmail} onChange={(e) => setRegEmail(e.target.value)} className="w-full border border-neutral-800 bg-neutral-950 py-2.5 pl-9 pr-3 text-xs text-white placeholder-neutral-600 transition-all focus:border-amber-400 focus:outline-none" />
                         </div>
-                      </div>
-
-                      <div className="space-y-1 md:col-span-2">
-                        <label htmlFor="register-favorite-cinema" className="block text-[10px] font-sans font-black uppercase tracking-[0.18em] text-neutral-300">Rạp yêu thích</label>
-                        <select id="register-favorite-cinema" value={regFavoriteCinemaId} onChange={(e) => setRegFavoriteCinemaId(e.target.value)} disabled={cinemaLoadError} className="w-full border border-neutral-800 bg-neutral-950 px-3 py-2.5 text-xs text-white transition-all focus:border-amber-400 focus:outline-none disabled:cursor-not-allowed disabled:text-neutral-500">
-                          <option value="">{cinemaLoadError ? 'Không thể tải danh sách rạp' : 'Chọn rạp'}</option>
-                          {registrationCinemas.map((cinema) => <option key={cinema.id} value={cinema.id}>{cinema.name}</option>)}
-                        </select>
-                        {cinemaLoadError && <p className="text-[9px] text-neutral-500">Bạn vẫn có thể đăng ký mà không chọn rạp yêu thích.</p>}
                       </div>
 
                       <div className="space-y-1">
