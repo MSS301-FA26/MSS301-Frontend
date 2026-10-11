@@ -122,6 +122,28 @@ export const normalizeMoviePageResponse = (payload) => {
   };
 };
 
+const DEAD_IMAGE_URL = '1576107232684';
+const FALLBACK_FOOD_IMAGE = 'https://images.unsplash.com/photo-1585647347384-2593bc35786b?auto=format&fit=crop&w=800&q=80';
+
+const sanitizeItemImage = (item) => {
+  if (!item || typeof item !== 'object') return item;
+  const currentImg = item.imageUrl || item.image || item.posterUrl || '';
+  if (currentImg && currentImg.includes(DEAD_IMAGE_URL)) {
+    return {
+      ...item,
+      imageUrl: FALLBACK_FOOD_IMAGE,
+      image: item.image ? FALLBACK_FOOD_IMAGE : item.image,
+      posterUrl: item.posterUrl ? FALLBACK_FOOD_IMAGE : item.posterUrl
+    };
+  }
+  return item;
+};
+
+const sanitizeItemList = (list) => {
+  if (!Array.isArray(list)) return list;
+  return list.map(sanitizeItemImage);
+};
+
 export const movieService = {
   getMovies: (params = {}) => request(`/api/v1/movies${buildQueryString(params)}`)
     .then(normalizeMovieListResponse),
@@ -135,10 +157,15 @@ export const movieService = {
   getActorDetail: (actorId) => request(`/api/v1/actors/${encodeURIComponent(actorId)}`),
   getMoviesByActor: (actorId) => request(`/api/v1/actors/${encodeURIComponent(actorId)}/movies`)
     .then(normalizeMovieListResponse),
-  getActivePromotions: () => request('/api/v1/promotions/active').then(unwrapListPayload),
   getGenres: () => request('/api/v1/genres'),
-  getFoodItems: () => request('/api/v1/foods/items').then(unwrapListPayload),
-  getFoodCombos: () => request('/api/v1/foods/combos').then(unwrapListPayload),
+  getFoodItems: () => request('/api/v1/foods/items')
+    .then(unwrapListPayload)
+    .then(sanitizeItemList)
+    .catch(() => []),
+  getFoodCombos: () => request('/api/v1/foods/combos')
+    .then(unwrapListPayload)
+    .then(sanitizeItemList)
+    .catch(() => []),
   getFoodCategories: () => request('/api/v1/foods/categories').then(unwrapListPayload),
   getPublicCinema: () => request('/api/v1/cinema'),
   getPublicCinemas: () => request('/api/v1/cinemas').then(unwrapListPayload),

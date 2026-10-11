@@ -14,7 +14,6 @@ import {
   Search,
   ShieldCheck,
   Ticket,
-  Wallet,
   XCircle,
   LogOut,
   MapPin,
@@ -32,7 +31,6 @@ import { movieService } from '../../services/movieService';
 import { staffService } from '../../services/staffService';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useUiStore } from '../../stores/useUiStore';
-import StaffWalletPanel from './StaffWalletPanel';
 import StaffFoodCheckInPanel from './StaffFoodCheckInPanel';
 
 const FOOD_PAGE_SIZE = 10;
@@ -561,7 +559,7 @@ export default function StaffCheckInPage() {
     return currentUser?.cinemaId ? Number(currentUser.cinemaId) : 5;
   }, [currentUser?.cinemaId]);
 
-  const [activeSection, setActiveSection] = useState('checkin'); // 'checkin' | 'wallet'
+  const [activeSection, setActiveSection] = useState('checkin'); // 'checkin' | 'fnb'
   const [qrCode, setQrCode] = useState('');
   const [bookingCode, setBookingCode] = useState('');
   const [result, setResult] = useState(null);
@@ -599,7 +597,6 @@ export default function StaffCheckInPage() {
   const [counterSaleMessage, setCounterSaleMessage] = useState('');
   const [cashGiven, setCashGiven] = useState(''); // tiền khách đưa (trống = thu đúng số)
   const [counterSaleReceipt, setCounterSaleReceipt] = useState(null); // biên lai sau khi thu
-  const [pendingWalletCount, setPendingWalletCount] = useState(0);
   const [pendingFnbCount, setPendingFnbCount] = useState(0);
   const qrVideoRef = useRef(null);
   const qrCanvasRef = useRef(null);
@@ -643,19 +640,6 @@ export default function StaffCheckInPage() {
     showToast('Đã đăng xuất khỏi hệ thống Staff.');
     navigate('/');
   };
-
-  const checkPendingWallet = useCallback(async () => {
-    const { accessToken } = getStoredAuth();
-    if (!accessToken) return;
-    try {
-      const data = await staffService.getWalletDashboard(accessToken);
-      if (data && typeof data.pendingWithdrawalsCount === 'number') {
-        setPendingWalletCount(data.pendingWithdrawalsCount);
-      }
-    } catch (e) {
-      // ignore silently
-    }
-  }, []);
 
   const pendingCheckinCount = useMemo(() => {
     return (failedRefunds || []).filter((r) => r.status === 'PENDING' || !r.status).length;
@@ -966,14 +950,7 @@ export default function StaffCheckInPage() {
     loadRecentBookings();
     loadStaffFoods();
     loadFailedRefunds();
-    checkPendingWallet();
-
-    const interval = setInterval(() => {
-      checkPendingWallet();
-    }, 15000);
-
-    return () => clearInterval(interval);
-  }, [checkPendingWallet]);
+  }, []);
 
   useEffect(() => () => stopQrScanner(), []);
 
@@ -1449,20 +1426,6 @@ export default function StaffCheckInPage() {
                 </span>
               )}
             </button>
-
-            <button
-              onClick={() => setActiveSection('wallet')}
-              className={`relative flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeSection === 'wallet'
-                  ? 'bg-gradient-to-r from-amber-500 to-yellow-600 text-black shadow-[0_4px_16px_rgba(245,158,11,0.35)] font-black'
-                  : 'text-neutral-400 hover:text-white hover:bg-white/5'
-                }`}
-            >
-              <Wallet className="h-4 w-4" />
-              <span>Quản lý ví & Giao dịch</span>
-              {pendingWalletCount > 0 && (
-                <span className="flex h-2 w-2 rounded-full bg-rose-500 animate-ping" />
-              )}
-            </button>
           </div>
 
           {/* Quick Stats Pill */}
@@ -1516,15 +1479,6 @@ export default function StaffCheckInPage() {
             onUpdateFoodStatus={updateStaffFoodStatus}
             savingStaffFoodKey={savingStaffFoodKey}
             onReloadFoods={loadStaffFoods}
-          />
-        )}
-
-        {/* Wallet Panel */}
-        {activeSection === 'wallet' && (
-          <StaffWalletPanel
-            token={getToken()}
-            showToast={(msg) => console.log('[Wallet]', msg)}
-            onPendingCountChange={setPendingWalletCount}
           />
         )}
 

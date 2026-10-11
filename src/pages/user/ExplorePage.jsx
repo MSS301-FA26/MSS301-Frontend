@@ -14,7 +14,6 @@ import { useMovies } from '../../stores/useMovieStore';
 const STATUS_TABS = [
   { id: 'now-showing', label: 'ĐANG CHIẾU' },
   { id: 'upcoming', label: 'SẮP CHIẾU' },
-  { id: 'imax', label: 'IMAX' },
   { id: 'all', label: 'TẤT CẢ' },
 ];
 
@@ -31,7 +30,8 @@ export default function ExplorePage() {
   } = useMovies();
 
   // URL query params
-  const paramStatus = searchParams.get('status') || 'now-showing';
+  const rawParamStatus = searchParams.get('status');
+  const paramStatus = STATUS_TABS.some((t) => t.id === rawParamStatus) ? rawParamStatus : 'now-showing';
   const paramSearch = searchParams.get('q') || '';
 
   // State
@@ -84,8 +84,9 @@ export default function ExplorePage() {
     }
 
     const urlStatus = searchParams.get('status');
-    if (urlStatus && urlStatus !== activeTab) {
-      setActiveTab(urlStatus);
+    const validStatus = STATUS_TABS.some((t) => t.id === urlStatus) ? urlStatus : 'now-showing';
+    if (validStatus !== activeTab) {
+      setActiveTab(validStatus);
     }
   }, [searchParams]);
 
@@ -207,16 +208,11 @@ export default function ExplorePage() {
 
     // Status Tab Filter
     // When activeTab is 'all', show all matches.
-    // If activeTab is specific ('now-showing', 'upcoming', 'imax'), filter strictly by that tab:
+    // If activeTab is specific ('now-showing', 'upcoming'), filter strictly by that tab:
     if (activeTab === 'now-showing') {
       result = result.filter((m) => m.status === 'NOW_SHOWING' || (!m.isUpcoming && m.status !== 'UPCOMING'));
     } else if (activeTab === 'upcoming') {
       result = result.filter((m) => m.status === 'UPCOMING' || m.isUpcoming || m.status === 'COMING_SOON');
-    } else if (activeTab === 'imax') {
-      result = result.filter((m) => {
-        const fmtList = Array.isArray(m.formats) ? m.formats : [m.format || ''];
-        return m.isImax || fmtList.some((f) => /imax/i.test(f || ''));
-      });
     }
 
     // Default Sorting: Highest rating first, then newest
@@ -283,7 +279,7 @@ export default function ExplorePage() {
 
         {/* ========================================================
             PREMIUM BALANCED NAVIGATION BAR
-            LEFT: Tabs [ĐANG CHIẾU] [SẮP CHIẾU] [IMAX] [TẤT CẢ] (Pixel-perfect baseline)
+            LEFT: Tabs [ĐANG CHIẾU] [SẮP CHIẾU] [TẤT CẢ] (Pixel-perfect baseline)
             RIGHT: Sleek Luxury Search Bar [🔍 Tìm phim...]
         ======================================================== */}
         <section className="flex flex-col sm:flex-row sm:items-end justify-between gap-3 sm:gap-6 border-b border-white/[0.08]">

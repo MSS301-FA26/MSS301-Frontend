@@ -2959,7 +2959,12 @@ export default function BookingPage() {
 
                   return (
                     <div key={item.id} className="flex gap-3.5 border border-white/10 bg-neutral-900/60 p-3.5 rounded-xl hover:border-white/20 transition">
-                      <img src={item.imageUrl} alt={item.name} className="h-16 w-16 object-cover rounded-lg bg-neutral-950 shrink-0" />
+                      <img
+                        src={item.imageUrl || 'https://images.unsplash.com/photo-1585647347384-2593bc35786b?auto=format&fit=crop&w=800&q=80'}
+                        alt={item.name}
+                        onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1585647347384-2593bc35786b?auto=format&fit=crop&w=800&q=80'; }}
+                        className="h-16 w-16 object-cover rounded-lg bg-neutral-950 shrink-0"
+                      />
                       <div className="flex-1 flex flex-col justify-between">
                         <div>
                           <h4 className="text-xs font-bold text-white leading-tight">{item.name}</h4>

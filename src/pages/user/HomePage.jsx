@@ -88,45 +88,6 @@ const MOVIE_BACKDROPS_MAP = {
   2: 'https://images.unsplash.com/photo-1518676590629-3dcbd9c5a5c9?auto=format&fit=crop&w=1920&q=85'  // Lật Mặt 7
 };
 
-const CURATED_PROMOTIONS = [
-  {
-    id: 'promo-1',
-    code: 'CINE65K',
-    name: 'MEMBER WEDNESDAY • ĐỒNG GIÁ 65K',
-    description: 'Đồng giá 65.000đ vé xem phim 2D Standard & VIP vào mỗi Thứ 4 hàng tuần cho toàn bộ hội viên CinePremier.',
-    discountType: 'FIXED',
-    discountValue: 65000,
-    endDate: '2026-12-31'
-  },
-  {
-    id: 'promo-2',
-    code: 'TRUFFLE30',
-    name: 'COMBO GOURMET TRUFFLE GIẢM 30K',
-    description: 'Giảm ngay 30.000đ khi đặt trước combo bắp nấm Truffle đen thượng hạng cùng vé xem phim qua web.',
-    discountType: 'FIXED',
-    discountValue: 30000,
-    endDate: '2026-11-30'
-  },
-  {
-    id: 'promo-3',
-    code: 'STUDENT50',
-    name: 'CINE STUDENT • GIÁ VÉ 50.000Đ',
-    description: 'Áp dụng cho học sinh, sinh viên xuất trình thẻ trước 17:00 các ngày trong tuần từ Thứ 2 đến Thứ 6.',
-    discountType: 'FIXED',
-    discountValue: 50000,
-    endDate: '2026-12-31'
-  },
-  {
-    id: 'promo-4',
-    code: 'CINECLUB10',
-    name: 'TÍCH ĐIỂM 10% HỘI VIÊN MỌI CHI TIÊU',
-    description: 'Hoàn 10% giá trị chi tiêu thành điểm CinePoint để quy đổi trực tiếp vé xem phim và bắp nước miễn phí.',
-    discountType: 'PERCENTAGE',
-    discountValue: 10,
-    endDate: '2026-12-31'
-  }
-];
-
 const CURATED_FOODS = [
   {
     id: 'combo-1',
@@ -309,7 +270,6 @@ export default function HomePage({
   const [moviesList, setLandingMovies] = useState([]);
   const [cinemas, setCinemas] = useState([]);
   const [combos, setCombos] = useState([]);
-  const [promotions, setPromotions] = useState([]);
   const [genres, setGenres] = useState([]);
   const [loyaltyConfig, setLoyaltyConfig] = useState(null);
   const [userLoyalty, setUserLoyalty] = useState(null);
@@ -350,15 +310,14 @@ export default function HomePage({
       loadMovies(),
       movieService.getPublicCinemas(),
       movieService.getFoodCombos(),
-      movieService.getActivePromotions(),
       movieService.getGenres(),
       loyaltyService.getConfiguration()
     ]).then(results => {
       if (cancelled) return;
-      const setters = [setLandingMovies, setCinemas, setCombos, setPromotions, setGenres, (val) => setLoyaltyConfig(val?.data || val)];
-      const labels = ['phim', 'rạp', 'combo', 'khuyến mãi', 'thể loại', 'hội viên'];
+      const setters = [setLandingMovies, setCinemas, setCombos, setGenres, (val) => setLoyaltyConfig(val?.data || val)];
+      const labels = ['phim', 'rạp', 'combo', 'thể loại', 'hội viên'];
       results.forEach((result, i) => {
-        if (i === 5) {
+        if (i === 4) {
           setters[i](result.status === 'fulfilled' ? result.value : null);
         } else {
           setters[i](result.status === 'fulfilled' ? unwrapListPayload(result.value) : []);
@@ -574,11 +533,6 @@ export default function HomePage({
       heroBannerService.recordClick(bannerId).catch(() => {});
     }
   }, []);
-
-  // Curated fallbacks if backend tables are unseeded
-  const effectivePromotions = useMemo(() => {
-    return promotions.length > 0 ? promotions : CURATED_PROMOTIONS;
-  }, [promotions]);
 
   const effectiveFoods = useMemo(() => {
     const list = Array.isArray(foodCatalog)

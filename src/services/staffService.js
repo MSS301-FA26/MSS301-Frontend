@@ -68,21 +68,4 @@ export const staffService = {
     token,
     body: payload
   }),
-
-  // ── Wallet Management (Staff can access admin wallet endpoints) ────────────
-  getWalletDashboard: (token) => request('/api/v1/admin/wallet/dashboard', { token }),
-  getWithdrawals: (token, params = {}) => {
-    const query = new URLSearchParams(params);
-    return request(`/api/v1/admin/wallet/withdrawals?${query.toString()}`, { token });
-  },
-  approveWithdrawal: (token, id, payload) => request(`/api/v1/admin/wallet/withdrawals/${encodeURIComponent(id)}/approve`, {
-    method: 'POST',
-    token,
-    body: payload
-  }),
-  rejectWithdrawal: (token, id, payload) => request(`/api/v1/admin/wallet/withdrawals/${encodeURIComponent(id)}/reject`, {
-    method: 'POST',
-    token,
-    body: payload
-  }),
 };

@@ -6,6 +6,7 @@ import { getStoredAuth } from '../../services/authService';
 import { bookingService } from '../../services/bookingService';
 import { reviewService } from '../../services/reviewService';
 import { movieService } from '../../services/movieService';
+import { walletService } from '../../services/walletService';
 import { useMovies } from '../../stores/useMovieStore';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useUiStore } from '../../stores/useUiStore';
@@ -54,6 +55,10 @@ export default function MyTicketsView({ embedded = false }) {
   const [realBookings, setRealBookings] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [cancellingBookingId, setCancellingBookingId] = useState('');
+  const [selectedRefundDetailTicket, setSelectedRefundDetailTicket] = useState(null);
+  const [refundRequestTicket, setRefundRequestTicket] = useState(null);
+  const [refundReason, setRefundReason] = useState('Bận việc đột xuất không thể tham gia');
+  const [isProcessingRefund, setIsProcessingRefund] = useState(false);
 
   // Tải danh sách rạp để hiển thị tên và địa chỉ rạp chi tiết cho vé
   useEffect(() => {
@@ -319,6 +324,40 @@ export default function MyTicketsView({ embedded = false }) {
       showToast(error.message || 'Không thể hủy đặt vé này.', 4500, null, 'sad');
     } finally {
       setCancellingBookingId('');
+    }
+  };
+
+  const handleExecuteUserRefund = async () => {
+    if (!refundRequestTicket) return;
+    const ticket = refundRequestTicket;
+    const { accessToken } = getStoredAuth();
+    if (!accessToken) {
+      showToast('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.', 4500, null, 'sad');
+      setRefundRequestTicket(null);
+      return;
+    }
+
+    setIsProcessingRefund(true);
+    try {
+      await walletService.refundTicketToWallet(
+        accessToken,
+        ticket.bookingId,
+        refundReason || 'Khách hàng yêu cầu hoàn vé vào ví'
+      );
+
+      try {
+        const storedWallet = JSON.parse(localStorage.getItem('cinepremier_wallet') || '{}');
+        const updatedBal = Number(storedWallet.balance || 0) + Number(ticket.totalAmount || 0);
+        localStorage.setItem('cinepremier_wallet', JSON.stringify({ ...storedWallet, balance: updatedBal }));
+      } catch {}
+
+      showToast(`Hoàn tiền thành công! Đã cộng +${formatVnd(ticket.totalAmount)} vào Ví CineWallet của bạn.`, 5000, null, 'happy');
+      setRefundRequestTicket(null);
+      await loadBookings();
+    } catch (error) {
+      showToast(error.message || 'Không thể xử lý yêu cầu hoàn tiền vé. Vui lòng thử lại.', 4500, null, 'sad');
+    } finally {
+      setIsProcessingRefund(false);
     }
   };
 
@@ -1138,6 +1177,31 @@ export default function MyTicketsView({ embedded = false }) {
                             Hủy đặt vé
                           </button>
                         )}
+                        {isRefunded && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedRefundDetailTicket(t)}
+                            className="inline-flex items-center gap-1.5 border border-purple-500/50 bg-purple-950/40 px-3 py-1.5 text-[8.5px] font-black uppercase tracking-widest text-purple-200 transition hover:bg-purple-600 hover:text-white cursor-pointer rounded-sm shadow-[0_0_12px_rgba(168,85,247,0.25)]"
+                            title="Xem chi tiết biên nhận hoàn tiền vé vào Ví CineWallet"
+                          >
+                            <RotateCcw className="h-3.5 w-3.5 text-purple-300" />
+                            Chi tiết hoàn tiền
+                          </button>
+                        )}
+                        {!isRefunded && !isCancelledShowtime && t.status === 'PAID' && !t.isWatching && !isCheckedIn && !isEnded && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRefundRequestTicket(t);
+                              setRefundReason('Bận việc đột xuất không thể tham gia');
+                            }}
+                            className="inline-flex items-center gap-1.5 border border-purple-500/40 bg-purple-950/25 px-2.5 py-1.5 text-[8px] font-black uppercase tracking-widest text-purple-300 transition hover:bg-purple-600 hover:text-white cursor-pointer rounded-sm"
+                            title="Hủy vé và nhận hoàn tiền 100% vào Ví CineWallet"
+                          >
+                            <RotateCcw className="h-3 w-3" />
+                            Hoàn vé vào ví
+                          </button>
+                        )}
                         {canOrderMoreFood(t) && (() => {
                           const isCheckedIn = t.status === 'USED' || Boolean(t.isWatching);
                           const isEnded = Boolean(t.showtimeEnd && new Date(t.showtimeEnd).getTime() <= Date.now());
@@ -1914,6 +1978,240 @@ export default function MyTicketsView({ embedded = false }) {
                   <>
                     <Trash2 className="h-3.5 w-3.5" />
                     Xác nhận xóa
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: CHI TIẾT HOÀN TIỀN VÉ ────────────────────────────── */}
+      {selectedRefundDetailTicket && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 p-4 backdrop-blur-md animate-in fade-in duration-200"
+          onClick={() => setSelectedRefundDetailTicket(null)}
+        >
+          <div
+            className="relative w-full max-w-lg border border-purple-500/40 bg-[#0a0a0f] p-6 shadow-[0_25px_70px_rgba(168,85,247,0.25)] text-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-500 via-amber-400 to-purple-500" />
+            
+            <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-purple-500/40 bg-purple-500/15 text-purple-300">
+                  <RotateCcw className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="text-[9px] font-mono font-black uppercase tracking-[0.25em] text-purple-400 block">
+                    CINEWALLET REFUND RECEIPT
+                  </span>
+                  <h3 className="mt-0.5 text-base font-black uppercase tracking-wide text-white">
+                    Chi tiết hoàn tiền vé
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedRefundDetailTicket(null)}
+                className="text-neutral-400 hover:text-white p-1 hover:bg-white/10 transition rounded"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <div className="rounded border border-emerald-500/30 bg-emerald-950/20 p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-[9px] font-black uppercase tracking-wider text-emerald-400">
+                    Số tiền hoàn lại vào ví
+                  </p>
+                  <p className="text-2xl font-mono font-black text-emerald-300 mt-0.5">
+                    +{formatVnd(selectedRefundDetailTicket.totalAmount)}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="inline-block rounded border border-emerald-500/40 bg-emerald-500/20 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-emerald-300">
+                    ĐÃ GHI CÓ VÀO VÍ
+                  </span>
+                  <p className="text-[10px] text-neutral-400 mt-1 font-mono">100% Giá trị vé</p>
+                </div>
+              </div>
+
+              <div className="border border-white/10 bg-black/40 p-3.5 space-y-2 text-xs">
+                <div className="flex justify-between items-start">
+                  <span className="text-neutral-500 text-[10px] uppercase font-bold">Phim:</span>
+                  <span className="font-bold text-white text-right max-w-[70%]">{selectedRefundDetailTicket.title}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-neutral-500 text-[10px] uppercase font-bold">Suất chiếu:</span>
+                  <span className="font-mono text-neutral-300">{selectedRefundDetailTicket.date} · {selectedRefundDetailTicket.time}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-neutral-500 text-[10px] uppercase font-bold">Rạp / Phòng:</span>
+                  <span className="text-neutral-300">{selectedRefundDetailTicket.cinemaName} · {selectedRefundDetailTicket.room}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-neutral-500 text-[10px] uppercase font-bold">Ghế đã đặt:</span>
+                  <span className="font-mono font-bold text-amber-400">{selectedRefundDetailTicket.seats}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-neutral-500 text-[10px] uppercase font-bold">Mã số vé:</span>
+                  <span className="font-mono text-purple-300 font-bold">{selectedRefundDetailTicket.code}</span>
+                </div>
+              </div>
+
+              <div className="border border-purple-500/20 bg-purple-950/15 p-3.5 space-y-2 text-xs">
+                <div className="flex justify-between items-start">
+                  <span className="text-neutral-400 text-[10px] uppercase font-bold">Lý do hoàn:</span>
+                  <span className="text-purple-200 text-right max-w-[70%] font-medium">
+                    {selectedRefundDetailTicket.refundReason || 'Suất chiếu bị hủy — hoàn tiền tự động theo chính sách'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-neutral-400 text-[10px] uppercase font-bold">Thời gian hoàn:</span>
+                  <span className="font-mono text-neutral-300">
+                    {selectedRefundDetailTicket.refundedAt ? new Date(selectedRefundDetailTicket.refundedAt).toLocaleString('vi-VN') : 'Gần đây'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-neutral-400 text-[10px] uppercase font-bold">Phương thức:</span>
+                  <span className="text-amber-400 font-bold flex items-center gap-1">
+                    <Wallet className="h-3 w-3" /> Ví CineWallet
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-between gap-3 border-t border-white/10 pt-4">
+              <button
+                type="button"
+                onClick={() => setSelectedRefundDetailTicket(null)}
+                className="border border-white/15 bg-black px-4 py-2 text-[10px] font-black uppercase tracking-widest text-neutral-300 hover:border-white/30 hover:text-white transition"
+              >
+                Đóng
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedRefundDetailTicket(null);
+                  navigate('/profile');
+                }}
+                className="flex items-center gap-2 border border-amber-500 bg-amber-500 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-black hover:bg-amber-400 transition"
+              >
+                <Wallet className="h-3.5 w-3.5" />
+                Kiểm tra ví & Rút tiền
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL: YÊU CẦU HOÀN TIỀN VÉ VÀO VÍ ────────────────────────── */}
+      {refundRequestTicket && (
+        <div
+          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 p-4 backdrop-blur-md animate-in fade-in duration-200"
+          onClick={() => !isProcessingRefund && setRefundRequestTicket(null)}
+        >
+          <div
+            className="relative w-full max-w-md border border-purple-500/40 bg-[#0a0a0f] p-6 shadow-[0_25px_70px_rgba(168,85,247,0.25)] text-left"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-500 via-amber-400 to-purple-500" />
+            
+            <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-purple-500/40 bg-purple-500/15 text-purple-300">
+                  <RotateCcw className="h-5 w-5" />
+                </div>
+                <div>
+                  <span className="text-[9px] font-mono font-black uppercase tracking-[0.25em] text-purple-400 block">
+                    SELF-SERVICE REFUND
+                  </span>
+                  <h3 className="mt-0.5 text-base font-black uppercase tracking-wide text-white">
+                    Hủy vé & Hoàn tiền vào ví
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !isProcessingRefund && setRefundRequestTicket(null)}
+                disabled={isProcessingRefund}
+                className="text-neutral-400 hover:text-white p-1 hover:bg-white/10 transition rounded disabled:opacity-30"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              <div className="border border-white/10 bg-black/50 p-3 space-y-1 text-xs">
+                <p className="font-black text-white">{refundRequestTicket.title}</p>
+                <p className="text-[11px] text-neutral-400">
+                  Suất: {refundRequestTicket.date} · {refundRequestTicket.time} · Ghế: <strong className="text-amber-400 font-mono">{refundRequestTicket.seats}</strong>
+                </p>
+                <p className="text-[11px] text-neutral-400">
+                  Rạp: {refundRequestTicket.cinemaName}
+                </p>
+              </div>
+
+              <div className="rounded border border-emerald-500/30 bg-emerald-950/20 p-3 flex items-center justify-between">
+                <div>
+                  <span className="text-[9px] font-black uppercase text-emerald-400">Số tiền hoàn vào ví</span>
+                  <p className="text-xl font-mono font-black text-emerald-300 mt-0.5">
+                    +{formatVnd(refundRequestTicket.totalAmount)}
+                  </p>
+                </div>
+                <span className="border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[8.5px] font-black uppercase text-emerald-300">
+                  100% Giá trị vé
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-wider text-neutral-300 mb-1.5">
+                  Lý do hoàn vé:
+                </label>
+                <select
+                  value={refundReason}
+                  onChange={(e) => setRefundReason(e.target.value)}
+                  className="w-full h-10 border border-white/15 bg-black px-3 text-xs text-white outline-none focus:border-purple-400 cursor-pointer"
+                >
+                  <option value="Bận việc đột xuất không thể tham gia">Bận việc đột xuất không thể tham gia</option>
+                  <option value="Đặt nhầm suất chiếu hoặc phim khác">Đặt nhầm suất chiếu hoặc phim khác</option>
+                  <option value="Thay đổi kế hoạch xem phim">Thay đổi kế hoạch xem phim</option>
+                  <option value="Lý do cá nhân khác">Lý do cá nhân khác</option>
+                </select>
+              </div>
+
+              <p className="text-[9.5px] text-neutral-500 leading-relaxed italic">
+                * Lưu ý: Vé sau khi hủy sẽ giải phóng ghế cho khán giả khác. Tiền vé được hoàn tức thì vào số dư Ví CineWallet của bạn.
+              </p>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-3 border-t border-white/10 pt-4">
+              <button
+                type="button"
+                onClick={() => setRefundRequestTicket(null)}
+                disabled={isProcessingRefund}
+                className="border border-white/15 bg-black px-4 py-2 text-[10px] font-black uppercase tracking-widest text-neutral-300 hover:border-white/30 hover:text-white transition disabled:opacity-40"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={handleExecuteUserRefund}
+                disabled={isProcessingRefund}
+                className="flex items-center gap-2 border border-purple-500 bg-purple-600 px-5 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-purple-500 transition shadow-[0_0_20px_rgba(168,85,247,0.35)] disabled:opacity-50"
+              >
+                {isProcessingRefund ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Đang xử lý...
+                  </>
+                ) : (
+                  <>
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Xác nhận hoàn tiền vào ví
                   </>
                 )}
               </button>

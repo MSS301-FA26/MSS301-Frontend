@@ -818,6 +818,10 @@ export default function AdminShowtimesPanel({ ctx }) {
       return;
     }
     const cand = { ...s, [key]: val };
+    if (key === 'isHoliday') {
+      cand.isHoliday = val;
+      cand.holidaySurcharge = val;
+    }
     if (key === 'movieId') {
       const m = M(val);
       if (!m.formats.includes(cand.fmt)) cand.fmt = m.formats[0];

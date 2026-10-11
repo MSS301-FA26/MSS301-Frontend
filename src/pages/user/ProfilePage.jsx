@@ -4,7 +4,8 @@ import {
   Camera, CreditCard, Lock, LogOut, Settings, User,
   ChevronRight, Award, Flame, Eye, Film, Sparkles,
   ChevronDown, Check, Shield, Volume2, VolumeX, EyeOff,
-  Save, Trash2, Sliders, Smartphone, Mail, Phone, Cake, BadgeCheck, Loader2, Ticket, ScanLine, Wallet, ArrowUpRight, RefreshCw
+  Save, Trash2, Sliders, Smartphone, Mail, Phone, Cake, BadgeCheck, Loader2, Ticket, ScanLine, Wallet, ArrowUpRight, RefreshCw,
+  Plus, ArrowDownLeft, X, CheckCircle2, FileText, Filter, AlertCircle, Copy
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { expireAuthSession, getStoredAuth, normalizeUser } from '../../services/authService';
@@ -108,6 +109,10 @@ export default function ProfileView() {
   const [bankSearch, setBankSearch] = useState('');
   const [showBankDropdown, setShowBankDropdown] = useState(false);
   const [isProfileLoading, setIsProfileLoading] = useState(false);
+
+  // CineWallet - Lọc & Chi tiết giao dịch hoàn tiền
+  const [txFilter, setTxFilter] = useState('ALL'); // 'ALL' | 'REFUND' | 'WITHDRAW'
+  const [selectedTxDetail, setSelectedTxDetail] = useState(null);
 
   // Settings - Payment card states
   const [cardNumber, setCardNumber] = useState('4611 •••• •••• 8899');
@@ -761,58 +766,133 @@ export default function ProfileView() {
 
               {/* ── CINEWALLET CARD ─────────────────────────────────────────────── */}
               <div className="border border-amber-500/20 bg-gradient-to-br from-[#0d0d00] to-[#050500] p-5 space-y-4 mt-2">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
-                      <Wallet className="h-4 w-4 text-amber-400" />
+                    <div className="w-10 h-10 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
+                      <Wallet className="h-5 w-5 text-amber-400" />
                     </div>
                     <div>
                       <p className="text-[9px] font-black uppercase tracking-[0.14em] text-amber-500">CineWallet</p>
                       <p className="text-xl font-mono font-black text-white">
-                        {wallet ? `${Number(wallet.balance).toLocaleString('vi-VN')}đ` : '—'}
+                        {wallet ? `${Number(wallet.balance).toLocaleString('vi-VN')}đ` : '0đ'}
                       </p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => {
-                      const next = !showWithdrawForm;
-                      setShowWithdrawForm(next);
-                      setShowBankDropdown(false);
-                      if (next && bankList.length === 0) {
-                        fetch('https://api.vietqr.io/v2/banks')
-                          .then(r => r.json())
-                          .then(d => setBankList(d.data || []))
-                          .catch(() => { });
-                      }
-                    }}
-                    className="flex items-center gap-1.5 border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-amber-400 hover:bg-amber-500/20 transition"
-                  >
-                    <ArrowUpRight className="h-3 w-3" /> Rút tiền
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        const next = !showWithdrawForm;
+                        setShowWithdrawForm(next);
+                        setShowBankDropdown(false);
+                        if (next && bankList.length === 0) {
+                          fetch('https://api.vietqr.io/v2/banks')
+                            .then(r => r.json())
+                            .then(d => setBankList(d.data || []))
+                            .catch(() => { });
+                        }
+                      }}
+                      className="flex items-center gap-1.5 border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-amber-400 hover:bg-amber-500/20 transition"
+                    >
+                      <ArrowUpRight className="h-3 w-3" /> Rút tiền
+                    </button>
+                  </div>
                 </div>
 
-                {walletTxs.filter((tx) => tx.type !== 'WITHDRAWAL_PAID' && Math.abs(Number(tx.amount || 0)) > 0).length > 0 && (
-                  <div className="space-y-1.5">
-                    <p className="text-[8px] font-black uppercase tracking-[0.14em] text-neutral-500">Giao dịch gần đây</p>
-                    {walletTxs.filter((tx) => tx.type !== 'WITHDRAWAL_PAID' && Math.abs(Number(tx.amount || 0)) > 0).map((tx, i) => (
-                      <div key={tx.id || i} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
-                        <div>
-                          <p className="text-[10px] font-bold text-white">
-                            {tx.type === 'REFUND_CREDIT' ? '+ Hoàn tiền'
-                              : tx.type === 'WITHDRAWAL_HOLD' ? '- Yêu cầu rút'
-                                : tx.type === 'WITHDRAWAL_REJECTED' ? '↩ Hoàn lại'
-                                  : tx.type}
-                          </p>
-                          <p className="text-[9px] text-neutral-500">{tx.referenceCode}</p>
-                        </div>
-                        <span className={`text-[11px] font-black font-mono ${tx.type === 'REFUND_CREDIT' || tx.type === 'WITHDRAWAL_REJECTED' ? 'text-emerald-400' : 'text-amber-400'}`}>
-                          {tx.type === 'REFUND_CREDIT' || tx.type === 'WITHDRAWAL_REJECTED' ? '+' : '-'}
-                          {Math.abs(Number(tx.amount)).toLocaleString('vi-VN')}đ
-                        </span>
-                      </div>
+                {/* Bộ lọc giao dịch ví */}
+                <div className="pt-2 border-t border-white/5">
+                  <div className="flex items-center justify-between pb-2">
+                    <p className="text-[8px] font-black uppercase tracking-[0.14em] text-neutral-400 flex items-center gap-1">
+                      <Filter className="h-2.5 w-2.5 text-amber-500" /> Lịch sử giao dịch ví
+                    </p>
+                    <span className="text-[8px] text-neutral-500">Bấm dòng để xem chi tiết</span>
+                  </div>
+
+                  <div className="flex gap-1 overflow-x-auto pb-1 text-[9px]">
+                    {[
+                      { key: 'ALL', label: 'Tất cả' },
+                      { key: 'REFUND', label: 'Hoàn tiền vé (+)' },
+                      { key: 'WITHDRAW', label: 'Rút tiền (-)' }
+                    ].map(tab => (
+                      <button
+                        key={tab.key}
+                        onClick={() => setTxFilter(tab.key)}
+                        className={`px-2.5 py-1 text-[8px] font-black uppercase tracking-wider rounded transition shrink-0 ${
+                          txFilter === tab.key
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                            : 'text-neutral-500 hover:text-white border border-transparent'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
                     ))}
                   </div>
-                )}
+
+                  {/* Danh sách giao dịch theo filter */}
+                  {(() => {
+                    const filtered = walletTxs.filter((tx) => {
+                      if (tx.type === 'WITHDRAWAL_PAID' || Math.abs(Number(tx.amount || 0)) <= 0) return false;
+                      if (txFilter === 'REFUND') return tx.type === 'REFUND_CREDIT';
+                      if (txFilter === 'WITHDRAW') return String(tx.type).includes('WITHDRAW');
+                      return true;
+                    });
+
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="py-4 text-center text-[10px] text-neutral-600 italic">
+                          Không có giao dịch nào trong mục này.
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-1.5 mt-2">
+                        {filtered.map((tx, i) => {
+                          const isRefund = tx.type === 'REFUND_CREDIT';
+                          const isCredit = isRefund || tx.type === 'WITHDRAWAL_REJECTED';
+                          return (
+                            <button
+                              key={tx.id || i}
+                              type="button"
+                              onClick={() => setSelectedTxDetail(tx)}
+                              className="w-full flex items-center justify-between py-2 px-2.5 rounded border border-white/5 bg-black/30 hover:border-amber-500/30 hover:bg-black/60 text-left transition group"
+                            >
+                              <div>
+                                <div className="flex items-center gap-1.5">
+                                  <p className="text-[10px] font-bold text-white group-hover:text-amber-300 transition">
+                                    {isRefund ? '+ Hoàn tiền vé'
+                                      : tx.type === 'WITHDRAWAL_HOLD' ? '- Yêu cầu rút tiền'
+                                      : tx.type === 'WITHDRAWAL_REJECTED' ? '↩ Hoàn trả lại ví'
+                                      : tx.type}
+                                  </p>
+                                  {isRefund && (
+                                    <span className="text-[7px] font-black px-1 py-0.2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded uppercase">
+                                      100% Hoàn
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-[8px] font-mono text-neutral-500">{tx.referenceCode || 'Mã GD: #--'}</span>
+                                  {tx.createdAt && (
+                                    <span className="text-[8px] text-neutral-600">
+                                      · {new Date(tx.createdAt).toLocaleDateString('vi-VN')}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <span className={`text-[11px] font-black font-mono ${isCredit ? (isRefund ? 'text-emerald-400' : 'text-sky-400') : 'text-amber-400'}`}>
+                                  {isCredit ? '+' : '-'}
+                                  {Math.abs(Number(tx.amount)).toLocaleString('vi-VN')}đ
+                                </span>
+                                <p className="text-[8px] text-amber-500/70 opacity-0 group-hover:opacity-100 transition">Xem biên nhận →</p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                </div>
 
                 {withdrawals.length > 0 && (
                   <div>
@@ -1056,7 +1136,7 @@ export default function ProfileView() {
                           {withdrawLoading ? <RefreshCw className="h-3 w-3 animate-spin" /> : <ArrowUpRight className="h-3 w-3" />}
                           Gửi yêu cầu rút tiền
                         </button>
-                        <p className="text-[9px] text-neutral-600 leading-relaxed">Staff sẽ xem xét và chuyển khoản thủ công trong vòng 1-3 ngày làm việc.</p>
+                        <p className="text-[9px] text-neutral-600 leading-relaxed">Quản trị viên (Admin) sẽ xem xét và chuyển khoản thủ công trong vòng 1-3 ngày làm việc.</p>
                       </div>
                     </motion.div>
                   )}
@@ -1600,6 +1680,146 @@ export default function ProfileView() {
 
           </div>
         </>
+      )}
+
+      {/* ── MODAL CHI TIẾT GIAO DỊCH VÍ / HOÀN TIỀN VÉ ── */}
+      {selectedTxDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg border border-amber-500/30 bg-[#0c0c0c] shadow-2xl p-6 space-y-5">
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-white/10 pb-4">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded flex items-center justify-center ${
+                  selectedTxDetail.type === 'REFUND_CREDIT'
+                    ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
+                    : 'bg-amber-500/20 border border-amber-500/40 text-amber-400'
+                }`}>
+                  {selectedTxDetail.type === 'REFUND_CREDIT' ? (
+                    <CheckCircle2 className="h-5 w-5" />
+                  ) : (
+                    <ArrowUpRight className="h-5 w-5" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-sm font-black uppercase tracking-[0.15em] text-white">
+                    {selectedTxDetail.type === 'REFUND_CREDIT'
+                      ? 'Biên nhận hoàn tiền vé'
+                      : selectedTxDetail.type === 'WITHDRAWAL_HOLD'
+                      ? 'Chi tiết yêu cầu rút tiền'
+                      : selectedTxDetail.type === 'WITHDRAWAL_REJECTED'
+                      ? 'Biên nhận hoàn trả số dư rút'
+                      : 'Chi tiết giao dịch ví'}
+                  </h3>
+                  <p className="text-[10px] text-neutral-400">
+                    {selectedTxDetail.type === 'REFUND_CREDIT'
+                      ? 'Hoàn 100% tiền vé trực tiếp vào số dư ví CineWallet'
+                      : 'Mã đối soát giao dịch hệ thống CinePremier'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedTxDetail(null)}
+                className="text-neutral-500 hover:text-white p-1 transition"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Số tiền biến động */}
+            <div className="text-center py-4 bg-black/60 border border-white/5 rounded space-y-1">
+              <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Số tiền giao dịch</p>
+              <p className={`text-2xl font-mono font-black ${
+                selectedTxDetail.type === 'REFUND_CREDIT'
+                  ? 'text-emerald-400'
+                  : selectedTxDetail.type === 'WITHDRAWAL_REJECTED'
+                  ? 'text-sky-400'
+                  : 'text-amber-400'
+              }`}>
+                {selectedTxDetail.type === 'REFUND_CREDIT' || selectedTxDetail.type === 'WITHDRAWAL_REJECTED' ? '+' : '-'}
+                {Math.abs(Number(selectedTxDetail.amount || 0)).toLocaleString('vi-VN')}đ
+              </p>
+              <div className="inline-block mt-1">
+                <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
+                  selectedTxDetail.type === 'REFUND_CREDIT'
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                }`}>
+                  {selectedTxDetail.type === 'REFUND_CREDIT' ? 'Đã hoàn tiền vào ví thành công (100%)' : 'Giao dịch thành công'}
+                </span>
+              </div>
+            </div>
+
+            {/* Thông số chi tiết */}
+            <div className="space-y-2 text-[11px]">
+              <div className="flex items-center justify-between py-1.5 border-b border-white/5">
+                <span className="text-neutral-400">Mã giao dịch / Tham chiếu:</span>
+                <div className="flex items-center gap-1 font-mono font-bold text-white">
+                  <span>{selectedTxDetail.referenceCode || selectedTxDetail.id || 'N/A'}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(selectedTxDetail.referenceCode || selectedTxDetail.id || '');
+                      showToast('Đã sao chép mã giao dịch');
+                    }}
+                    className="text-neutral-500 hover:text-white p-0.5"
+                  >
+                    <Copy className="h-3 w-3" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between py-1.5 border-b border-white/5">
+                <span className="text-neutral-400">Thời gian ghi nhận:</span>
+                <span className="font-mono text-white">
+                  {selectedTxDetail.createdAt ? new Date(selectedTxDetail.createdAt).toLocaleString('vi-VN') : 'Vừa xong'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between py-1.5 border-b border-white/5">
+                <span className="text-neutral-400">Loại giao dịch:</span>
+                <span className="font-bold text-white">
+                  {selectedTxDetail.type === 'REFUND_CREDIT'
+                    ? 'Hoàn tiền vé (Refund Ticket)'
+                    : selectedTxDetail.type === 'WITHDRAWAL_HOLD'
+                    ? 'Khấu trừ rút tiền (Withdrawal Hold)'
+                    : selectedTxDetail.type === 'WITHDRAWAL_REJECTED'
+                    ? 'Hoàn tiền rút bị từ chối'
+                    : selectedTxDetail.type}
+                </span>
+              </div>
+
+              {selectedTxDetail.balanceAfter !== undefined && selectedTxDetail.balanceAfter !== null && (
+                <div className="flex items-center justify-between py-1.5 border-b border-white/5">
+                  <span className="text-neutral-400">Số dư ví sau GD:</span>
+                  <span className="font-mono font-bold text-amber-400">
+                    {Number(selectedTxDetail.balanceAfter).toLocaleString('vi-VN')}đ
+                  </span>
+                </div>
+              )}
+
+              <div className="py-2">
+                <span className="text-neutral-400 block mb-1">Mô tả / Ghi chú:</span>
+                <div className="p-2.5 bg-black/40 border border-white/5 rounded text-[10px] text-neutral-300 leading-relaxed italic">
+                  {selectedTxDetail.description || (
+                    selectedTxDetail.type === 'REFUND_CREDIT'
+                      ? 'Khoản hoàn trả 100% giá trị tiền vé của quý khách đã được cộng vào tài khoản ví CineWallet. Quý khách có thể sử dụng ngay để đặt các suất chiếu khác hoặc thực hiện rút về tài khoản ngân hàng.'
+                      : 'Giao dịch qua hệ thống thanh toán CinePremier.'
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Button đóng */}
+            <button
+              type="button"
+              onClick={() => setSelectedTxDetail(null)}
+              className="w-full bg-white hover:bg-neutral-200 text-black py-2.5 text-[10px] font-black uppercase tracking-widest transition"
+            >
+              Đóng biên nhận
+            </button>
+          </div>
+        </div>
       )}
 
     </div>
