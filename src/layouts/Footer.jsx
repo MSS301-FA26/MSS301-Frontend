@@ -202,19 +202,7 @@ export default function Footer({ onTabChange = () => { }, cinema = null }) {
               </li>
             </ul>
 
-            {/* Payment partners badges */}
-            <div className="mt-3.5 pt-3 border-t border-white/[0.08]">
-              <p className="text-[9.5px] font-bold uppercase tracking-wider text-neutral-400 mb-1.5">
-                Phương thức thanh toán
-              </p>
-              <div className="flex flex-wrap items-center gap-1.5 text-[9px] font-mono font-bold text-neutral-300">
-                <span className="rounded-none border border-white/10 bg-white/5 px-1.5 py-0.5">VISA</span>
-                <span className="rounded-none border border-white/10 bg-white/5 px-1.5 py-0.5">MASTERCARD</span>
-                <span className="rounded-none border border-white/10 bg-white/5 px-1.5 py-0.5">NAPAS</span>
-                <span className="rounded-none border border-white/10 bg-white/5 px-1.5 py-0.5 text-pink-400">MOMO</span>
-                <span className="rounded-none border border-white/10 bg-white/5 px-1.5 py-0.5 text-blue-400">ZALOPAY</span>
-              </div>
-            </div>
+
           </div>
 
         </div>

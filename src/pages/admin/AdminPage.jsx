@@ -70,7 +70,7 @@ const SECTION_TITLE = {
   actors: 'Diễn viên', directors: 'Đạo diễn', foods: 'Bắp nước / F&B', rooms: 'Phòng chiếu & ghế', pricing: 'Bảng giá vé', settings: 'Cấu hình hệ thống',
   'hero-banners': 'Quản lý Hero Banner',
   showtimes: 'Điều phối lịch chiếu', tickets: 'Quản lý vé', transactions: 'Giao dịch',
-  'showtime-incidents': 'Báo cáo sự cố & hoàn tiền', 'fnb-report': 'Báo cáo F&B',
+  'showtime-incidents': 'Sự cố & Xử lý hoàn tiền', 'fnb-report': 'Báo cáo F&B',
   statistics: 'Thống kê mua bán', audit: 'Audit log', users: 'Quản lý người dùng', staff: 'Nhân viên cụm rạp',
   reviews: 'Đánh giá phim', loyalty: 'Quản lý điểm', cinewallet: 'CineWallet', cinema: 'Hệ thống cụm rạp',
 };
@@ -968,6 +968,9 @@ export default function AdminDashboard({
     if (isEffectiveManager && !MANAGER_ALLOWED_TABS.includes(activeTab)) {
       changeAdminSection('overview');
     }
+    if (!isEffectiveManager && activeTab === 'showtime-incidents') {
+      changeAdminSection('overview');
+    }
   }, [activeTab, isEffectiveManager]);
 
   useEffect(() => {
@@ -1836,7 +1839,6 @@ export default function AdminDashboard({
                 { icon: Layers, tab: 'rooms', sound: 470 },
                 { icon: Calendar, tab: 'showtimes', sound: 480 },
                 { icon: DollarSign, tab: 'pricing', sound: 475 },
-                { icon: AlertCircle, tab: 'showtime-incidents', sound: 486 },
                 { icon: FileText, tab: 'tickets', sound: 492 },
                 { icon: FileText, tab: 'transactions', sound: 500 },
                 null,
@@ -1906,7 +1908,9 @@ export default function AdminDashboard({
                 <NavItem indent icon={Layers} label="Phòng chiếu & ghế" active={activeTab === 'rooms'} onClick={() => { playPulseSound(470, 'sine', 0.05); changeAdminSection('rooms'); }} />
                 <NavItem indent icon={Calendar} label="Điều phối lịch chiếu" active={activeTab === 'showtimes'} onClick={() => { playPulseSound(480, 'sine', 0.05); changeAdminSection('showtimes'); }} />
                 <NavItem indent icon={DollarSign} label="Bảng giá vé" active={activeTab === 'pricing'} onClick={() => { playPulseSound(475, 'sine', 0.05); changeAdminSection('pricing'); }} />
-                <NavItem indent icon={AlertCircle} label="Báo cáo sự cố & hoàn tiền" active={activeTab === 'showtime-incidents'} onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('showtime-incidents'); }} />
+                {isEffectiveManager && (
+                  <NavItem indent icon={AlertCircle} label="Sự cố & Xử lý hoàn tiền" active={activeTab === 'showtime-incidents'} onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('showtime-incidents'); }} />
+                )}
                 <NavItem indent icon={FileText} label="Quản lý vé" active={activeTab === 'tickets'} onClick={() => { playPulseSound(492, 'sine', 0.05); changeAdminSection('tickets'); }} />
                 {isEffectiveAdmin && (
                   <NavItem indent icon={FileText} label="Giao dịch" active={activeTab === 'transactions'} onClick={() => { playPulseSound(500, 'sine', 0.05); changeAdminSection('transactions'); }} />
@@ -2279,19 +2283,21 @@ export default function AdminDashboard({
                       {activeTab === 'showtimes' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
                     </button>
 
-                    <button
-                      onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('showtime-incidents'); }}
-                      className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'showtime-incidents'
-                        ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
-                        : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
-                        }`}
-                    >
-                      <span className="flex items-center space-x-2.5">
-                        <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" />
-                        <span className="whitespace-nowrap">BÁO CÁO SỰ CỐ &amp; HOÀN TIỀN</span>
-                      </span>
-                      {activeTab === 'showtime-incidents' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
-                    </button>
+                    {isEffectiveManager && (
+                      <button
+                        onClick={() => { playPulseSound(486, 'sine', 0.05); changeAdminSection('showtime-incidents'); }}
+                        className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'showtime-incidents'
+                          ? 'border-amber-500/35 bg-amber-500/10 text-amber-400 font-black'
+                          : 'border-white/5 bg-black/40 text-neutral-200 hover:text-white hover:border-white/[0.05]'
+                          }`}
+                      >
+                        <span className="flex items-center space-x-2.5">
+                          <AlertCircle className="h-4 w-4 shrink-0 text-amber-500" />
+                          <span className="whitespace-nowrap">SỰ CỐ &amp; XỬ LÝ HOÀN TIỀN</span>
+                        </span>
+                        {activeTab === 'showtime-incidents' && <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse"></span>}
+                      </button>
+                    )}
                     <button
                       onClick={() => { playPulseSound(492, 'sine', 0.05); changeAdminSection('tickets'); }}
                       className={`w-full flex items-center justify-between px-3 py-3 text-[10.5px] font-sans uppercase font-black tracking-wide transition-all duration-300 border ${activeTab === 'tickets'

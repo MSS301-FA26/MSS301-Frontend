@@ -2,9 +2,14 @@ import React, { useEffect, useState, useMemo } from 'react';
 import {
   Building2, Plus, Edit3, Trash2, Power, RefreshCw, Save,
   MapPin, Phone, Globe2, ShieldCheck, CheckCircle2, AlertCircle,
-  Search, X, Sparkles, Layers, Info
+  Search, X, Sparkles, Layers, Info, Loader2, Navigation, Check
 } from 'lucide-react';
 import { adminService } from '../../../services/adminService';
+import {
+  getGhnProvinces,
+  getGhnDistricts,
+  getGhnWards
+} from '../../../services/ghnService';
 
 const emptyForm = {
   id: null,
@@ -20,9 +25,9 @@ const COMMON_CITIES = ['TP. Hồ Chí Minh', 'Hà Nội', 'Đà Nẵng', 'Hải 
 export default function AdminCinemaPanel({ ctx = {} }) {
   const {
     getAdminToken = () => null,
-    showToast = () => {},
-    addAuditLog = () => {},
-    onCinemaChanged = () => {},
+    showToast = () => { },
+    addAuditLog = () => { },
+    onCinemaChanged = () => { },
     isAdmin = false,
     isManager = false,
     currentUser = null
@@ -44,6 +49,19 @@ export default function AdminCinemaPanel({ ctx = {} }) {
   const [isSaving, setIsSaving] = useState(false);
   const [modalForm, setModalForm] = useState(emptyForm);
   const [formError, setFormError] = useState('');
+
+  // GHN Address Integration State
+  const [ghnProvinces, setGhnProvinces] = useState([]);
+  const [isGhnLoading, setIsGhnLoading] = useState(false);
+  const [ghnStatus, setGhnStatus] = useState({ isLive: false, message: '' });
+  const [selectedProvinceId, setSelectedProvinceId] = useState('');
+  const [ghnDistricts, setGhnDistricts] = useState([]);
+  const [selectedDistrictId, setSelectedDistrictId] = useState('');
+  const [isDistrictsLoading, setIsDistrictsLoading] = useState(false);
+  const [ghnWards, setGhnWards] = useState([]);
+  const [selectedWardCode, setSelectedWardCode] = useState('');
+  const [isWardsLoading, setIsWardsLoading] = useState(false);
+  const [streetAddress, setStreetAddress] = useState('');
 
   // Delete Confirm State
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
@@ -83,8 +101,24 @@ export default function AdminCinemaPanel({ ctx = {} }) {
     }
   };
 
+  const fetchProvincesFromGhn = async () => {
+    setIsGhnLoading(true);
+    try {
+      const res = await getGhnProvinces();
+      setGhnProvinces(res.data || []);
+      setGhnStatus({ isLive: res.isLive, message: res.message });
+      return res.data || [];
+    } catch (e) {
+      console.warn('Lỗi lấy danh sách tỉnh từ GHN:', e);
+      return [];
+    } finally {
+      setIsGhnLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadData();
+    fetchProvincesFromGhn();
   }, []);
 
   // Filtered cinemas
@@ -116,40 +150,276 @@ export default function AdminCinemaPanel({ ctx = {} }) {
     return Array.from(set);
   }, [cinemas]);
 
+  const composeFullAddress = (street, wardName, distName, provName) => {
+    const parts = [];
+    if (street && street.trim()) parts.push(street.trim());
+    if (wardName && wardName.trim()) parts.push(wardName.trim());
+    if (distName && distName.trim()) parts.push(distName.trim());
+    if (provName && provName.trim()) parts.push(provName.trim());
+    return parts.join(', ');
+  };
+
+  // GHN Handlers
+  const handleProvinceChange = async (provId, currentProvinces = ghnProvinces) => {
+    setSelectedProvinceId(provId);
+    setSelectedDistrictId('');
+    setSelectedWardCode('');
+    setGhnDistricts([]);
+    setGhnWards([]);
+
+    const foundProv = (currentProvinces || []).find((p) => String(p.ProvinceID) === String(provId));
+    const cityName = foundProv ? foundProv.ProvinceName : '';
+    if (cityName) {
+      setModalForm((prev) => ({
+        ...prev,
+        city: cityName,
+        address: composeFullAddress(streetAddress, '', '', cityName)
+      }));
+    }
+
+    if (provId) {
+      setIsDistrictsLoading(true);
+      try {
+        const dRes = await getGhnDistricts(provId);
+        if (dRes.success && Array.isArray(dRes.data)) {
+          setGhnDistricts(dRes.data);
+        }
+      } catch (err) {
+        console.warn('Lỗi lấy quận huyện từ GHN:', err);
+      } finally {
+        setIsDistrictsLoading(false);
+      }
+    }
+  };
+
+  const handleDistrictChange = async (distId) => {
+    setSelectedDistrictId(distId);
+    setSelectedWardCode('');
+    setGhnWards([]);
+
+    const prov = ghnProvinces.find((p) => String(p.ProvinceID) === String(selectedProvinceId));
+    const dist = ghnDistricts.find((d) => String(d.DistrictID) === String(distId));
+
+    setModalForm((prev) => ({
+      ...prev,
+      address: composeFullAddress(streetAddress, '', dist?.DistrictName || '', prov?.ProvinceName || prev.city)
+    }));
+
+    if (distId) {
+      setIsWardsLoading(true);
+      try {
+        const wRes = await getGhnWards(distId);
+        if (wRes.success && Array.isArray(wRes.data)) {
+          setGhnWards(wRes.data);
+        }
+      } catch (err) {
+        console.warn('Lỗi lấy phường xã từ GHN:', err);
+      } finally {
+        setIsWardsLoading(false);
+      }
+    }
+  };
+
+  const handleWardChange = (wardCode) => {
+    setSelectedWardCode(wardCode);
+    const prov = ghnProvinces.find((p) => String(p.ProvinceID) === String(selectedProvinceId));
+    const dist = ghnDistricts.find((d) => String(d.DistrictID) === String(selectedDistrictId));
+    const ward = ghnWards.find((w) => String(w.WardCode) === String(wardCode));
+
+    setModalForm((prev) => ({
+      ...prev,
+      address: composeFullAddress(streetAddress, ward?.WardName || '', dist?.DistrictName || '', prov?.ProvinceName || prev.city)
+    }));
+  };
+
+  const handleStreetChange = (val) => {
+    setStreetAddress(val);
+    const prov = ghnProvinces.find((p) => String(p.ProvinceID) === String(selectedProvinceId));
+    const dist = ghnDistricts.find((d) => String(d.DistrictID) === String(selectedDistrictId));
+    const ward = ghnWards.find((w) => String(w.WardCode) === String(selectedWardCode));
+
+    setModalForm((prev) => ({
+      ...prev,
+      address: composeFullAddress(val, ward?.WardName || '', dist?.DistrictName || '', prov?.ProvinceName || prev.city)
+    }));
+  };
+
   // Open Create Modal (Admin only)
-  const handleOpenCreate = () => {
+  const handleOpenCreate = async () => {
     if (!isAdmin) {
       showToast('Chỉ Quản trị viên hệ thống (Admin) mới có quyền tạo cụm rạp mới.', 'warning');
       return;
     }
+    const provs = ghnProvinces.length > 0 ? ghnProvinces : await fetchProvincesFromGhn();
+    const defaultProv =
+      provs.find((p) => p.ProvinceName.includes('Hồ Chí Minh')) ||
+      provs[0] ||
+      { ProvinceID: 202, ProvinceName: 'TP. Hồ Chí Minh' };
+
     setModalForm({
       id: null,
       name: '',
       address: '',
-      city: 'TP. Hồ Chí Minh',
+      city: defaultProv.ProvinceName,
       phone: '',
       status: 'ACTIVE'
     });
+    setStreetAddress('');
+    setSelectedDistrictId('');
+    setSelectedWardCode('');
+    setGhnDistricts([]);
+    setGhnWards([]);
     setFormError('');
     setIsModalOpen(true);
+
+    if (defaultProv.ProvinceID) {
+      handleProvinceChange(defaultProv.ProvinceID, provs);
+    }
   };
 
   // Open Edit Modal (Admin only)
-  const handleOpenEdit = (cinema) => {
+  const handleOpenEdit = async (cinema) => {
     if (!isAdmin) {
       showToast('Chỉ Quản trị viên hệ thống (Admin) mới có quyền chỉnh sửa chi nhánh rạp.', 'warning');
       return;
     }
+
+    // 1. Immediately populate modalForm so the user sees all current values instantly
     setModalForm({
       id: cinema.id,
       name: cinema.name || '',
       address: cinema.address || '',
       city: cinema.city || '',
-      phone: cinema.phone || '',
+      phone: (cinema.phone || '').replace(/\D/g, ''),
       status: cinema.status || 'ACTIVE'
     });
     setFormError('');
     setIsModalOpen(true);
+
+    // 2. Fetch or reuse GHN provinces
+    const provs = ghnProvinces.length > 0 ? ghnProvinces : await fetchProvincesFromGhn();
+
+    // 3. Match Province based on cinema.city or cinema.address
+    const rawCity = (cinema.city || '').trim().toLowerCase();
+    const rawAddr = (cinema.address || '').trim().toLowerCase();
+
+    let matchedProv = null;
+    if (rawCity) {
+      matchedProv = provs.find(
+        (p) =>
+          p.ProvinceName.toLowerCase() === rawCity ||
+          p.ProvinceName.toLowerCase().includes(rawCity) ||
+          rawCity.includes(p.ProvinceName.toLowerCase())
+      );
+    }
+    if (!matchedProv && rawAddr) {
+      matchedProv = provs.find((p) => rawAddr.includes(p.ProvinceName.toLowerCase()));
+    }
+
+    if (!matchedProv) {
+      setStreetAddress(cinema.address || '');
+      setSelectedProvinceId('');
+      setSelectedDistrictId('');
+      setSelectedWardCode('');
+      setGhnDistricts([]);
+      setGhnWards([]);
+      return;
+    }
+
+    setSelectedProvinceId(String(matchedProv.ProvinceID));
+
+    // 4. Load districts for this province
+    setIsDistrictsLoading(true);
+    let districts = [];
+    try {
+      const dRes = await getGhnDistricts(matchedProv.ProvinceID);
+      if (dRes.success && Array.isArray(dRes.data)) {
+        districts = dRes.data;
+        setGhnDistricts(districts);
+      }
+    } catch (err) {
+      console.warn('Lỗi lấy danh sách quận huyện khi chỉnh sửa:', err);
+    } finally {
+      setIsDistrictsLoading(false);
+    }
+
+    // 5. Match District from cinema.address (longest name first to avoid prefix collisions)
+    let matchedDist = null;
+    if (districts.length > 0 && rawAddr) {
+      const sortedDistricts = [...districts].sort(
+        (a, b) => (b.DistrictName || '').length - (a.DistrictName || '').length
+      );
+      matchedDist = sortedDistricts.find((d) =>
+        rawAddr.includes((d.DistrictName || '').toLowerCase())
+      );
+    }
+
+    if (!matchedDist) {
+      setSelectedDistrictId('');
+      setSelectedWardCode('');
+      setGhnWards([]);
+      let street = cinema.address || '';
+      if (matchedProv) {
+        street = street.replace(new RegExp(`,?\\s*${matchedProv.ProvinceName}`, 'gi'), '');
+      }
+      setStreetAddress(street.trim().replace(/^,\s*|,\s*$/g, ''));
+      return;
+    }
+
+    setSelectedDistrictId(String(matchedDist.DistrictID));
+
+    // 6. Load wards for this district
+    setIsWardsLoading(true);
+    let wards = [];
+    try {
+      const wRes = await getGhnWards(matchedDist.DistrictID);
+      if (wRes.success && Array.isArray(wRes.data)) {
+        wards = wRes.data;
+        setGhnWards(wards);
+      }
+    } catch (err) {
+      console.warn('Lỗi lấy danh sách phường xã khi chỉnh sửa:', err);
+    } finally {
+      setIsWardsLoading(false);
+    }
+
+    // 7. Match Ward from cinema.address
+    let matchedWard = null;
+    if (wards.length > 0 && rawAddr) {
+      const sortedWards = [...wards].sort(
+        (a, b) => (b.WardName || '').length - (a.WardName || '').length
+      );
+      matchedWard = sortedWards.find((w) =>
+        rawAddr.includes((w.WardName || '').toLowerCase())
+      );
+    }
+
+    if (matchedWard) {
+      setSelectedWardCode(String(matchedWard.WardCode));
+    } else {
+      setSelectedWardCode('');
+    }
+
+    // 8. Extract street address
+    const addrParts = (cinema.address || '').split(',').map((s) => s.trim()).filter(Boolean);
+    let extractedStreet = '';
+    if (addrParts.length >= 4) {
+      extractedStreet = addrParts.slice(0, addrParts.length - 3).join(', ');
+    } else {
+      let temp = cinema.address || '';
+      if (matchedProv) temp = temp.replace(new RegExp(`,?\\s*${matchedProv.ProvinceName}`, 'gi'), '');
+      if (matchedDist) temp = temp.replace(new RegExp(`,?\\s*${matchedDist.DistrictName}`, 'gi'), '');
+      if (matchedWard) temp = temp.replace(new RegExp(`,?\\s*${matchedWard.WardName}`, 'gi'), '');
+      extractedStreet = temp.trim().replace(/^,\s*|,\s*$/g, '');
+    }
+    setStreetAddress(extractedStreet || cinema.address || '');
+
+    // 9. Guarantee address and city keep cinema's exact saved values
+    setModalForm((prev) => ({
+      ...prev,
+      address: cinema.address || prev.address,
+      city: cinema.city || matchedProv.ProvinceName || prev.city
+    }));
   };
 
   // Submit Modal Form (Create or Update)
@@ -171,6 +441,21 @@ export default function AdminCinemaPanel({ ctx = {} }) {
       setFormError('Vui lòng nhập địa chỉ cụm rạp.');
       return;
     }
+
+    const cleanPhone = (modalForm.phone || '').trim();
+    if (!cleanPhone) {
+      setFormError('Vui lòng nhập số điện thoại hotline.');
+      return;
+    }
+    if (!/^\d+$/.test(cleanPhone)) {
+      setFormError('Số điện thoại hotline không được chứa chữ cái hay ký tự đặc biệt.');
+      return;
+    }
+    if (!cleanPhone.startsWith('0')) {
+      setFormError('Số điện thoại không đúng định dạng.');
+      return;
+    }
+
 
     setIsSaving(true);
     setFormError('');
@@ -420,11 +705,10 @@ export default function AdminCinemaPanel({ ctx = {} }) {
               return (
                 <div
                   key={cinema.id}
-                  className={`group relative border transition-all duration-300 bg-[#080808] p-5 sm:p-6 ${
-                    isActive
-                      ? 'border-white/10 hover:border-amber-500/50 hover:shadow-lg hover:shadow-amber-500/5'
-                      : 'border-white/5 opacity-75 hover:opacity-100 hover:border-white/20'
-                  }`}
+                  className={`group relative border transition-all duration-300 bg-[#080808] p-5 sm:p-6 ${isActive
+                    ? 'border-white/10 hover:border-amber-500/50 hover:shadow-lg hover:shadow-amber-500/5'
+                    : 'border-white/5 opacity-75 hover:opacity-100 hover:border-white/20'
+                    }`}
                 >
                   {/* Top Bar: Name, City, Status */}
                   <div className="flex items-start justify-between gap-3">
@@ -441,11 +725,10 @@ export default function AdminCinemaPanel({ ctx = {} }) {
                     </div>
 
                     <span
-                      className={`inline-flex items-center gap-1.5 border px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.16em] ${
-                        isActive
-                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-                          : 'border-rose-500/30 bg-rose-500/10 text-rose-400'
-                      }`}
+                      className={`inline-flex items-center gap-1.5 border px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.16em] ${isActive
+                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
+                        : 'border-rose-500/30 bg-rose-500/10 text-rose-400'
+                        }`}
                     >
                       <span className={`h-1.5 w-1.5 rounded-full ${isActive ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'}`} />
                       {isActive ? 'Hoạt động' : 'Tạm dừng'}
@@ -492,11 +775,10 @@ export default function AdminCinemaPanel({ ctx = {} }) {
                           <button
                             type="button"
                             onClick={() => handleToggleStatus(cinema)}
-                            className={`flex items-center gap-1.5 border px-3 py-2 text-[9px] font-black uppercase tracking-wider transition cursor-pointer ${
-                              isActive
-                                ? 'border-white/10 bg-white/5 text-neutral-400 hover:border-rose-500/40 hover:text-rose-400'
-                                : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-                            }`}
+                            className={`flex items-center gap-1.5 border px-3 py-2 text-[9px] font-black uppercase tracking-wider transition cursor-pointer ${isActive
+                              ? 'border-white/10 bg-white/5 text-neutral-400 hover:border-rose-500/40 hover:text-rose-400'
+                              : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+                              }`}
                           >
                             <Power className="h-3 w-3" /> {isActive ? 'Tạm dừng' : 'Kích hoạt'}
                           </button>
@@ -547,9 +829,9 @@ export default function AdminCinemaPanel({ ctx = {} }) {
       {/* ── MODAL: CREATE / EDIT CINEMA (Admin Only) ───────────────────────────────────────── */}
       {isModalOpen && isAdmin && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-lg border border-white/15 bg-[#0a0a0a] shadow-2xl relative">
+          <div className="w-full max-w-xl border border-white/15 bg-[#0a0a0a] shadow-2xl relative max-h-[92vh] flex flex-col">
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+            <div className="flex items-center justify-between border-b border-white/10 px-6 py-4 shrink-0">
               <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-amber-400">
                 <Building2 className="h-4 w-4" />
                 {modalForm.id ? `Chỉnh sửa cụm rạp #${modalForm.id}` : 'Thêm chi nhánh rạp mới'}
@@ -564,7 +846,7 @@ export default function AdminCinemaPanel({ ctx = {} }) {
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleSubmitModal} className="p-6 space-y-4">
+            <form onSubmit={handleSubmitModal} className="p-6 space-y-4 overflow-y-auto">
               {formError && (
                 <div className="flex items-center gap-2.5 border border-rose-500/40 bg-rose-500/10 p-3 text-xs text-rose-300">
                   <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
@@ -587,53 +869,163 @@ export default function AdminCinemaPanel({ ctx = {} }) {
                 />
               </label>
 
-              {/* Tỉnh / Thành phố */}
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block space-y-1.5">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-neutral-300">
-                    Tỉnh / Thành phố
-                  </span>
-                  <input
-                    type="text"
-                    value={modalForm.city}
-                    onChange={(e) => setModalForm({ ...modalForm, city: e.target.value })}
-                    placeholder="TP. Hồ Chí Minh"
-                    list="city-suggestions"
-                    className="h-11 w-full border border-white/10 bg-black px-3.5 text-xs text-white placeholder-neutral-600 outline-none transition focus:border-amber-400"
-                  />
-                  <datalist id="city-suggestions">
-                    {COMMON_CITIES.map((c) => (
-                      <option key={c} value={c} />
-                    ))}
-                  </datalist>
-                </label>
+              {/* GHN Master Data Address Section */}
+              <div className="border border-white/10 bg-white/[0.02] p-4 space-y-3.5">
+                <div className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-wider text-amber-400">
+                  <MapPin className="h-3.5 w-3.5" />
+                  <span>Chọn địa chỉ qua GHN (Master Data API)</span>
+                  {isGhnLoading && <Loader2 className="h-3 w-3 animate-spin text-amber-400 ml-1" />}
+                </div>
 
-                {/* Hotline */}
+                {/* Tỉnh / Thành phố & Hotline */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="block space-y-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-neutral-300">
+                      Tỉnh / Thành phố (GHN) <span className="text-amber-400">*</span>
+                    </span>
+                    <select
+                      value={selectedProvinceId}
+                      onChange={(e) => handleProvinceChange(e.target.value)}
+                      className="h-11 w-full border border-white/10 bg-black px-3 text-xs text-white outline-none transition focus:border-amber-400 cursor-pointer"
+                    >
+                      <option value="">-- Chọn Tỉnh / Thành phố --</option>
+                      {ghnProvinces.map((p) => (
+                        <option key={p.ProvinceID} value={p.ProvinceID} className="bg-neutral-900 text-white">
+                          {p.ProvinceName}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-neutral-300">
+                        Số điện thoại hotline <span className="text-amber-400">*</span>
+                      </span>
+                      <span className={`text-[9px] font-mono ${modalForm.phone.length === 10 && modalForm.phone.startsWith('0') ? 'text-emerald-400' : 'text-neutral-400'}`}>
+                        {modalForm.phone.length}/10 số (bắt đầu bằng 0)
+                      </span>
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      maxLength={10}
+                      value={modalForm.phone}
+                      onChange={(e) => {
+                        const digitsOnly = e.target.value.replace(/\D/g, '').slice(0, 10);
+                        setModalForm({ ...modalForm, phone: digitsOnly });
+                        if (formError && digitsOnly.length === 10 && digitsOnly.startsWith('0')) {
+                          setFormError('');
+                        }
+                      }}
+                      placeholder="Ví dụ: 0901234567 hoặc 0901999199"
+                      className="h-11 w-full border border-white/10 bg-black px-3.5 text-xs text-white placeholder-neutral-600 outline-none transition focus:border-amber-400 font-mono"
+                    />
+                    {modalForm.phone.length > 0 && (!modalForm.phone.startsWith('0') || modalForm.phone.length !== 10) && (
+                      <span className="text-[10px] text-amber-400 font-medium block">
+                        {!modalForm.phone.startsWith('0')
+                          ? '⚠️ Hotline phải bắt đầu bằng số 0 (Backend không hỗ trợ đầu 1900/1800)'
+                          : `⚠️ Hotline cần đủ 10 chữ số (hiện có ${modalForm.phone.length}/10 số)`}
+                      </span>
+                    )}
+                  </label>
+                </div>
+
+                {/* Quận / Huyện & Phường / Xã (Always Visible!) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="block space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-neutral-300">
+                        Quận / Huyện (GHN)
+                      </span>
+                      {isDistrictsLoading && (
+                        <span className="flex items-center gap-1 text-[9px] text-amber-400">
+                          <Loader2 className="h-2.5 w-2.5 animate-spin" /> Đang tải...
+                        </span>
+                      )}
+                    </div>
+                    <select
+                      value={selectedDistrictId}
+                      onChange={(e) => handleDistrictChange(e.target.value)}
+                      disabled={!selectedProvinceId || isDistrictsLoading}
+                      className="h-11 w-full border border-white/10 bg-black px-3 text-xs text-white outline-none transition focus:border-amber-400 disabled:opacity-50 cursor-pointer"
+                    >
+                      <option value="">
+                        {!selectedProvinceId
+                          ? '-- Chọn Tỉnh/Thành trước --'
+                          : isDistrictsLoading
+                            ? 'Đang tải Quận/Huyện...'
+                            : '-- Chọn Quận / Huyện --'}
+                      </option>
+                      {ghnDistricts.map((d) => (
+                        <option key={d.DistrictID} value={d.DistrictID} className="bg-neutral-900 text-white">
+                          {d.DistrictName}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-neutral-300">
+                        Phường / Xã (GHN)
+                      </span>
+                      {isWardsLoading && (
+                        <span className="flex items-center gap-1 text-[9px] text-amber-400">
+                          <Loader2 className="h-2.5 w-2.5 animate-spin" /> Đang tải...
+                        </span>
+                      )}
+                    </div>
+                    <select
+                      value={selectedWardCode}
+                      onChange={(e) => handleWardChange(e.target.value)}
+                      disabled={!selectedDistrictId || isWardsLoading}
+                      className="h-11 w-full border border-white/10 bg-black px-3 text-xs text-white outline-none transition focus:border-amber-400 disabled:opacity-50 cursor-pointer"
+                    >
+                      <option value="">
+                        {!selectedDistrictId
+                          ? '-- Chọn Quận/Huyện trước --'
+                          : isWardsLoading
+                            ? 'Đang tải Phường/Xã...'
+                            : '-- Chọn Phường / Xã --'}
+                      </option>
+                      {ghnWards.map((w) => (
+                        <option key={w.WardCode} value={w.WardCode} className="bg-neutral-900 text-white">
+                          {w.WardName}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                {/* Số nhà, tên đường (tùy chọn) */}
                 <label className="block space-y-1.5">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-neutral-300">
-                    Số điện thoại hotline
+                  <span className="text-[10px] font-black uppercase tracking-wider text-neutral-400">
+                    Số nhà / Tòa nhà / Tên đường (tùy chọn)
                   </span>
                   <input
                     type="text"
-                    value={modalForm.phone}
-                    onChange={(e) => setModalForm({ ...modalForm, phone: e.target.value })}
-                    placeholder="0901234567"
-                    className="h-11 w-full border border-white/10 bg-black px-3.5 text-xs text-white placeholder-neutral-600 outline-none transition focus:border-amber-400 font-mono"
+                    value={streetAddress}
+                    onChange={(e) => handleStreetChange(e.target.value)}
+                    placeholder="Ví dụ: Tầng B1, Tòa nhà Landmark 81, 720A Điện Biên Phủ"
+                    className="h-10 w-full border border-white/10 bg-black px-3 text-xs text-white placeholder-neutral-600 outline-none transition focus:border-amber-400"
                   />
                 </label>
               </div>
 
-              {/* Địa chỉ đầy đủ */}
+              {/* Địa chỉ chi tiết */}
               <label className="block space-y-1.5">
                 <span className="text-[10px] font-black uppercase tracking-wider text-neutral-300">
                   Địa chỉ chi tiết <span className="text-amber-400">*</span>
                 </span>
                 <textarea
                   required
-                  rows={3}
+                  rows={2}
                   value={modalForm.address}
                   onChange={(e) => setModalForm({ ...modalForm, address: e.target.value })}
-                  placeholder="Ví dụ: Tầng B1, Tòa nhà Landmark 81, 720A Điện Biên Phủ, P. 22, Bình Thạnh"
+                  placeholder="Ví dụ: Tầng B1, Tòa nhà Landmark 81, 720A Điện Biên Phủ, Phường 22, Quận Bình Thạnh, TP. Hồ Chí Minh"
                   className="w-full border border-white/10 bg-black p-3.5 text-xs text-white placeholder-neutral-600 outline-none transition focus:border-amber-400 resize-none"
                 />
               </label>

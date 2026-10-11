@@ -789,6 +789,7 @@ export default function ConcessionsPage() {
           <img
             src={item.imageUrl || fallbackImage}
             alt={item.name}
+            onError={(e) => { e.currentTarget.src = fallbackImage; }}
             className={`h-full w-full object-cover transition-transform duration-500 ${
               !isOutOfStock && 'group-hover:scale-105'
             }`}
