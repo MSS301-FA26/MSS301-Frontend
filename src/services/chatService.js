@@ -18,14 +18,12 @@ export const clearAllStoredConversationIds = () => {
     .forEach((key) => localStorage.removeItem(key));
 };
 
-// Ollama chạy local trên CPU có thể mất 15-60s+ mỗi lượt (cold start, tool-calling nhiều vòng),
-// nên chat cần timeout dài hơn hẳn timeout mặc định 30s của axios cho các API khác.
 const CHAT_TIMEOUT_MS = 120000;
 
 export const chatService = {
   sendMessage: ({ message, movieId, userId, token, scope = 'default' }) => {
     const conversationId = getStoredConversationId(scope);
-    return request('/api/v1/chat', {
+    return request('/api/v1/chat/message', {
       method: 'POST',
       body: { message, movieId, userId, conversationId },
       token,

@@ -28,12 +28,11 @@ const normalizeRecommendation = (item = {}) => {
       backendId: movieId,
       posterUrl
     }),
-    similarity: typeof item.similarity === 'number' ? item.similarity : null,
+    similarity: typeof item.similarity === 'number' ? item.similarity : (typeof item.score === 'number' ? item.score : null),
     ...pickRecExplanation(item)
   };
 };
 
-// Explanation metadata từ recommender (source/reason/...) — giữ nguyên khi normalize
 export const REC_EXPLANATION_FIELDS = [
   'source', 'reason', 'predictedRating', 'neighborCount', 'anchorTitle',
   'matchedGenres', 'matchedActors', 'sameDirector', 'directorName',
@@ -46,6 +45,7 @@ export const pickRecExplanation = (item = {}) => {
     if (item[key] !== undefined && item[key] !== null) out[key] = item[key];
   }
   if (typeof item.similarity === 'number') out.similarity = item.similarity;
+  else if (typeof item.score === 'number') out.similarity = item.score;
   return out;
 };
 
@@ -53,14 +53,11 @@ export const normalizeRecommendationResponse = (payload) =>
   unwrapListPayload(payload).map(normalizeRecommendation);
 
 export const recommendationService = {
-  // Content-based: "similar movies" — public endpoint
   getContentRecommendations: (movieId) =>
-    request(`/api/v1/recommendation/content/${encodeURIComponent(movieId)}`)
+    request(`/api/v1/recommendations/movies/${encodeURIComponent(movieId)}/similar`)
       .then(normalizeRecommendationResponse),
-  // Collaborative: "recommended for you" — requires auth token
   getCollaborativeRecommendations: (userId, token) =>
-    request(`/api/v1/recommendation/collaborative/${encodeURIComponent(userId)}`, { token })
+    request(`/api/v1/recommendations/users/${encodeURIComponent(userId)}`, { token })
       .then(normalizeRecommendationResponse),
-  // Live stats: số liệu thật hệ gợi ý đang phân tích (modal "Cách hoạt động") — public
-  getRecommendationStats: () => request('/api/v1/recommendation/stats')
+  getRecommendationStats: () => request('/api/v1/recommendations/metrics')
 };
