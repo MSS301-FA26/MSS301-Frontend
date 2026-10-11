@@ -1264,7 +1264,7 @@ export default function ProfileView() {
                     >
                       <span className="flex items-center gap-2.5 font-bold uppercase tracking-wider">
                         <CreditCard className={`h-4 w-4 ${activePanel === 'payment' ? 'text-amber-400' : 'text-neutral-500'}`} />
-                        Phương thức thanh toán VIP
+                        Phương thức thanh toán
                       </span>
                       <ChevronDown className={`h-3.5 w-3.5 text-neutral-500 transition-transform duration-300 ${activePanel === 'payment' ? 'rotate-180 text-white' : ''
                         }`} />

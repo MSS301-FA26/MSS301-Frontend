@@ -159,6 +159,14 @@ export const adminService = {
   upsertAudiencePrice: (token, cinemaId, payload) =>
     request(`/api/v1/admin/cinemas/${enc(cinemaId)}/audience-prices`, { method: 'PUT', token, body: payload }),
 
+  /** Get weekend and holiday surcharges for a cinema. */
+  getDaySurcharges: (token, cinemaId) =>
+    request(`/api/v1/admin/cinemas/${enc(cinemaId)}/day-surcharges`, { token }),
+
+  /** Upsert weekend and holiday surcharges for a cinema. */
+  updateDaySurcharges: (token, cinemaId, payload) =>
+    request(`/api/v1/admin/cinemas/${enc(cinemaId)}/day-surcharges`, { method: 'PUT', token, body: payload }),
+
   // CineWallet
   getWalletDashboard:       (token) => request('/api/v1/admin/wallet/dashboard', { token }),
   getAdminWithdrawals:      (token, params = {}) => request(`/api/v1/admin/wallet/withdrawals${buildQueryString(params)}`, { token }),

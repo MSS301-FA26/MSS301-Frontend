@@ -6,7 +6,7 @@ import { movieService } from '../../../services/movieService';
 const CLEAN = 15; // 15 phút dọn phòng
 const ADS = 10;   // 10 phút quảng cáo
 const OPEN = 8;   // Giờ mở cửa 08:00
-const CLOSE = 25; // 01:00 sáng hôm sau (25h)
+const CLOSE = 28; // 04:00 sáng hôm sau (28h) - mở rộng khung giờ để hiển thị trọn vẹn suất chiếu đêm (22h - 3h sáng)
 const DOW = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
 
 const MOVIE_PALETTE = [
@@ -38,7 +38,8 @@ const getApiErrorMessage = (err, fallback = 'Có lỗi xảy ra khi thực hiệ
 const toMin = (t) => {
   if (!t) return 0;
   const [h, m] = t.split(':').map(Number);
-  return (h || 0) * 60 + (m || 0);
+  const hour = (h < 6) ? h + 24 : h;
+  return (hour || 0) * 60 + (m || 0);
 };
 const toT = (m) => {
   const safeM = Math.max(0, m);
@@ -47,6 +48,10 @@ const toT = (m) => {
   return `${pad(h)}:${pad(min)}`;
 };
 const fmtVN = (n) => (n || 0).toLocaleString('vi-VN');
+const formatVnd = (value) => {
+  if (value === null || value === undefined || value === '') return '0đ';
+  return `${Number(value).toLocaleString('vi-VN')}đ`;
+};
 const addDays = (s, n) => {
   const d = new Date(s + 'T00:00:00');
   d.setDate(d.getDate() + n);
@@ -105,6 +110,33 @@ export default function AdminShowtimesPanel({ ctx }) {
 
   /* State */
   const [date, setDate] = useState(() => getTomorrowStr());
+  const [daySurcharges, setDaySurcharges] = useState({ weekendSurcharge: 100000, holidaySurcharge: 200000, nightSurcharge: 20000 });
+  const [isHolidayDate, setIsHolidayDate] = useState(false);
+
+  // Helper check weekend (0: Sunday, 6: Saturday)
+  const isWeekendDay = (dateStr) => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr + 'T00:00:00');
+    const day = d.getDay();
+    return day === 0 || day === 6;
+  };
+
+  // Helper check night showtime (22:00 - 03:00)
+  const isNightTime = (timeStr) => {
+    if (!timeStr) return false;
+    const h = parseInt(String(timeStr).split(':')[0], 10);
+    return !isNaN(h) && (h >= 22 || h < 3);
+  };
+
+  const getDayTypeLabel = (dateStr, isHoliday = false) => {
+    if (isHoliday) return 'Ngày lễ';
+    if (!dateStr) return 'Ngày thường';
+    const d = new Date(dateStr + 'T00:00:00');
+    const day = d.getDay();
+    if (day === 0) return 'Chủ Nhật';
+    if (day === 6) return 'Thứ Bảy';
+    return 'Ngày thường';
+  };
   const [view, setView] = useState('day'); // 'day' | 'week'
   const [rooms, setRooms] = useState([]);
   const [adminMovies, setAdminMovies] = useState([]);
@@ -112,6 +144,38 @@ export default function AdminShowtimesPanel({ ctx }) {
   const [loading, setLoading] = useState(false);
   const [cinemas, setCinemas] = useState([]);
   const [selectedCinemaId, setSelectedCinemaId] = useState(managerCinemaId || ctx?.assignedCinema?.id ? String(managerCinemaId || ctx?.assignedCinema?.id) : 'ALL');
+  const effectiveCinemaId = managerCinemaId || (selectedCinemaId && selectedCinemaId !== 'ALL' ? selectedCinemaId : (cinemas[0]?.id ? String(cinemas[0].id) : null));
+
+  // Load day surcharges (weekend, holiday, night) for cinema
+  useEffect(() => {
+    const cId = effectiveCinemaId || (selectedCinemaId && selectedCinemaId !== 'ALL' ? selectedCinemaId : null);
+    if (!cId) return;
+    const token = getTokenRef.current?.();
+    if (token && adminService.getDaySurcharges) {
+      adminService.getDaySurcharges(token, Number(cId)).then(res => {
+        const d = res?.data || res;
+        if (d) {
+          setDaySurcharges({
+            weekendSurcharge: Number(d.weekendSurcharge) || 100000,
+            holidaySurcharge: Number(d.holidaySurcharge) || 200000,
+            nightSurcharge: Number(d.nightSurcharge) || 20000
+          });
+        }
+      }).catch(() => {
+        try {
+          const stored = localStorage.getItem(`cinema_surcharges_${cId}`);
+          if (stored) {
+            const p = JSON.parse(stored);
+            setDaySurcharges({
+              weekendSurcharge: Number(p.weekendSurcharge) || 100000,
+              holidaySurcharge: Number(p.holidaySurcharge) || 200000,
+              nightSurcharge: Number(p.nightSurcharge) || 20000
+            });
+          }
+        } catch (_) {}
+      });
+    }
+  }, [effectiveCinemaId, selectedCinemaId]);
   const fetchRoomsReqIdRef = useRef(0);
   const fetchShowsReqIdRef = useRef(0);
   const fetchShowtimesRef = useRef(null);
@@ -162,12 +226,25 @@ export default function AdminShowtimesPanel({ ctx }) {
 
     let cancelled = false;
     setLoadingDetailPrice(true);
+    let timePart = s.start || '';
+    if (!timePart && s.startTime && s.startTime.includes('T')) {
+      timePart = s.startTime.split('T')[1].slice(0, 5);
+    }
+    if (!timePart) timePart = '09:00';
+    if (timePart.length === 5) timePart += ':00';
+    const startTimeStr = `${s.date || date}T${timePart}`;
+    const isWeekend = isWeekendDay(s.date || date);
+    const isHoliday = Boolean(s.isHoliday !== undefined ? s.isHoliday : (s.holidaySurcharge !== undefined ? s.holidaySurcharge : (s.raw?.holidaySurcharge !== undefined ? s.raw.holidaySurcharge : isHolidayDate)));
+
     adminService.previewShowtimePrices(token, {
       movieId: Number(s.movieId),
       slots: [{
         roomId: Number(s.roomId),
-        startTime: `${s.date}T${s.start || '09:00'}:00`,
-        tempId: String(s.id)
+        startTime: startTimeStr,
+        tempId: String(s.id),
+        weekendSurcharge: isWeekend,
+        holidaySurcharge: isHoliday,
+        lateNightSurchargeAmount: Number(daySurcharges?.nightSurcharge || 20000)
       }]
     }).then(res => {
       if (cancelled) return;
@@ -185,7 +262,7 @@ export default function AdminShowtimesPanel({ ctx }) {
     });
 
     return () => { cancelled = true; };
-  }, [selId, shows, draftShows]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selId, shows, draftShows, isHolidayDate]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* Timeline Scroll */
   const tlWrapRef = useRef(null);
@@ -499,6 +576,12 @@ export default function AdminShowtimesPanel({ ctx }) {
             vip: Number(s.vipPrice || s.adultVipPrice || 90000),
             couple: Number(s.couplePrice || s.adultCouplePrice || 150000)
           },
+          isHoliday: Boolean(s.holidaySurcharge !== undefined ? s.holidaySurcharge : s.isHoliday),
+          isWeekend: Boolean(s.weekendSurcharge !== undefined ? s.weekendSurcharge : s.isWeekend),
+          holidaySurcharge: Boolean(s.holidaySurcharge !== undefined ? s.holidaySurcharge : s.isHoliday),
+          weekendSurcharge: Boolean(s.weekendSurcharge !== undefined ? s.weekendSurcharge : s.isWeekend),
+          lateNightSurchargeAmount: Number(s.lateNightSurchargeAmount || 0),
+          surchargeAmount: Number(s.surchargeAmount || 0),
           raw: s
         };
       });
@@ -587,7 +670,6 @@ export default function AdminShowtimesPanel({ ctx }) {
     if (m.release && s.date < m.release) errs.push(`Phim khởi chiếu từ ${m.release}`);
     if (m.end && s.date > m.end) warns.push(`Phim đã hết hạn chiếu (${m.end})`);
     if (st < OPEN * 60) errs.push(`Rạp mở cửa từ ${pad(OPEN)}:00`);
-    if (en > CLOSE * 60) errs.push(`Suất kết thúc quá ${toT(CLOSE * 60)} (sau giờ đóng cửa)`);
 
     // Quy định: Suất chiếu phải được tạo trước ít nhất 1 ngày (từ ngày mai trở đi)
     if (s.date && s.date < getTomorrowStr()) {
@@ -694,6 +776,9 @@ export default function AdminShowtimesPanel({ ctx }) {
     const token = getTokenRef.current?.();
     if (token) {
       try {
+        const slotDate = date;
+        const isWk = isWeekendDay(slotDate);
+        const isHol = Boolean(isHolidayDate);
         const payload = {
           movieId: Number(movieId),
           roomId: Number(roomId),
@@ -701,6 +786,9 @@ export default function AdminShowtimesPanel({ ctx }) {
           basePrice: DEFAULT_PRICES[fmt]?.std || 60000,
           vipPrice: DEFAULT_PRICES[fmt]?.vip || 90000,
           couplePrice: DEFAULT_PRICES[fmt]?.couple || 150000,
+          weekendSurcharge: isWk,
+          holidaySurcharge: isHol,
+          lateNightSurchargeAmount: Number(daySurcharges?.nightSurcharge || 20000),
           status: 'SCHEDULED'
         };
         const created = await adminService.createAdminShowtime(token, payload);
@@ -754,6 +842,9 @@ export default function AdminShowtimesPanel({ ctx }) {
         const vipPrice = cand.price?.vip || cand.raw?.vipPrice || DEFAULT_PRICES[cand.fmt]?.vip || 90000;
         const couplePrice = cand.price?.couple || cand.raw?.couplePrice || DEFAULT_PRICES[cand.fmt]?.couple || 150000;
 
+        const slotDate = cand.date;
+        const isWk = isWeekendDay(slotDate) || Boolean(cand.isWeekend);
+        const isHol = Boolean(cand.isHoliday !== undefined ? cand.isHoliday : (cand.holidaySurcharge !== undefined ? cand.holidaySurcharge : (cand.raw?.holidaySurcharge !== undefined ? cand.raw.holidaySurcharge : isHolidayDate)));
         const payload = {
           movieId: Number(cand.movieId),
           roomId: Number(cand.roomId),
@@ -761,6 +852,9 @@ export default function AdminShowtimesPanel({ ctx }) {
           basePrice: stdPrice,
           vipPrice: vipPrice,
           couplePrice: couplePrice,
+          weekendSurcharge: isWk,
+          holidaySurcharge: isHol,
+          lateNightSurchargeAmount: Number(daySurcharges?.nightSurcharge || 20000),
           status: statusMap[cand.status] || cand.raw?.status || 'SCHEDULED'
         };
         await adminService.updateAdminShowtime(token, s.id, payload);
@@ -887,17 +981,43 @@ export default function AdminShowtimesPanel({ ctx }) {
       targetDrafts.forEach(s => {
         const mid = Number(s.movieId);
         if (!grouped[mid]) grouped[mid] = [];
+
+        let timePart = s.start || '';
+        if (!timePart && s.startTime && s.startTime.includes('T')) {
+          timePart = s.startTime.split('T')[1].slice(0, 5);
+        } else if (!timePart && s.raw?.startTime && s.raw.startTime.includes('T')) {
+          timePart = s.raw.startTime.split('T')[1].slice(0, 5);
+        }
+        if (!timePart) timePart = '09:00';
+        if (timePart.length === 5) timePart += ':00';
+
+        const datePart = s.date || (s.startTime?.includes('T') ? s.startTime.split('T')[0] : '') || (s.raw?.startTime?.includes('T') ? s.raw.startTime.split('T')[0] : '') || date;
+        const fullStartTime = `${datePart}T${timePart}`;
+        const slotTempId = String(s.id || s.tempId || Math.random().toString(36).slice(2, 9));
+        const isWeekend = s.isWeekend !== undefined ? Boolean(s.isWeekend) : isWeekendDay(datePart);
+        const isHoliday = s.isHoliday !== undefined ? Boolean(s.isHoliday) : Boolean(isHolidayDate);
+
         grouped[mid].push({
           roomId: Number(s.roomId),
-          startTime: `${s.date}T${s.start}:00`,
-          tempId: String(s.id)
+          startTime: fullStartTime,
+          tempId: slotTempId,
+          weekendSurcharge: isWeekend,
+          holidaySurcharge: isHoliday,
+          lateNightSurchargeAmount: Number(daySurcharges?.nightSurcharge || 20000)
         });
       });
 
       const requests = Object.entries(grouped).map(([mId, slots]) =>
         adminService.previewShowtimePrices(token, {
           movieId: Number(mId),
-          slots
+          slots: slots.map(sl => ({
+            roomId: Number(sl.roomId),
+            startTime: sl.startTime,
+            tempId: String(sl.tempId),
+            weekendSurcharge: Boolean(sl.weekendSurcharge),
+            holidaySurcharge: Boolean(sl.holidaySurcharge),
+            lateNightSurchargeAmount: Number(sl.lateNightSurchargeAmount || daySurcharges?.nightSurcharge || 20000)
+          }))
         }).catch(err => {
           console.warn('Preview prices error for movie', mId, err);
           return { data: [] };
@@ -945,13 +1065,20 @@ export default function AdminShowtimesPanel({ ctx }) {
 
     for (const s of validDrafts) {
       try {
+        const slotDate = s.date || date;
+        const isWk = isWeekendDay(slotDate) || Boolean(s.isWeekend);
+        const isHol = Boolean(s.isHoliday || isHolidayDate);
+        const rObj = rooms.find(r => r.id === Number(s.roomId));
         const payload = {
           movieId: Number(s.movieId),
           roomId: Number(s.roomId),
-          startTime: `${s.date}T${s.start}:00`,
-          basePrice: DEFAULT_PRICES[s.fmt]?.std || 60000,
-          vipPrice: DEFAULT_PRICES[s.fmt]?.vip || 90000,
-          couplePrice: DEFAULT_PRICES[s.fmt]?.couple || 150000,
+          startTime: `${slotDate}T${s.start}:00`,
+          basePrice: rObj?.standardPrice || DEFAULT_PRICES[s.fmt]?.std || 60000,
+          vipPrice: rObj?.vipPrice || DEFAULT_PRICES[s.fmt]?.vip || 90000,
+          couplePrice: rObj?.couplePrice || DEFAULT_PRICES[s.fmt]?.couple || 150000,
+          weekendSurcharge: isWk,
+          holidaySurcharge: isHol,
+          lateNightSurchargeAmount: Number(daySurcharges?.nightSurcharge || 20000),
           status: 'SCHEDULED'
         };
         await adminService.createAdminShowtime(token, payload);
@@ -981,13 +1108,20 @@ export default function AdminShowtimesPanel({ ctx }) {
     }
 
     try {
+      const slotDate = s.date || date;
+      const isWk = isWeekendDay(slotDate) || Boolean(s.isWeekend);
+      const isHol = Boolean(s.isHoliday || isHolidayDate);
+      const rObj = rooms.find(r => r.id === Number(s.roomId));
       const payload = {
         movieId: Number(s.movieId),
         roomId: Number(s.roomId),
-        startTime: `${s.date}T${s.start}:00`,
-        basePrice: DEFAULT_PRICES[s.fmt]?.std || 60000,
-        vipPrice: DEFAULT_PRICES[s.fmt]?.vip || 90000,
-        couplePrice: DEFAULT_PRICES[s.fmt]?.couple || 150000,
+        startTime: `${slotDate}T${s.start}:00`,
+        basePrice: rObj?.standardPrice || DEFAULT_PRICES[s.fmt]?.std || 60000,
+        vipPrice: rObj?.vipPrice || DEFAULT_PRICES[s.fmt]?.vip || 90000,
+        couplePrice: rObj?.couplePrice || DEFAULT_PRICES[s.fmt]?.couple || 150000,
+        weekendSurcharge: isWk,
+        holidaySurcharge: isHol,
+        lateNightSurchargeAmount: Number(daySurcharges?.nightSurcharge || 20000),
         status: 'SCHEDULED'
       };
       await adminService.createAdminShowtime(token, payload);
@@ -1757,10 +1891,9 @@ export default function AdminShowtimesPanel({ ctx }) {
         {/* GROUP 1: Logo & Cinema Selector */}
         <div className="toolbar-group">
           <div className="logo" style={{ whiteSpace: 'nowrap' }}>
-            <i>🎬</i>
-            <span style={{ fontWeight: 800, fontSize: '15px', color: '#fff', letterSpacing: '0.02em' }}>CinemaAdmin</span>
-            <span style={{ color: 'var(--muted)', fontWeight: 500, fontSize: '13px', marginLeft: '6px' }}>
-              / Lịch chiếu
+
+            <span style={{ fontWeight: 500, fontSize: '20px', marginLeft: '6px', color: 'white' }}>
+              Lịch chiếu
             </span>
           </div>
 
@@ -1847,6 +1980,21 @@ export default function AdminShowtimesPanel({ ctx }) {
           <div className="seg">
             <button className={view === 'day' ? 'on' : ''} onClick={() => setView('day')}>Ngày</button>
             <button className={view === 'week' ? 'on' : ''} onClick={() => setView('week')}>Tuần</button>
+          </div>
+
+          {/* DAY TYPE BADGE */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '4px 10px', background: isHolidayDate ? 'rgba(236,72,153,0.15)' : (isWeekendDay(date) ? 'rgba(245,158,11,0.15)' : 'rgba(255,255,255,0.05)'), border: '1px solid ' + (isHolidayDate ? 'rgba(236,72,153,0.35)' : (isWeekendDay(date) ? 'rgba(245,158,11,0.35)' : 'rgba(255,255,255,0.1)')), borderRadius: '4px' }}>
+            <span style={{ fontSize: '11.5px', fontWeight: 800, color: isHolidayDate ? '#f472b6' : (isWeekendDay(date) ? '#fbbf24' : '#94a3b8') }}>
+              {isHolidayDate && isWeekendDay(date) ? (
+                `🎉 Ngày Lễ (+ ${formatVnd(daySurcharges.holidaySurcharge)}) + 🔥 ${getDayTypeLabel(date)} (+ ${formatVnd(daySurcharges.weekendSurcharge)})`
+              ) : isHolidayDate ? (
+                `🎉 Ngày Lễ (+ ${formatVnd(daySurcharges.holidaySurcharge)})`
+              ) : isWeekendDay(date) ? (
+                `🔥 ${getDayTypeLabel(date)} (+ ${formatVnd(daySurcharges.weekendSurcharge)})`
+              ) : (
+                `Ngày thường (+0đ)`
+              )}
+            </span>
           </div>
 
           <button
@@ -1955,15 +2103,6 @@ export default function AdminShowtimesPanel({ ctx }) {
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button
-              className="btn sm"
-              onClick={() => handlePreviewPrices(draftShows)}
-              disabled={loadingPreview}
-              title="Xem trước bảng giá vé được tính toán tự động"
-              style={{ background: '#161b22', border: '1px solid rgba(255,255,255,0.2)', color: '#fff' }}
-            >
-              <span>👁️ Xem trước giá</span>
-            </button>
             <button
               className="btn primary sm"
               onClick={handleSaveAllDrafts}
@@ -2390,6 +2529,9 @@ export default function AdminShowtimesPanel({ ctx }) {
                                     const vipPrice = cand.price?.vip || cand.raw?.vipPrice || DEFAULT_PRICES[cand.fmt]?.vip || 90000;
                                     const couplePrice = cand.price?.couple || cand.raw?.couplePrice || DEFAULT_PRICES[cand.fmt]?.couple || 150000;
 
+                                    const slotDate = cand.date;
+                                    const isWk = isWeekendDay(slotDate) || Boolean(cand.isWeekend);
+                                    const isHol = Boolean(cand.isHoliday !== undefined ? cand.isHoliday : (cand.holidaySurcharge !== undefined ? cand.holidaySurcharge : (cand.raw?.holidaySurcharge !== undefined ? cand.raw.holidaySurcharge : isHolidayDate)));
                                     const payload = {
                                       movieId: Number(cand.movieId),
                                       roomId: Number(r.id),
@@ -2397,6 +2539,9 @@ export default function AdminShowtimesPanel({ ctx }) {
                                       basePrice: stdPrice,
                                       vipPrice: vipPrice,
                                       couplePrice: couplePrice,
+                                      weekendSurcharge: isWk,
+                                      holidaySurcharge: isHol,
+                                      lateNightSurchargeAmount: Number(daySurcharges?.nightSurcharge || 20000),
                                       status: statusMap[cand.status] || cand.raw?.status || 'SCHEDULED'
                                     };
 
@@ -2699,16 +2844,8 @@ export default function AdminShowtimesPanel({ ctx }) {
                         </div>
                         <div style={{ display: 'flex', gap: '6px' }}>
                           <button
-                            className="btn sm"
-                            style={{ flex: 1, fontSize: '11px', padding: '4px 6px', background: '#161b22', border: '1px solid rgba(255,255,255,0.2)' }}
-                            onClick={() => handlePreviewPrices([s])}
-                            title="Xem trước giá vé tính toán cho suất này"
-                          >
-                            👁️ Xem giá
-                          </button>
-                          <button
                             className="btn primary sm"
-                            style={{ flex: 1, fontSize: '11px', padding: '4px 6px' }}
+                            style={{ flex: 1, fontSize: '11.5px', padding: '6px 10px', fontWeight: 700 }}
                             onClick={() => handleSaveSingleDraft(s)}
                             title="Lưu ngay suất chiếu này vào hệ thống"
                           >
@@ -2716,7 +2853,7 @@ export default function AdminShowtimesPanel({ ctx }) {
                           </button>
                           <button
                             className="btn sm"
-                            style={{ fontSize: '11px', padding: '4px 8px', color: '#f85149', borderColor: 'rgba(248,81,73,0.3)' }}
+                            style={{ fontSize: '11.5px', padding: '6px 12px', color: '#f85149', borderColor: 'rgba(248,81,73,0.3)' }}
                             onClick={() => handleDeleteDraft(s.id)}
                             title="Xóa suất bản thảo này"
                           >
@@ -2877,6 +3014,164 @@ export default function AdminShowtimesPanel({ ctx }) {
                       })()}
                     </div>
 
+                    {/* CẤU HÌNH & NHẬN DIỆN PHỤ THU SUẤT CHIẾU (ĐÊM & NGÀY LỄ / CUỐI TUẦN) */}
+                    {(() => {
+                      const isNight = isNightTime(s.start);
+                      const isWeekend = isWeekendDay(s.date || date);
+                      const isHol = Boolean(s.isHoliday !== undefined ? s.isHoliday : (s.holidaySurcharge !== undefined ? s.holidaySurcharge : (s.raw?.holidaySurcharge !== undefined ? s.raw.holidaySurcharge : isHolidayDate)));
+                      const nightFee = isNight ? (Number(daySurcharges.nightSurcharge) || 20000) : 0;
+                      const weekendFee = isWeekend ? (Number(daySurcharges.weekendSurcharge) || 100000) : 0;
+                      const holidayFee = isHol ? (Number(daySurcharges.holidaySurcharge) || 200000) : 0;
+                      const dayTypeFee = weekendFee + holidayFee;
+                      const totalSurcharge = nightFee + dayTypeFee;
+
+                      return (
+                        <div style={{
+                          marginTop: '12px',
+                          marginBottom: '12px',
+                          padding: '12px',
+                          background: 'linear-gradient(145deg, rgba(30, 41, 59, 0.45) 0%, rgba(15, 23, 42, 0.6) 100%)',
+                          border: '1px solid rgba(255, 255, 255, 0.1)',
+                          borderRadius: '10px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '10px',
+                          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)'
+                        }}>
+                          {/* Tiêu đề nhóm & tổng phụ thu */}
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <span style={{ fontSize: '12px', fontWeight: 700, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span>⚙️</span>
+                              <span>Phụ Thu & Khung Giờ Chiếu</span>
+                            </span>
+                            <span style={{
+                              fontSize: '11px',
+                              fontWeight: 800,
+                              color: totalSurcharge > 0 ? '#38bdf8' : '#64748b',
+                              background: totalSurcharge > 0 ? 'rgba(56, 189, 248, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+                              padding: '2px 8px',
+                              borderRadius: '999px',
+                              border: totalSurcharge > 0 ? '1px solid rgba(56, 189, 248, 0.25)' : '1px solid rgba(255, 255, 255, 0.08)'
+                            }}>
+                              {totalSurcharge > 0 ? `+${formatVnd(totalSurcharge)}` : '+0đ'}
+                            </span>
+                          </div>
+
+                          {/* Grid 2 cột cân đối: Suất Chiếu Đêm | Ngày Lễ Tết / Cuối tuần */}
+                          <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1fr 1fr',
+                            gap: '8px'
+                          }}>
+                            {/* Card Cột 1: Suất Chiếu Đêm */}
+                            <div style={{
+                              padding: '9px 10px',
+                              background: isNight ? 'rgba(168, 85, 247, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                              border: isNight ? '1px solid rgba(168, 85, 247, 0.35)' : '1px solid rgba(255, 255, 255, 0.06)',
+                              borderRadius: '8px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                              gap: '6px'
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <span>🌙</span>
+                                  <span>Suất đêm</span>
+                                </span>
+                                <span style={{ fontSize: '9.5px', color: '#64748b' }}>22h - 3h</span>
+                              </div>
+                              <div>
+                                <div style={{
+                                  fontSize: '11.5px',
+                                  fontWeight: 800,
+                                  color: isNight ? '#c084fc' : '#64748b'
+                                }}>
+                                  {isNight ? `+${formatVnd(daySurcharges.nightSurcharge || 20000)}` : 'Không phụ thu'}
+                                </div>
+                                <div style={{ fontSize: '9.5px', color: isNight ? '#a855f7' : '#475569', marginTop: '2px' }}>
+                                  {isNight ? '✓ Tự động áp dụng' : 'Khung giờ tiêu chuẩn'}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Card Cột 2: Ngày Lễ & Cuối Tuần (Cộng dồn cả hai nếu trùng nhau) */}
+                            <div style={{
+                              padding: '9px 10px',
+                              background: isHol
+                                ? 'rgba(244, 114, 182, 0.08)'
+                                : (isWeekend ? 'rgba(251, 191, 36, 0.08)' : 'rgba(255, 255, 255, 0.03)'),
+                              border: isHol
+                                ? '1px solid rgba(244, 114, 182, 0.35)'
+                                : (isWeekend ? '1px solid rgba(251, 191, 36, 0.35)' : '1px solid rgba(255, 255, 255, 0.06)'),
+                              borderRadius: '8px',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justifyContent: 'space-between',
+                              gap: '6px'
+                            }}>
+                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                <span style={{
+                                  fontSize: '11px',
+                                  fontWeight: 600,
+                                  color: isHol ? '#f472b6' : (isWeekend ? '#fbbf24' : '#94a3b8'),
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}>
+                                  <span>{isHol ? '🎉' : (isWeekend ? '🔥' : '📅')}</span>
+                                  <span>
+                                    {isWeekend && isHol
+                                      ? `${getDayTypeLabel(s.date || date)} + Ngày Lễ`
+                                      : isHol
+                                        ? 'Ngày Lễ / Tết'
+                                        : isWeekend
+                                          ? getDayTypeLabel(s.date || date)
+                                          : 'Ngày thường'}
+                                  </span>
+                                </span>
+                                <label style={{ display: 'inline-flex', alignItems: 'center', cursor: 'pointer', margin: 0 }}>
+                                  <input
+                                    type="checkbox"
+                                    checked={isHol}
+                                    onChange={(e) => {
+                                      const checked = e.target.checked;
+                                      handleUpdate('isHoliday', checked);
+                                      setIsHolidayDate(checked);
+                                    }}
+                                    style={{ width: '13px', height: '13px', cursor: 'pointer', accentColor: '#ec4899' }}
+                                    title="Đánh dấu suất chiếu vào Ngày Lễ / Tết để áp dụng phụ thu lễ"
+                                  />
+                                </label>
+                              </div>
+                              <div>
+                                <div style={{
+                                  fontSize: '11.5px',
+                                  fontWeight: 800,
+                                  color: dayTypeFee > 0 ? (isHol ? '#f472b6' : '#fbbf24') : '#64748b'
+                                }}>
+                                  {dayTypeFee > 0 ? `+${formatVnd(dayTypeFee)}` : 'Giá chuẩn'}
+                                </div>
+                                <div style={{
+                                  fontSize: '9.5px',
+                                  color: isHol ? '#f472b6' : (isWeekend ? '#d97706' : '#475569'),
+                                  marginTop: '2px'
+                                }}>
+                                  {isWeekend && isHol
+                                    ? `🔥 ${getDayTypeLabel(s.date || date)} (+${formatVnd(weekendFee)}) + 🎉 Lễ (+${formatVnd(holidayFee)})`
+                                    : isHol
+                                      ? `🎉 Phụ thu Ngày Lễ (+${formatVnd(holidayFee)})`
+                                      : isWeekend
+                                        ? `Tự động cuối tuần (+${formatVnd(weekendFee)})`
+                                        : 'T2 - T6 tiêu chuẩn (+0đ)'}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {/* THÔNG TIN BẢNG GIÁ VÉ CHI TIẾT (NGƯỜI LỚN, HSSV, TRẺ EM x GHẾ THƯỜNG, GHẾ VIP, GHẾ ĐÔI) */}
                     {(() => {
                       const formatPrice = (val) => {
@@ -2888,21 +3183,27 @@ export default function AdminShowtimesPanel({ ctx }) {
                       const vipBase = detailPriceMatrix?.roomVipPrice ?? s.raw?.vipPrice ?? r?.vipPrice ?? prices?.vip ?? 80000;
                       const coupleBase = detailPriceMatrix?.roomCouplePrice ?? s.raw?.couplePrice ?? r?.couplePrice ?? 140000;
 
+                      const isNightSlot = isNightTime(s.start);
+                      const nightFee = isNightSlot ? (Number(daySurcharges.nightSurcharge) || 20000) : 0;
+                      const weekendFee = isWeekendDay(s.date || date) ? (Number(daySurcharges.weekendSurcharge) || 100000) : 0;
+                      const holidayFee = (s.isHoliday || isHolidayDate) ? (Number(daySurcharges.holidaySurcharge) || 200000) : 0;
+                      const dayFee = nightFee + weekendFee + holidayFee;
+
                       const childAdd = detailPriceMatrix?.childAdditional ?? 0;
                       const studentAdd = detailPriceMatrix?.studentAdditional ?? 10000;
                       const adultAdd = detailPriceMatrix?.adultAdditional ?? 20000;
 
-                      const childStd = detailPriceMatrix?.childStandardPrice ?? s.raw?.childStandardPrice ?? (stdBase + childAdd);
-                      const studentStd = detailPriceMatrix?.studentStandardPrice ?? s.raw?.studentStandardPrice ?? (stdBase + studentAdd);
-                      const adultStd = detailPriceMatrix?.adultStandardPrice ?? s.raw?.adultStandardPrice ?? (stdBase + adultAdd);
+                      const childStd = detailPriceMatrix?.childStandardPrice ?? s.raw?.childStandardPrice ?? (stdBase + childAdd + dayFee);
+                      const studentStd = detailPriceMatrix?.studentStandardPrice ?? s.raw?.studentStandardPrice ?? (stdBase + studentAdd + dayFee);
+                      const adultStd = detailPriceMatrix?.adultStandardPrice ?? s.raw?.adultStandardPrice ?? (stdBase + adultAdd + dayFee);
 
-                      const childVip = detailPriceMatrix?.childVipPrice ?? s.raw?.childVipPrice ?? (vipBase + childAdd);
-                      const studentVip = detailPriceMatrix?.studentVipPrice ?? s.raw?.studentVipPrice ?? (vipBase + studentAdd);
-                      const adultVip = detailPriceMatrix?.adultVipPrice ?? s.raw?.adultVipPrice ?? (vipBase + adultAdd);
+                      const childVip = detailPriceMatrix?.childVipPrice ?? s.raw?.childVipPrice ?? (vipBase + childAdd + dayFee);
+                      const studentVip = detailPriceMatrix?.studentVipPrice ?? s.raw?.studentVipPrice ?? (vipBase + studentAdd + dayFee);
+                      const adultVip = detailPriceMatrix?.adultVipPrice ?? s.raw?.adultVipPrice ?? (vipBase + adultAdd + dayFee);
 
-                      const childCouple = detailPriceMatrix?.childChildCouplePrice ?? s.raw?.childCouplePrice ?? (coupleBase + childAdd * 2);
-                      const studentCouple = detailPriceMatrix?.studentStudentCouplePrice ?? s.raw?.studentCouplePrice ?? (coupleBase + studentAdd * 2);
-                      const adultCouple = detailPriceMatrix?.adultAdultCouplePrice ?? s.raw?.adultCouplePrice ?? (coupleBase + adultAdd * 2);
+                      const childCouple = detailPriceMatrix?.childChildCouplePrice ?? s.raw?.childCouplePrice ?? (coupleBase + childAdd + dayFee);
+                      const studentCouple = detailPriceMatrix?.studentStudentCouplePrice ?? s.raw?.studentCouplePrice ?? (coupleBase + studentAdd + dayFee);
+                      const adultCouple = detailPriceMatrix?.adultAdultCouplePrice ?? s.raw?.adultCouplePrice ?? (coupleBase + adultAdd + dayFee);
 
                       return (
                         <div style={{
@@ -3089,7 +3390,7 @@ export default function AdminShowtimesPanel({ ctx }) {
                         if (st - cur >= 60) gaps.push(`${toT(cur)}–${toT(st)}`);
                         cur = endOf(s) + CLEAN;
                       });
-                      if (CLOSE * 60 - cur >= 90) gaps.push(`${toT(cur)}–đóng cửa`);
+                      if (CLOSE * 60 - cur >= 90) gaps.push(`${toT(cur)}–cuối ca`);
 
                       const sold = rs.reduce((a, s) => a + s.sold, 0);
                       const cap = rs.length * r.seats;
@@ -3141,7 +3442,7 @@ export default function AdminShowtimesPanel({ ctx }) {
                     <div>
                       <div className="alert ok">✓ Lịch chiếu ngày này không có xung đột.</div>
                       <div className="empty" style={{ padding: '20px' }}>
-                        Hệ thống kiểm tra: trùng giờ + thời gian dọn phòng, định dạng phim/phòng, ngày khởi chiếu, giờ mở/đóng cửa, phim cùng lúc, khung giờ phù hợp độ tuổi.
+                        Hệ thống kiểm tra: trùng giờ + thời gian dọn phòng, định dạng phim/phòng, ngày khởi chiếu, phim cùng lúc, khung giờ phù hợp độ tuổi.
                       </div>
                     </div>
                   );
@@ -3184,6 +3485,9 @@ export default function AdminShowtimesPanel({ ctx }) {
             params={addModal}
             movies={movies}
             rooms={rooms}
+            daySurcharges={daySurcharges}
+            getDayTypeLabel={getDayTypeLabel}
+            isWeekendDay={isWeekendDay}
             onClose={() => setAddModal(null)}
             showToast={showToast}
             onSuccess={() => {
@@ -3452,11 +3756,13 @@ export default function AdminShowtimesPanel({ ctx }) {
 
 /* ================= SUB-MODAL COMPONENTS ================= */
 
-function AddModalContent({ params, movies, rooms, onClose, onSuccess, onAddDraft, getAdminToken, validate, M, R, endOf, showToast }) {
+function AddModalContent({ params, movies, rooms, onClose, onSuccess, onAddDraft, getAdminToken, validate, M, R, endOf, showToast, daySurcharges, getDayTypeLabel, isWeekendDay }) {
   const [date, setDate] = useState(() => {
     const target = params?.date || getTomorrowStr();
     return target < getTomorrowStr() ? getTomorrowStr() : target;
   });
+  const [isHoliday, setIsHoliday] = useState(false);
+  const isWeekend = isWeekendDay ? isWeekendDay(date) : false;
 
   const getInitialMovieId = () => {
     if (params?.movieId) {
@@ -3574,7 +3880,9 @@ function AddModalContent({ params, movies, rooms, onClose, onSuccess, onAddDraft
     const drafts = ok.map(s => ({
       ...s,
       id: 'draft_' + Math.random().toString(36).slice(2, 9),
-      isDraft: true
+      isDraft: true,
+      isWeekend: isWeekend,
+      isHoliday: isHoliday
     }));
     onAddDraft?.(drafts);
   };
@@ -3621,13 +3929,17 @@ function AddModalContent({ params, movies, rooms, onClose, onSuccess, onAddDraft
     for (const c of ok) {
       if (token) {
         try {
+          const rObj = rooms.find(r => r.id === Number(c.roomId));
           const payload = {
             movieId: Number(c.movieId),
             roomId: Number(c.roomId),
             startTime: `${c.date}T${c.start}:00`,
-            basePrice: DEFAULT_PRICES[c.fmt]?.std || 60000,
-            vipPrice: DEFAULT_PRICES[c.fmt]?.vip || 90000,
-            couplePrice: DEFAULT_PRICES[c.fmt]?.couple || 150000,
+            basePrice: rObj?.standardPrice || DEFAULT_PRICES[c.fmt]?.std || 60000,
+            vipPrice: rObj?.vipPrice || DEFAULT_PRICES[c.fmt]?.vip || 90000,
+            couplePrice: rObj?.couplePrice || DEFAULT_PRICES[c.fmt]?.couple || 150000,
+            weekendSurcharge: isWeekend,
+            holidaySurcharge: isHoliday,
+            lateNightSurchargeAmount: Number(daySurcharges?.nightSurcharge || 20000),
             status: 'SCHEDULED'
           };
           await adminService.createAdminShowtime(token, payload);
@@ -3747,6 +4059,65 @@ function AddModalContent({ params, movies, rooms, onClose, onSuccess, onAddDraft
         </div>
       </div>
 
+      {/* Loai ngay & Phu thu ap dung */}
+      <div style={{
+        marginBottom: 12,
+        padding: '10px 14px',
+        background: 'rgba(255,255,255,0.03)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        borderRadius: '8px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '8px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: '#f8fafc' }}>
+              Phụ thu:
+            </span>
+            <span style={{
+              fontSize: '11px',
+              fontWeight: 700,
+              padding: '2px 8px',
+              borderRadius: '4px',
+              background: isHoliday ? 'rgba(244,114,182,0.15)' : (isWeekend ? 'rgba(251,191,36,0.15)' : 'rgba(255,255,255,0.05)'),
+              color: isHoliday ? '#f472b6' : (isWeekend ? '#fbbf24' : '#94a3b8'),
+              border: isHoliday ? '1px solid rgba(244,114,182,0.3)' : (isWeekend ? '1px solid rgba(251,191,36,0.3)' : '1px solid rgba(255,255,255,0.1)')
+            }}>
+              {isHoliday && isWeekend ? (
+                `🎉 Ngày Lễ (+${(daySurcharges?.holidaySurcharge || 200000).toLocaleString('vi-VN')}đ) + 🔥 Cuối tuần (+${(daySurcharges?.weekendSurcharge || 100000).toLocaleString('vi-VN')}đ)`
+              ) : isHoliday ? (
+                `🎉 Ngày Lễ (+${(daySurcharges?.holidaySurcharge || 200000).toLocaleString('vi-VN')}đ)`
+              ) : isWeekend ? (
+                `🔥 Cuối tuần (+${(daySurcharges?.weekendSurcharge || 100000).toLocaleString('vi-VN')}đ)`
+              ) : (
+                '📅 Ngày thường (+0đ)'
+              )}
+            </span>
+            <span style={{
+              fontSize: '11px',
+              fontWeight: 700,
+              padding: '2px 8px',
+              borderRadius: '4px',
+              background: 'rgba(168,85,247,0.12)',
+              color: '#c084fc',
+              border: '1px solid rgba(168,85,247,0.25)'
+            }}>
+              🌙 Suất đêm (22h-3h): +{(daySurcharges?.nightSurcharge || 20000).toLocaleString('vi-VN')}đ (tự động)
+            </span>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#f472b6', cursor: 'pointer', fontWeight: 600 }}>
+            <input
+              type="checkbox"
+              checked={isHoliday}
+              onChange={(e) => setIsHoliday(e.target.checked)}
+              style={{ accentColor: '#ec4899', cursor: 'pointer' }}
+            />
+            <span>Đánh dấu Ngày Lễ / Tết</span>
+          </label>
+        </div>
+      </div>
+
       {/* Policy Alert Banner in Modal */}
       {isDateBanned && (
         <div className="alert err" style={{ marginBottom: 12 }}>
@@ -3848,6 +4219,7 @@ function CopyModalContent({ date, shows, onClose, onSuccess, getAdminToken, vali
         const c = { ...s, id: Math.random().toString(36).slice(2, 9), date: d, sold: 0, status: 'plan' };
         if (validate(c).errs.length === 0 && token) {
           try {
+            const isWk = isWeekendDay(c.date);
             const payload = {
               movieId: Number(c.movieId),
               roomId: Number(c.roomId),
@@ -3855,6 +4227,9 @@ function CopyModalContent({ date, shows, onClose, onSuccess, getAdminToken, vali
               basePrice: c.price?.std || DEFAULT_PRICES[c.fmt]?.std || 60000,
               vipPrice: c.price?.vip || DEFAULT_PRICES[c.fmt]?.vip || 90000,
               couplePrice: c.price?.couple || DEFAULT_PRICES[c.fmt]?.couple || 150000,
+              weekendSurcharge: isWk,
+              holidaySurcharge: Boolean(c.isHoliday),
+              lateNightSurchargeAmount: Number(daySurcharges?.nightSurcharge || 20000),
               status: 'SCHEDULED'
             };
             await adminService.createAdminShowtime(token, payload);
@@ -3987,6 +4362,7 @@ function AutoModalContent({ date, rooms, movies, onClose, onSuccess, getAdminTok
     for (const c of final) {
       if (token) {
         try {
+          const isWk = isWeekendDay(c.date);
           const payload = {
             movieId: Number(c.movieId),
             roomId: Number(c.roomId),
@@ -3994,6 +4370,9 @@ function AutoModalContent({ date, rooms, movies, onClose, onSuccess, getAdminTok
             basePrice: DEFAULT_PRICES[c.fmt]?.std || 60000,
             vipPrice: DEFAULT_PRICES[c.fmt]?.vip || 90000,
             couplePrice: DEFAULT_PRICES[c.fmt]?.couple || 150000,
+            weekendSurcharge: isWk,
+            holidaySurcharge: false,
+            lateNightSurchargeAmount: Number(daySurcharges?.nightSurcharge || 20000),
             status: 'SCHEDULED'
           };
           await adminService.createAdminShowtime(token, payload);
@@ -4010,7 +4389,7 @@ function AutoModalContent({ date, rooms, movies, onClose, onSuccess, getAdminTok
   return (
     <div className="modal">
       <h3>Xếp lịch tự động</h3>
-      <p>Lấp đầy một phòng bằng cách chiếu lặp lại các phim được chọn từ giờ bắt đầu đến giờ đóng cửa, tự chèn {ADS}′ quảng cáo + {CLEAN}′ dọn phòng.</p>
+      <p>Lấp đầy một phòng bằng cách chiếu lặp lại các phim được chọn từ giờ bắt đầu đến cuối ca chiếu, tự chèn {ADS}′ quảng cáo + {CLEAN}′ dọn phòng.</p>
 
       <div className="row2">
         <div className="field">
@@ -4164,11 +4543,27 @@ function PreviewPricesModalContent({
                   </div>
 
                   {/* Surcharges Summary */}
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '12px', fontSize: '11.5px', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '12px', marginBottom: '12px', fontSize: '11.5px', background: 'rgba(255,255,255,0.03)', padding: '8px 12px', borderRadius: '6px' }}>
                     <span style={{ color: 'var(--muted)' }}>Phụ thu rạp áp dụng:</span>
                     <span style={{ color: '#38bdf8' }}>Trẻ em: +{formatVnd(item.childAdditional)}</span>
                     <span style={{ color: '#34d399' }}>HSSV: +{formatVnd(item.studentAdditional)}</span>
                     <span style={{ color: '#fbbf24' }}>Người lớn: +{formatVnd(item.adultAdditional)}</span>
+                    <span style={{
+                      marginLeft: 'auto',
+                      fontWeight: 800,
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      background: item.isHoliday ? 'rgba(236,72,153,0.2)' : (item.isWeekend ? 'rgba(245,158,11,0.2)' : 'rgba(255,255,255,0.05)'),
+                      color: item.isHoliday ? '#f472b6' : (item.isWeekend ? '#fbbf24' : '#94a3b8'),
+                      border: '1px solid ' + (item.isHoliday ? 'rgba(236,72,153,0.3)' : (item.isWeekend ? 'rgba(245,158,11,0.3)' : 'rgba(255,255,255,0.1)'))
+                    }}>
+                      {item.isHoliday ? `🎉 ${item.dayTypeLabel || 'Ngày lễ'} (+ ${formatVnd(item.daySurchargeAmount)})` :
+                        item.isWeekend ? `🔥 ${item.dayTypeLabel || 'Chủ Nhật'} (+ ${formatVnd(item.daySurchargeAmount)})` :
+                          `Ngày thường (+0đ)`}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#94a3b8', marginBottom: '10px' }}>
+                    💡 Công thức: <strong>Giá vé = Giá phòng + Phụ thu đối tượng + Phụ thu ngày (${item.dayTypeLabel || 'Ngày thường'})</strong>. Ghế đôi tính theo cặp vé và KHÔNG nhân đôi phụ thu.
                   </div>
 
                   {/* Pricing Matrix Table */}

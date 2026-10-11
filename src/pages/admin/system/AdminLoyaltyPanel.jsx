@@ -10,8 +10,11 @@ import {
   Clock,
   Coins,
   DollarSign,
+  Edit3,
   Eye,
   FileText,
+  Lock,
+  Pencil,
   Percent,
   RefreshCw,
   RotateCcw,
@@ -114,7 +117,7 @@ const getInputClass = (hasError, extraClasses = '') => `w-full border ${
   hasError
     ? 'border-rose-500/80 bg-rose-950/20 text-white focus:border-rose-500 focus:ring-1 focus:ring-rose-500/50'
     : 'border-white/[0.08] bg-black text-white focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/40'
-} px-3 py-2.5 text-xs font-mono outline-none transition ${extraClasses}`;
+} disabled:bg-neutral-900/60 disabled:text-neutral-300 disabled:border-white/5 disabled:cursor-not-allowed px-3 py-2.5 text-xs font-mono outline-none transition ${extraClasses}`;
 
 
 const inputClass = 'w-full border border-white/[0.08] bg-black px-3 py-2.5 text-xs text-white font-mono outline-none transition focus:border-amber-500/80 focus:ring-1 focus:ring-amber-500/40';
@@ -405,6 +408,8 @@ export default function AdminLoyaltyPanel({ ctx }) {
   const [cinemas, setCinemas] = useState([]);
   const [selectedCinemaId, setSelectedCinemaId] = useState(managerCinemaId ? String(managerCinemaId) : '');
   const [loadingCinemas, setLoadingCinemas] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [originalConfig, setOriginalConfig] = useState(null);
 
   // 2. Loyalty Config State
   const [config, setConfig] = useState(DEFAULT_CONFIG);
@@ -553,6 +558,8 @@ export default function AdminLoyaltyPanel({ ctx }) {
         })
       ]);
       setConfig({ ...DEFAULT_CONFIG, ...nextConfig, expiryDate: getExpiryDateValue(nextConfig) });
+      setOriginalConfig({ ...DEFAULT_CONFIG, ...nextConfig, expiryDate: getExpiryDateValue(nextConfig) });
+      setIsEditing(false);
       setErrors({});
       setTouched({});
       setTransactions({
@@ -776,9 +783,7 @@ export default function AdminLoyaltyPanel({ ctx }) {
       const selectedDate = new Date(`${expiryDate}T${expiryTime}`);
       const targetCinemaId = selectedCinemaId ? Number(selectedCinemaId) : (managerCinemaId || null);
 
-      const payload = {
-        cinemaId: targetCinemaId,
-        cinemaName: currentCinema ? currentCinema.name : (targetCinemaId ? `Rạp #${targetCinemaId}` : 'Toàn hệ thống (Mặc định)'),
+      const basePayload = {
         earningRatePercent,
         redemptionRatePercent,
         redemptionPoints,
@@ -790,15 +795,49 @@ export default function AdminLoyaltyPanel({ ctx }) {
         expiryTime
       };
 
-      const saved = await adminService.updateLoyaltyConfiguration(token, payload);
-      setConfig({ ...DEFAULT_CONFIG, ...saved, expiryDate: getExpiryDateValue(saved) });
-      setErrors({});
-      setTouched({});
+      if (!targetCinemaId) {
+        // Cấu hình TOÀN HỆ THỐNG:
+        // 1. Lưu bản ghi Global (cinemaId: null)
+        const globalPayload = {
+          ...basePayload,
+          cinemaId: null,
+          cinemaName: 'Toàn hệ thống (Mặc định)'
+        };
+        const saved = await adminService.updateLoyaltyConfiguration(token, globalPayload);
 
-      const targetLabel = targetCinemaId
-        ? (currentCinema?.name || `Chi nhánh #${targetCinemaId}`)
-        : 'Toàn hệ thống';
-      showToast?.(`Đã lưu cấu hình điểm cho [${targetLabel}] thành công!`, 'success');
+        // 2. Đồng bộ cập nhật cho tất cả các chi nhánh rạp hiện có
+        if (Array.isArray(cinemas) && cinemas.length > 0) {
+          const syncPromises = cinemas.map(c =>
+            adminService.updateLoyaltyConfiguration(token, {
+              ...basePayload,
+              cinemaId: c.id,
+              cinemaName: c.name
+            }).catch(err => console.warn(`Không thể đồng bộ rạp ${c.name}:`, err))
+          );
+          await Promise.allSettled(syncPromises);
+        }
+
+        setConfig({ ...DEFAULT_CONFIG, ...saved, expiryDate: getExpiryDateValue(saved) });
+        setOriginalConfig({ ...DEFAULT_CONFIG, ...saved, expiryDate: getExpiryDateValue(saved) });
+        setIsEditing(false); // Khóa lại chế độ chỉ xem ngay sau khi lưu
+        setErrors({});
+        setTouched({});
+        showToast?.('Đã lưu cấu hình điểm và đồng bộ cho tất cả các chi nhánh toàn hệ thống thành công!', 'success');
+      } else {
+        // Cấu hình CHI NHÁNH CỤ THỂ:
+        const branchPayload = {
+          ...basePayload,
+          cinemaId: targetCinemaId,
+          cinemaName: currentCinema ? currentCinema.name : `Rạp #${targetCinemaId}`
+        };
+        const saved = await adminService.updateLoyaltyConfiguration(token, branchPayload);
+        setConfig({ ...DEFAULT_CONFIG, ...saved, expiryDate: getExpiryDateValue(saved) });
+        setOriginalConfig({ ...DEFAULT_CONFIG, ...saved, expiryDate: getExpiryDateValue(saved) });
+        setIsEditing(false); // Khóa lại chế độ chỉ xem ngay sau khi lưu
+        setErrors({});
+        setTouched({});
+        showToast?.(`Đã lưu cấu hình điểm cho [${currentCinema?.name || `Chi nhánh #${targetCinemaId}`}] thành công!`, 'success');
+      }
     } catch (error) {
       showToast?.(error.message || 'Không thể lưu cấu hình điểm.', 'error');
     } finally {
@@ -943,7 +982,10 @@ export default function AdminLoyaltyPanel({ ctx }) {
             </span>
             <select
               value={selectedCinemaId}
-              onChange={(e) => setSelectedCinemaId(e.target.value)}
+              onChange={(e) => {
+                setSelectedCinemaId(e.target.value);
+                setIsEditing(false);
+              }}
               disabled={loadingCinemas}
               className="px-3 py-2 bg-black border border-white/20 text-white text-xs font-bold focus:border-amber-400 outline-none uppercase tracking-wide min-w-[260px]"
             >
@@ -976,9 +1018,22 @@ export default function AdminLoyaltyPanel({ ctx }) {
           <form onSubmit={saveConfig} noValidate className="border border-white/[0.05] bg-neutral-950 p-4 space-y-4 overflow-visible relative">
             <div className="flex items-center justify-between border-b border-white/[0.05] pb-3">
               <div>
-                <h4 className="text-[11px] font-black uppercase tracking-[0.16em] text-white">
-                  Cấu hình tỷ lệ điểm
-                </h4>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-[11px] font-black uppercase tracking-[0.16em] text-white">
+                    Cấu hình tỷ lệ điểm
+                  </h4>
+                  {isEditing ? (
+                    <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[9.5px] font-bold bg-amber-500/15 border border-amber-500/30 text-amber-300">
+                      <Pencil className="w-2.5 h-2.5 text-amber-400" />
+                      Đang chỉnh sửa
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1 px-2 py-0.5 rounded text-[9.5px] font-bold bg-neutral-900 border border-white/10 text-neutral-400">
+                      <Lock className="w-2.5 h-2.5 text-neutral-400" />
+                      Chế độ chỉ xem
+                    </span>
+                  )}
+                </div>
                 <p className="text-[9.5px] text-neutral-400 mt-0.5">
                   Áp dụng cho: <strong className="text-amber-400 font-mono">{currentCinema ? currentCinema.name : 'Toàn hệ thống'}</strong>
                 </p>
@@ -996,6 +1051,27 @@ export default function AdminLoyaltyPanel({ ctx }) {
               </div>
             </div>
 
+          {/* Banner thông báo trạng thái khóa khi chỉ xem */}
+          {!isEditing && (
+            <div className="p-2.5 rounded bg-neutral-900/60 border border-white/5 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-[10.5px] text-neutral-300">
+                <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>Cấu hình đang được khóa. Nhấn nút <strong>Chỉnh sửa</strong> để cập nhật tỷ lệ.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setOriginalConfig({ ...config });
+                  setIsEditing(true);
+                }}
+                className="px-2.5 py-1 text-[10.5px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded transition shrink-0 flex items-center gap-1"
+              >
+                <Edit3 className="w-3 h-3" />
+                Chỉnh sửa
+              </button>
+            </div>
+          )}
+
           <div className="space-y-3.5">
             {/* Tỷ lệ tích điểm % */}
             <Field 
@@ -1006,6 +1082,7 @@ export default function AdminLoyaltyPanel({ ctx }) {
             >
               <div className="relative">
                 <input
+                  disabled={!isEditing}
                   className={getInputClass(touched.earningRatePercent && !!errors.earningRatePercent, 'pr-8')}
                   type="number"
                   min="0"
@@ -1019,19 +1096,20 @@ export default function AdminLoyaltyPanel({ ctx }) {
                 <Percent className={`pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${touched.earningRatePercent && errors.earningRatePercent ? 'text-rose-400' : 'text-neutral-400'}`} />
               </div>
               <p className="text-[9.5px] text-neutral-400 mt-1">
-                Ví dụ: 1% nghĩa là đơn hàng 100.000đ tích được 1.000 CinePoints (từ 0% đến 100%).
+                Ví dụ: 10% nghĩa là chi 100.000 VNĐ sẽ được cộng 10.000 CinePoints.
               </p>
             </Field>
 
-            {/* Tỷ lệ % quy đổi điểm */}
+            {/* Tỷ lệ quy đổi điểm % */}
             <Field 
-              label="Tỷ lệ % quy đổi điểm (%)" 
-              subtitle="Quy đổi điểm thành tiền giảm giá"
+              label="% Tỷ lệ quy đổi điểm (%)" 
+              subtitle="Hệ số nhân khi đổi vé (100% = 1pt/1đ)"
               error={touched.redemptionRatePercent ? errors.redemptionRatePercent : undefined}
               required
             >
               <div className="relative">
                 <input
+                  disabled={!isEditing}
                   className={getInputClass(touched.redemptionRatePercent && !!errors.redemptionRatePercent, 'pr-8 font-black text-amber-300')}
                   type="number"
                   min="0"
@@ -1044,15 +1122,10 @@ export default function AdminLoyaltyPanel({ ctx }) {
                 />
                 <Percent className={`pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${touched.redemptionRatePercent && errors.redemptionRatePercent ? 'text-rose-400' : 'text-amber-400'}`} />
               </div>
-              {/* Preview trực quan công thức quy đổi */}
-              <div className="p-2.5 rounded bg-black/60 border border-amber-500/20 text-[10px] space-y-1">
-                <div className="flex items-center justify-between text-neutral-300">
-                  <span>Ví dụ dùng: <strong className="font-mono text-white">{previewPointsExample.toLocaleString()} điểm</strong></span>
-                  <span className="text-emerald-400 font-mono font-bold">-{previewVndReduced.toLocaleString()}đ giảm giá</span>
-                </div>
-                <p className="text-[9px] text-neutral-500">
-                  {previewRedemptionRate === 100
-                    ? '• Tỷ lệ chuẩn: 1 CinePoint = 1 VNĐ (100% giá trị).'
+              <div className="space-y-0.5 mt-1">
+                <p className="text-[9.5px] text-neutral-400">
+                  {previewRedemptionRate === 100 
+                    ? '100% = Tỷ lệ chuẩn (1 CinePoint = 1 VNĐ).'
                     : `Hệ số quy đổi: ${previewRedemptionRate}%. (1 điểm = ${(previewRedemptionRate / 100).toFixed(2)}đ).`}
                 </p>
               </div>
@@ -1067,6 +1140,7 @@ export default function AdminLoyaltyPanel({ ctx }) {
             >
               <div className="relative">
                 <input
+                  disabled={!isEditing}
                   className={getInputClass(touched.maxRedemptionPercent && !!errors.maxRedemptionPercent, 'pr-8')}
                   type="number"
                   min="1"
@@ -1093,6 +1167,7 @@ export default function AdminLoyaltyPanel({ ctx }) {
                 required
               >
                 <input
+                  disabled={!isEditing}
                   className={getInputClass(touched.redemptionPoints && !!errors.redemptionPoints)}
                   type="number"
                   min="1"
@@ -1110,6 +1185,7 @@ export default function AdminLoyaltyPanel({ ctx }) {
                 required
               >
                 <input
+                  disabled={!isEditing}
                   className={getInputClass(touched.redemptionValueVnd && !!errors.redemptionValueVnd)}
                   type="number"
                   min="1"
@@ -1141,6 +1217,7 @@ export default function AdminLoyaltyPanel({ ctx }) {
                     dropUp={true}
                     hasError={touched.expiryDate && !!errors.expiryDate}
                     className="w-full"
+                    disabled={!isEditing}
                   />
                 </Field>
                 <Field 
@@ -1151,6 +1228,7 @@ export default function AdminLoyaltyPanel({ ctx }) {
                   <div className="relative">
                     <Clock className={`pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${touched.expiryTime && errors.expiryTime ? 'text-rose-400' : 'text-amber-400'}`} />
                     <input
+                      disabled={!isEditing}
                       className={getInputClass(touched.expiryTime && !!errors.expiryTime, 'pl-8')}
                       type="time"
                       step="1"
@@ -1173,14 +1251,44 @@ export default function AdminLoyaltyPanel({ ctx }) {
           </div>
 
           <div className="pt-2 flex flex-col gap-2">
-            <button
-              type="submit"
-              disabled={savingConfig}
-              className="inline-flex w-full items-center justify-center gap-2 border border-emerald-500/35 bg-emerald-500/10 px-4 py-2.5 text-[11px] font-black uppercase tracking-wider text-emerald-300 transition hover:bg-emerald-500 hover:text-black disabled:opacity-50"
-            >
-              <Save className="h-3.5 w-3.5" />
-              LƯU CẤU HÌNH {currentCinema ? `(${currentCinema.name})` : 'TOÀN HỆ THỐNG'}
-            </button>
+            {!isEditing ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setOriginalConfig({ ...config });
+                  setIsEditing(true);
+                }}
+                className="inline-flex w-full items-center justify-center gap-2 border border-amber-500/40 bg-amber-500/15 hover:bg-amber-500 hover:text-black px-4 py-2.5 text-xs font-black uppercase tracking-wider text-amber-300 transition shadow-lg shadow-amber-500/10"
+              >
+                <Edit3 className="h-4 w-4" />
+                CHỈNH SỬA CẤU HÌNH {currentCinema ? `(${currentCinema.name})` : 'TOÀN HỆ THỐNG'}
+              </button>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="submit"
+                  disabled={savingConfig}
+                  className="inline-flex items-center justify-center gap-2 border border-emerald-500/40 bg-emerald-500/20 hover:bg-emerald-500 hover:text-black px-3 py-2.5 text-[11px] font-black uppercase tracking-wider text-emerald-300 transition disabled:opacity-50"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  {savingConfig ? 'ĐANG LƯU...' : 'LƯU CẤU HÌNH'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (originalConfig) setConfig(originalConfig);
+                    setErrors({});
+                    setTouched({});
+                    setIsEditing(false);
+                  }}
+                  disabled={savingConfig}
+                  className="inline-flex items-center justify-center gap-2 border border-white/10 bg-neutral-900 hover:bg-neutral-800 hover:text-white px-3 py-2.5 text-[11px] font-bold uppercase tracking-wider text-neutral-300 transition"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  HỦY THAY ĐỔI
+                </button>
+              </div>
+            )}
 
             {isAdmin && (
               <button
