@@ -17,7 +17,8 @@ import {
   isStrongPassword,
   isValidVietnamPhone,
   normalizeNameInput,
-  normalizePhoneInput
+  normalizePhoneInput,
+  normalizeAuthErrorMessage
 } from '../../utils/validation';
 
 const AVATAR_PRESETS = [
@@ -455,7 +456,7 @@ export default function AuthModal({
       playPing(660, 'sine', 0.2);
       showToast('success', `Hệ thống đã gửi mã xác thực đến ${cleanEmail}. Vui lòng nhập mã trong 10 phút.`);
     } catch (error) {
-      showToast('error', error.message || 'Đăng ký thất bại. Vui lòng thử lại.');
+      showToast('error', normalizeAuthErrorMessage(error.message || 'Đăng ký thất bại. Vui lòng thử lại.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -534,7 +535,7 @@ export default function AuthModal({
       playPing(660, 'triangle', 0.12);
       showToast('success', `Hệ thống đã gửi lại mã xác thực đến ${email}. Mã mới có hiệu lực trong 10 phút.`);
     } catch (error) {
-      showToast('error', error.message || 'Không thể gửi lại OTP xác minh email.');
+      showToast('error', normalizeAuthErrorMessage(error.message || 'Không thể gửi lại OTP xác minh email.'));
     } finally {
       setIsSubmitting(false);
     }

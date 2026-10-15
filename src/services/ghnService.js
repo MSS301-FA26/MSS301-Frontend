@@ -8,12 +8,12 @@ export const GHN_PROD_API = 'https://online-gateway.ghn.vn/shiip/public-api/mast
 
 export const DEFAULT_GHN_TOKEN = '78be1310-ffe5-11f0-a3d6-dac90fb956b5';
 
-const CANDIDATE_GATEWAYS = [
-  GHN_DEV_API,
-  GHN_PROD_API,
-];
-
-let activeGateway = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GHN_API_URL?.trim()) || GHN_DEV_API;
+export const getGhnBaseUrl = () => {
+  return (
+    (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GHN_API_URL?.trim()) ||
+    GHN_DEV_API
+  );
+};
 
 // Standard 63 Vietnam Provinces/Cities Fallback
 export const FALLBACK_VIETNAM_PROVINCES = [
@@ -111,6 +111,24 @@ export const FALLBACK_DISTRICTS_BY_PROVINCE = {
   ],
   // Hà Nội
   201: [
+    { DistrictID: 1482, DistrictName: 'Quận Ba Đình' },
+    { DistrictID: 1484, DistrictName: 'Quận Hoàn Kiếm' },
+    { DistrictID: 1485, DistrictName: 'Quận Tây Hồ' },
+    { DistrictID: 1486, DistrictName: 'Quận Long Biên' },
+    { DistrictID: 1488, DistrictName: 'Quận Cầu Giấy' },
+    { DistrictID: 1489, DistrictName: 'Quận Đống Đa' },
+    { DistrictID: 1490, DistrictName: 'Quận Hai Bà Trưng' },
+    { DistrictID: 1491, DistrictName: 'Quận Hoàng Mai' },
+    { DistrictID: 1492, DistrictName: 'Quận Thanh Xuân' },
+    { DistrictID: 1493, DistrictName: 'Quận Nam Từ Liêm' },
+    { DistrictID: 1494, DistrictName: 'Quận Bắc Từ Liêm' },
+    { DistrictID: 1495, DistrictName: 'Quận Hà Đông' },
+    { DistrictID: 1496, DistrictName: 'Thị xã Sơn Tây' },
+    { DistrictID: 1497, DistrictName: 'Huyện Đông Anh' },
+    { DistrictID: 1498, DistrictName: 'Huyện Gia Lâm' },
+  ],
+  // Hà Nội 02 (Sandbox alias for test province 2002)
+  2002: [
     { DistrictID: 1482, DistrictName: 'Quận Ba Đình' },
     { DistrictID: 1484, DistrictName: 'Quận Hoàn Kiếm' },
     { DistrictID: 1485, DistrictName: 'Quận Tây Hồ' },
@@ -387,34 +405,32 @@ export const setGhnToken = (token) => {
 };
 
 /**
- * Execute request across GHN candidate gateways (Dev Sandbox vs Production)
+ * Execute request to configured GHN master-data API
  */
 const requestGhn = async (pathWithQuery) => {
   const token = getGhnToken();
   if (!token) return { success: false, data: null };
 
-  const gateways = [activeGateway, ...CANDIDATE_GATEWAYS.filter((g) => g !== activeGateway)];
+  const baseUrl = getGhnBaseUrl();
 
-  for (const gw of gateways) {
-    try {
-      const response = await fetch(`${gw}${pathWithQuery}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          Token: token,
-        },
-      });
+  try {
+    const response = await fetch(`${baseUrl}${pathWithQuery}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        Token: token,
+      },
+    });
 
-      if (response.ok) {
-        const json = await response.json();
-        if (json.code === 200 && Array.isArray(json.data) && json.data.length > 0) {
-          activeGateway = gw; // lock in the working gateway
-          return { success: true, isLive: true, data: json.data, gateway: gw };
-        }
+    if (response.ok) {
+      const json = await response.json();
+      if (json.code === 200) {
+        const list = Array.isArray(json.data) ? json.data : [];
+        return { success: true, isLive: true, data: list, gateway: baseUrl };
       }
-    } catch {
-      // Gateway network error, try next candidate
     }
+  } catch (err) {
+    console.warn(`[GHN] Request to ${baseUrl}${pathWithQuery} failed:`, err);
   }
 
   return { success: false, data: null };
@@ -427,7 +443,17 @@ const requestGhn = async (pathWithQuery) => {
 export const getGhnProvinces = async () => {
   const res = await requestGhn('/province');
   if (res.success && Array.isArray(res.data) && res.data.length > 0) {
-    const sorted = [...res.data].sort((a, b) =>
+    // Filter out sandbox dummy test entries like 2002 ("Hà Nội 02") and 298 ("Test - Alert - Tỉnh - 001")
+    const cleaned = res.data.filter((p) => {
+      if (!p || !p.ProvinceID) return false;
+      const id = Number(p.ProvinceID);
+      if (id === 2002 || id === 298) return false;
+      const name = (p.ProvinceName || '').toLowerCase().trim();
+      if (name.includes('test') || name.includes('hà nội 02') || name.includes('ha noi 02')) return false;
+      return true;
+    });
+
+    const sorted = [...cleaned].sort((a, b) =>
       (a.ProvinceName || '').localeCompare(b.ProvinceName || '', 'vi')
     );
     return { success: true, isLive: true, data: sorted };
@@ -447,7 +473,12 @@ export const getGhnProvinces = async () => {
 export const getGhnDistricts = async (provinceId) => {
   if (!provinceId) return { success: true, isLive: false, data: [] };
 
-  const res = await requestGhn(`/district?province_id=${provinceId}`);
+  const numId = Number(provinceId);
+  // GHN dev sandbox has a dummy test province 2002 ('Hà Nội 02') which has no districts in dev database.
+  // Map 2002 to 201 ('Hà Nội') so live districts can be retrieved.
+  const targetProvinceId = numId === 2002 ? 201 : provinceId;
+
+  const res = await requestGhn(`/district?province_id=${targetProvinceId}`);
   if (res.success && Array.isArray(res.data) && res.data.length > 0) {
     const sorted = [...res.data].sort((a, b) =>
       (a.DistrictName || '').localeCompare(b.DistrictName || '', 'vi')
@@ -456,7 +487,7 @@ export const getGhnDistricts = async (provinceId) => {
   }
 
   // Graceful fallback to local dataset if available
-  const fallback = FALLBACK_DISTRICTS_BY_PROVINCE[Number(provinceId)] || [];
+  const fallback = FALLBACK_DISTRICTS_BY_PROVINCE[numId] || FALLBACK_DISTRICTS_BY_PROVINCE[Number(targetProvinceId)] || [];
   return { success: true, isLive: false, data: fallback };
 };
 

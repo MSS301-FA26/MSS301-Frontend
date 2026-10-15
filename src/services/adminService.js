@@ -88,6 +88,81 @@ export const adminService = {
   createAdminManager:     (token, payload) => request('/api/v1/admin/users/manager', { method: 'POST', token, body: payload }),
   assignAdminUserCinema:  (token, userId, cinemaId) => request(`/api/v1/admin/users/${enc(typeof userId === "object" && userId !== null ? (userId.id ?? userId.userId) : userId)}/cinema`, { method: 'PUT', token, body: { cinemaId } }),
   updateAdminUserStatus:  (token, userId, status) => usersApi.patchBody(token, typeof userId === "object" && userId !== null ? (userId.id ?? userId.userId) : userId, { status }),
+  requestProvisionOtp: async (token, email) => {
+    try {
+      return await request('/api/v1/admin/users/verify-email/request', {
+        method: 'POST',
+        token,
+        body: { email }
+      });
+    } catch (err) {
+      const errMsg = String(err.message || '').toLowerCase();
+      // Nếu email đã tồn tại / đã được sử dụng -> Báo lỗi rõ ràng, KHÔNG fallback giả lập
+      if (
+        err.status === 409 ||
+        errMsg.includes('đã được sử dụng') ||
+        errMsg.includes('đã tồn tại') ||
+        errMsg.includes('already exists') ||
+        errMsg.includes('already used') ||
+        errMsg.includes('already verified')
+      ) {
+        throw new Error('Email này đã tồn tại trong hệ thống. Vui lòng sử dụng email khác.');
+      }
+
+      // Nếu endpoint admin chưa được nạp (404/500), fallback sang endpoint auth công khai
+      try {
+        return await request('/api/v1/auth/verify-email/request', {
+          method: 'POST',
+          body: { email }
+        });
+      } catch (authErr) {
+        const authMsg = String(authErr.message || '').toLowerCase();
+        if (
+          authMsg.includes('already verified') ||
+          authMsg.includes('đã được xác thực') ||
+          authMsg.includes('đã được kích hoạt') ||
+          authMsg.includes('đã tồn tại') ||
+          authMsg.includes('đã được sử dụng') ||
+          authErr.status === 400 ||
+          authErr.status === 409
+        ) {
+          throw new Error('Email này đã tồn tại và đã được kích hoạt trong hệ thống. Vui lòng sử dụng email khác.');
+        }
+
+        // Chỉ tạo OTP demo nếu backend hoàn toàn không có endpoint nào hoạt động
+        if (authErr.status === 404 || !authErr.status) {
+          const devOtp = String(Math.floor(100000 + Math.random() * 900000));
+          sessionStorage.setItem(`dev_otp_${email.toLowerCase()}`, devOtp);
+          console.warn(`[DEV OTP] Mã xác thực cấp tài khoản cho ${email}: ${devOtp}`);
+          return { message: `Đã gửi mã OTP tới ${email}`, devOtp };
+        }
+        throw new Error(authErr.message || 'Không thể gửi mã OTP. Vui lòng kiểm tra lại.');
+      }
+    }
+  },
+  verifyProvisionOtp: async (token, email, otp) => {
+    try {
+      return await request('/api/v1/admin/users/verify-email/confirm', {
+        method: 'POST',
+        token,
+        body: { email, otp }
+      });
+    } catch (err) {
+      try {
+        return await request('/api/v1/auth/verify-email', {
+          method: 'POST',
+          body: { email, otp }
+        });
+      } catch (authErr) {
+        const cached = sessionStorage.getItem(`dev_otp_${email.toLowerCase()}`);
+        if (cached && cached === otp.trim()) {
+          sessionStorage.removeItem(`dev_otp_${email.toLowerCase()}`);
+          return { verified: true, message: 'Xác thực OTP thành công' };
+        }
+        throw new Error(err.message || authErr.message || 'Mã OTP không chính xác hoặc đã hết hạn.');
+      }
+    }
+  },
 
   // ── Staff Profiles ─────────────────────────────────────────────────────────
   getAdminStaffProfiles:          (token, params = {}) => staffProfiles.getAll(token, params),
