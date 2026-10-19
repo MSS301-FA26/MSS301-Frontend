@@ -17,7 +17,8 @@ import {
   isStrongPassword,
   isValidVietnamPhone,
   normalizeNameInput,
-  normalizePhoneInput
+  normalizePhoneInput,
+  normalizeAuthErrorMessage
 } from '../../utils/validation';
 
 const AVATAR_PRESETS = [
@@ -455,7 +456,7 @@ export default function AuthModal({
       playPing(660, 'sine', 0.2);
       showToast('success', `Hệ thống đã gửi mã xác thực đến ${cleanEmail}. Vui lòng nhập mã trong 10 phút.`);
     } catch (error) {
-      showToast('error', error.message || 'Đăng ký thất bại. Vui lòng thử lại.');
+      showToast('error', normalizeAuthErrorMessage(error.message || 'Đăng ký thất bại. Vui lòng thử lại.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -534,7 +535,7 @@ export default function AuthModal({
       playPing(660, 'triangle', 0.12);
       showToast('success', `Hệ thống đã gửi lại mã xác thực đến ${email}. Mã mới có hiệu lực trong 10 phút.`);
     } catch (error) {
-      showToast('error', error.message || 'Không thể gửi lại OTP xác minh email.');
+      showToast('error', normalizeAuthErrorMessage(error.message || 'Không thể gửi lại OTP xác minh email.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -671,7 +672,12 @@ export default function AuthModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center overflow-y-auto bg-black/95 px-4 py-0 md:px-6 select-none">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/90 p-4 sm:p-6 select-none backdrop-blur-sm"
+    >
 
       {/* Animated Glowing Ambient Spotlight in Background */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
@@ -684,7 +690,7 @@ export default function AuthModal({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 15 }}
         transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-lg border border-neutral-800 bg-gradient-to-b from-[#0e0e0e] to-[#040404] text-white overflow-hidden relative shadow-[0_0_50px_rgba(0,0,0,0.8)] rounded-none"
+        className="w-full max-w-lg my-auto border border-neutral-800 bg-gradient-to-b from-[#0e0e0e] to-[#040404] text-white overflow-hidden relative shadow-[0_0_50px_rgba(0,0,0,0.8)] rounded-none"
         id="premium-auth-container"
       >
 

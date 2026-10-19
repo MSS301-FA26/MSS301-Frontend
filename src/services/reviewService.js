@@ -1,4 +1,4 @@
-﻿import { request } from './authService';
+import { request } from './authService';
 
 export const reviewService = {
   getMovieReviews: (movieId, page = 0, size = 10) =>
@@ -35,5 +35,11 @@ export const reviewService = {
       method: 'POST',
       token,
       body: payload
+    }),
+
+  deleteReview: (token, reviewId) =>
+    request(`/api/v1/reviews/${encodeURIComponent(reviewId)}`, {
+      method: 'DELETE',
+      token
     })
 };

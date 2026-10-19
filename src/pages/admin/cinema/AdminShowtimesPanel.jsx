@@ -3013,6 +3013,33 @@ export default function AdminShowtimesPanel({ ctx }) {
                                 🔒 Suất chiếu đang bán vé, không thể đổi trạng thái.
                               </span>
                             )}
+                            {(s.status === 'plan' || s.status === 'SCHEDULED') && (
+                              <button
+                                type="button"
+                                onClick={() => handleUpdate('status', 'open')}
+                                style={{
+                                  marginTop: '8px',
+                                  width: '100%',
+                                  padding: '8px 12px',
+                                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                                  color: '#fff',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  fontWeight: 700,
+                                  fontSize: '11px',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  gap: '6px',
+                                  boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)',
+                                  letterSpacing: '0.3px'
+                                }}
+                                title="Kích hoạt mở bán vé ngay cho khách hàng đặt vé trên website"
+                              >
+                                <span>🚀 Mở bán vé ngay (Kích hoạt OPEN)</span>
+                              </button>
+                            )}
                           </>
                         );
                       })()}

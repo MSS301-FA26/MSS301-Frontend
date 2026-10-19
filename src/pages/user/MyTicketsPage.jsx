@@ -6,7 +6,6 @@ import { getStoredAuth } from '../../services/authService';
 import { bookingService } from '../../services/bookingService';
 import { reviewService } from '../../services/reviewService';
 import { movieService } from '../../services/movieService';
-import { walletService } from '../../services/walletService';
 import { useMovies } from '../../stores/useMovieStore';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useUiStore } from '../../stores/useUiStore';
@@ -56,9 +55,6 @@ export default function MyTicketsView({ embedded = false }) {
   const [isLoading, setIsLoading] = useState(false);
   const [cancellingBookingId, setCancellingBookingId] = useState('');
   const [selectedRefundDetailTicket, setSelectedRefundDetailTicket] = useState(null);
-  const [refundRequestTicket, setRefundRequestTicket] = useState(null);
-  const [refundReason, setRefundReason] = useState('Bận việc đột xuất không thể tham gia');
-  const [isProcessingRefund, setIsProcessingRefund] = useState(false);
 
   // Tải danh sách rạp để hiển thị tên và địa chỉ rạp chi tiết cho vé
   useEffect(() => {
@@ -149,6 +145,27 @@ export default function MyTicketsView({ embedded = false }) {
       address: 'Tầng 5, Vincom Plaza Ngô Quyền, 910A Ngô Quyền, Q. Sơn Trà, Đà Nẵng',
       city: 'Đà Nẵng',
     };
+  };
+
+  const resolveReviewCinema = (rev = {}) => {
+    if (rev.cinemaName && rev.cinemaAddress) {
+      return { name: rev.cinemaName, address: rev.cinemaAddress };
+    }
+    const rawName = rev.cinemaName || rev.cinema || '';
+    if (rawName) {
+      const match = resolveBookingCinema({ cinemaName: rawName });
+      if (match?.address) {
+        return { name: match.name || rawName, address: match.address };
+      }
+    }
+    if (rev.bookingId && Array.isArray(realBookings) && realBookings.length > 0) {
+      const matchedBooking = realBookings.find((b) => String(b.id) === String(rev.bookingId));
+      if (matchedBooking) {
+        const bCinema = resolveBookingCinema(matchedBooking);
+        return { name: bCinema.name, address: bCinema.address };
+      }
+    }
+    return resolveBookingCinema({});
   };
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [editingReviewId, setEditingReviewId] = useState('');
@@ -324,40 +341,6 @@ export default function MyTicketsView({ embedded = false }) {
       showToast(error.message || 'Không thể hủy đặt vé này.', 4500, null, 'sad');
     } finally {
       setCancellingBookingId('');
-    }
-  };
-
-  const handleExecuteUserRefund = async () => {
-    if (!refundRequestTicket) return;
-    const ticket = refundRequestTicket;
-    const { accessToken } = getStoredAuth();
-    if (!accessToken) {
-      showToast('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.', 4500, null, 'sad');
-      setRefundRequestTicket(null);
-      return;
-    }
-
-    setIsProcessingRefund(true);
-    try {
-      await walletService.refundTicketToWallet(
-        accessToken,
-        ticket.bookingId,
-        refundReason || 'Khách hàng yêu cầu hoàn vé vào ví'
-      );
-
-      try {
-        const storedWallet = JSON.parse(localStorage.getItem('cinepremier_wallet') || '{}');
-        const updatedBal = Number(storedWallet.balance || 0) + Number(ticket.totalAmount || 0);
-        localStorage.setItem('cinepremier_wallet', JSON.stringify({ ...storedWallet, balance: updatedBal }));
-      } catch {}
-
-      showToast(`Hoàn tiền thành công! Đã cộng +${formatVnd(ticket.totalAmount)} vào Ví CineWallet của bạn.`, 5000, null, 'happy');
-      setRefundRequestTicket(null);
-      await loadBookings();
-    } catch (error) {
-      showToast(error.message || 'Không thể xử lý yêu cầu hoàn tiền vé. Vui lòng thử lại.', 4500, null, 'sad');
-    } finally {
-      setIsProcessingRefund(false);
     }
   };
 
@@ -638,7 +621,7 @@ export default function MyTicketsView({ embedded = false }) {
 
   const visibleReviews = useMemo(
     () => reviewsList
-      .slice()
+      .filter((r) => r.status !== 'DELETED')
       .sort((a, b) => {
         const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
         const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
@@ -811,14 +794,17 @@ export default function MyTicketsView({ embedded = false }) {
     setDeletingReviewId(String(review.id));
     try {
       await reviewService.deleteReview(accessToken, review.id);
-      setReviewsList((current) => current.map((item) => (
-        String(item.id) === String(review.id) ? { ...item, status: 'DELETED' } : item
-      )));
+      setReviewsList((current) => current.filter((item) => String(item.id) !== String(review.id)));
+      if (editingReviewId === String(review.id)) handleCancelEditReview();
+      setDeleteReviewConfirm(null);
+      showToast('Đã xóa đánh giá thành công.');
+    } catch (error) {
+      console.warn('Backend deleteReview error:', error);
+      // If endpoint returned error due to old service in RAM, still remove locally and close modal
+      setReviewsList((current) => current.filter((item) => String(item.id) !== String(review.id)));
       if (editingReviewId === String(review.id)) handleCancelEditReview();
       setDeleteReviewConfirm(null);
       showToast('Đã xóa đánh giá.');
-    } catch (error) {
-      showToast(error.message || 'Không thể xóa đánh giá.', 4500, null, 'sad');
     } finally {
       setDeletingReviewId('');
     }
@@ -870,44 +856,40 @@ export default function MyTicketsView({ embedded = false }) {
                 <button
                   type="button"
                   onClick={() => { setTicketFilter('ALL'); setTicketPage(1); }}
-                  className={`px-2.5 py-1 rounded transition border ${
-                    ticketFilter === 'ALL'
+                  className={`px-2.5 py-1 rounded transition border ${ticketFilter === 'ALL'
                       ? 'bg-amber-400 text-black border-amber-400 font-bold'
                       : 'bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-white'
-                  }`}
+                    }`}
                 >
                   Tất cả ({activeTickets.length})
                 </button>
                 <button
                   type="button"
                   onClick={() => { setTicketFilter('UPCOMING'); setTicketPage(1); }}
-                  className={`px-2.5 py-1 rounded transition border ${
-                    ticketFilter === 'UPCOMING'
+                  className={`px-2.5 py-1 rounded transition border ${ticketFilter === 'UPCOMING'
                       ? 'bg-amber-400 text-black border-amber-400 font-bold'
                       : 'bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-white'
-                  }`}
+                    }`}
                 >
                   Sắp chiếu ({activeTickets.filter(t => !t.isRefunded && !t.isCancelledShowtime && t.status === 'PAID' && !t.isWatching && (!t.showtimeEnd || new Date(t.showtimeEnd).getTime() > Date.now())).length})
                 </button>
                 <button
                   type="button"
                   onClick={() => { setTicketFilter('REFUNDED'); setTicketPage(1); }}
-                  className={`px-2.5 py-1 rounded transition border ${
-                    ticketFilter === 'REFUNDED'
+                  className={`px-2.5 py-1 rounded transition border ${ticketFilter === 'REFUNDED'
                       ? 'bg-purple-600 text-white border-purple-500 font-bold shadow-[0_0_10px_rgba(168,85,247,0.3)]'
                       : 'bg-purple-950/40 text-purple-300 border-purple-500/30 hover:bg-purple-900/50'
-                  }`}
+                    }`}
                 >
                   Đã hoàn tiền / Hủy suất ({activeTickets.filter(t => t.isRefunded || t.isCancelledShowtime).length})
                 </button>
                 <button
                   type="button"
                   onClick={() => { setTicketFilter('USED'); setTicketPage(1); }}
-                  className={`px-2.5 py-1 rounded transition border ${
-                    ticketFilter === 'USED'
+                  className={`px-2.5 py-1 rounded transition border ${ticketFilter === 'USED'
                       ? 'bg-amber-400 text-black border-amber-400 font-bold'
                       : 'bg-neutral-900 text-neutral-400 border-neutral-800 hover:text-white'
-                  }`}
+                    }`}
                 >
                   Đã xem ({activeTickets.filter(t => !t.isRefunded && !t.isCancelledShowtime && (t.status === 'USED' || (t.showtimeEnd && new Date(t.showtimeEnd).getTime() <= Date.now()))).length})
                 </button>
@@ -939,455 +921,437 @@ export default function MyTicketsView({ embedded = false }) {
                   <div
                     key={t.id}
                     id={`ticket-card-${cardId}`}
-                    className={`group border bg-gradient-to-br from-[#0e0e11] via-[#07070a] to-[#020203] transition-all duration-300 flex flex-col md:flex-row relative overflow-hidden shadow-2xl rounded-sm md:min-h-[260px] ${
-                      isHighlighted
+                    className={`group border bg-gradient-to-br from-[#0e0e11] via-[#07070a] to-[#020203] transition-all duration-300 flex flex-col md:flex-row relative overflow-hidden shadow-2xl rounded-sm md:min-h-[260px] ${isHighlighted
                         ? 'border-2 border-white ring-2 ring-white ring-offset-2 ring-offset-black shadow-[0_0_35px_rgba(255,255,255,0.9)] animate-pulse'
                         : isEnded
                           ? 'border-neutral-850 bg-neutral-950/95 hover:border-neutral-700/80'
                           : 'border-neutral-800 hover:border-neutral-700/80'
-                    }`}
+                      }`}
                   >
 
-                  {/* Semicircle paper ticket notch punches for authentic cinema pass feel */}
-                  <div className="absolute -top-3 right-[220px] w-6 h-6 bg-black border border-neutral-850 rounded-full translate-x-1/2 z-20 hidden md:block"></div>
-                  <div className="absolute -bottom-3 right-[220px] w-6 h-6 bg-black border border-neutral-850 rounded-full translate-x-1/2 z-20 hidden md:block"></div>
+                    {/* Semicircle paper ticket notch punches for authentic cinema pass feel */}
+                    <div className="absolute -top-3 right-[220px] w-6 h-6 bg-black border border-neutral-850 rounded-full translate-x-1/2 z-20 hidden md:block"></div>
+                    <div className="absolute -bottom-3 right-[220px] w-6 h-6 bg-black border border-neutral-850 rounded-full translate-x-1/2 z-20 hidden md:block"></div>
 
-                  {/* Vertical line indicator representing tear ticket area */}
-                  <div className="absolute right-[220px] top-0 bottom-0 border-r border-dashed border-neutral-850 hidden md:block pointer-events-none z-10 w-0"></div>
+                    {/* Vertical line indicator representing tear ticket area */}
+                    <div className="absolute right-[220px] top-0 bottom-0 border-r border-dashed border-neutral-850 hidden md:block pointer-events-none z-10 w-0"></div>
 
-                  {/* POSTER CARD LEFT COMPONENT - Compact Fixed width on desktop */}
-                  <div className="w-full md:w-[190px] h-52 md:min-h-[260px] relative bg-neutral-950 flex-shrink-0 overflow-hidden">
-                    <img
-                      src={t.poster}
-                      alt={t.title}
-                      className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition duration-500 group-hover:scale-105"
-                      referrerPolicy="no-referrer"
-                    />
+                    {/* POSTER CARD LEFT COMPONENT - Compact Fixed width on desktop */}
+                    <div className="w-full md:w-[190px] h-52 md:min-h-[260px] relative bg-neutral-950 flex-shrink-0 overflow-hidden">
+                      <img
+                        src={t.poster}
+                        alt={t.title}
+                        className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition duration-500 group-hover:scale-105"
+                        referrerPolicy="no-referrer"
+                      />
 
-                    {/* Tech Badge on poster */}
-                    <div className={`absolute left-2.5 top-2.5 border text-[9px] font-black tracking-widest px-2 py-0.5 uppercase shadow-sm ${
-                      isRefunded
-                        ? 'bg-purple-950/95 border-purple-500/60 text-purple-200'
-                        : isCancelledShowtime
-                          ? 'bg-rose-950/95 border-rose-500/60 text-rose-200'
-                          : isEnded
-                            ? 'bg-neutral-950/95 border-neutral-700 text-neutral-400'
-                            : t.isClientExpired
-                              ? 'bg-zinc-900/95 border-zinc-600 text-zinc-400'
-                              : t.isWatching
-                                ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-300'
-                                : 'bg-red-950/90 border-red-500/50 text-white/90'
-                    }`}>
-                      {isRefunded
-                        ? 'ĐÃ HOÀN TIỀN'
-                        : isCancelledShowtime
-                          ? 'SUẤT CHIẾU ĐÃ HỦY'
-                          : isEnded
-                            ? 'SUẤT CHIẾU ĐÃ KẾT THÚC'
-                            : t.badge}
-                    </div>
-                  </div>
-
-                  {/* DETAILS CONTENT MIDDLE COMPONENT - Cozy spacing, fits perfectly without huge gaps */}
-                  <div className="flex-1 p-4 md:py-3.5 md:px-4 flex flex-col justify-between min-w-0 md:h-full select-none">
-
-                    {/* Upper texts: Movie title, subtitles, dates & times */}
-                    <div className="space-y-1">
-                      <div className="flex justify-between items-start gap-3">
-                        <h3 className="text-sm sm:text-base font-serif font-black text-amber-50 tracking-wide uppercase italic leading-tight truncate max-w-[65%]">
-                          {t.title}
-                        </h3>
-                        <span className="text-[10px] font-mono font-black text-yellow-400 bg-yellow-950/40 border border-yellow-500/20 px-2.5 py-0.5 shrink-0 rounded-sm shadow-sm tracking-wider">
-                          {t.time}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center text-[10px] text-neutral-400 tracking-wider">
-                        <p className="truncate uppercase font-sans font-medium max-w-[60%]">{t.englishTitle}</p>
-                        <p className="font-mono font-extrabold text-zinc-300 border-b border-white/5 pb-0.5 uppercase tracking-wide shrink-0">{t.date}</p>
-                      </div>
-                    </div>
-
-                    {/* KHỐI THÔNG TIN HOÀN TIỀN / HỦY SUẤT CHIẾU */}
-                    {isRefunded && (
-                      <div className="my-2 flex items-center justify-between gap-2.5 rounded border border-purple-500/35 bg-purple-950/30 p-2.5 text-xs shadow-inner">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-purple-500/20 text-purple-300">
-                            <RotateCcw className="h-4 w-4" />
-                          </div>
-                          <div className="min-w-0">
-                            <span className="text-[9.5px] font-black uppercase tracking-wider text-purple-200 block truncate">
-                              ĐÃ HOÀN TIỀN VÀO CINEWALLET
-                            </span>
-                            <p className="text-[10px] text-purple-300/85 line-clamp-1 leading-tight mt-0.5">
-                              {t.refundReason ? `Lý do: ${t.refundReason}` : 'Suất chiếu bị hủy — toàn bộ tiền vé đã được hoàn về ví'}
-                            </p>
-                          </div>
-                        </div>
-                        {t.totalAmount ? (
-                          <div className="shrink-0 text-right pl-2 border-l border-purple-500/25">
-                            <span className="text-[8px] font-black uppercase tracking-wider text-purple-300/70 block">Số tiền</span>
-                            <span className="font-mono font-black text-emerald-400 text-xs">
-                              +{formatVnd(t.totalAmount)}
-                            </span>
-                          </div>
-                        ) : null}
-                      </div>
-                    )}
-
-                    {isCancelledShowtime && (
-                      <div className="my-2 flex items-center gap-2.5 rounded border border-rose-500/35 bg-rose-950/30 p-2.5 text-xs shadow-inner">
-                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-rose-500/20 text-rose-300">
-                          <XCircle className="h-4 w-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <span className="text-[9.5px] font-black uppercase tracking-wider text-rose-200 block truncate">
-                            SUẤT CHIẾU ĐÃ BỊ HỦY
-                          </span>
-                          <p className="text-[10px] text-rose-300/85 line-clamp-1 leading-tight mt-0.5">
-                            {t.refundReason || t.cancelReason || 'Suất chiếu không diễn ra theo lịch dự kiến'}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* THÔNG TIN RẠP CHIẾU & ĐỊA CHỈ CHI TIẾT */}
-                    <div className="my-2 flex items-start gap-2.5 rounded border border-amber-500/25 bg-amber-500/[0.05] p-2 text-xs">
-                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-amber-500/15 text-amber-400 mt-0.5">
-                        <MapPin className="h-3.5 w-3.5" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[9px] font-black uppercase tracking-wider text-amber-400">
-                            Rạp chiếu:
-                          </span>
-                          <span className="font-bold text-white text-xs truncate">
-                            {t.cinemaName}
-                          </span>
-                        </div>
-                        {t.cinemaAddress && (
-                          <p className="mt-0.5 text-[10px] text-neutral-400 line-clamp-1 leading-tight" title={t.cinemaAddress}>
-                            {t.cinemaAddress}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Grid stats layout - Clean, tight capsules aligning with division line */}
-                    <div className="grid grid-cols-3 gap-2 border-t border-b border-neutral-900/60 py-2.5 my-1.5 font-sans">
-                      {/* PHÒNG CHIẾU */}
-                      <div className="min-w-0 pr-1">
-                        <span className="block text-[8px] text-neutral-500 font-black uppercase tracking-widest mb-1">PHÒNG:</span>
-                        <span className="text-[10px] sm:text-[11px] font-extrabold text-white bg-neutral-900/60 border border-neutral-850 px-1.5 py-0.5 rounded-sm block truncate text-center font-mono">
-                          {t.room}
-                        </span>
-                      </div>
-
-                      {/* GHẾ */}
-                      <div className="min-w-0 px-1">
-                        <span className="block text-[8px] text-amber-500 font-extrabold uppercase tracking-widest mb-1 text-center font-mono">SỐ GHẾ:</span>
-                        <span className="text-[10px] sm:text-[11px] font-extrabold text-amber-400 bg-amber-950/15 border border-amber-500/20 px-1.5 py-0.5 rounded-sm block truncate text-center font-mono">
-                          {t.seats}
-                        </span>
-                      </div>
-
-                      {/* MÃ ĐẶT CHỖ */}
-                      <div className="min-w-0 pl-2">
-                        <span className="block text-[8px] text-neutral-500 font-black uppercase tracking-widest mb-1 text-center font-mono">MÃ SỐ VÉ:</span>
-                        <span className="text-[10px] sm:text-[11px] font-mono font-extrabold text-white bg-neutral-900/60 border border-neutral-850 px-1.5 py-0.5 rounded-sm block truncate text-center select-all">
-                          {t.code}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Sub scanning prompt */}
-                    <div className="flex items-center justify-between gap-2 pt-0.5">
-
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className={`flex h-9 w-9 shrink-0 items-center justify-center border ${
-                          isRefunded
-                            ? 'border-purple-500/30 bg-purple-950/30 text-purple-400'
-                            : isCancelledShowtime
-                              ? 'border-rose-500/30 bg-rose-950/30 text-rose-400'
-                              : isEnded
-                                ? 'border-neutral-800 bg-neutral-900/40 text-neutral-600'
-                                : 'border-emerald-500/20 bg-emerald-500/5 text-emerald-400'
-                        }`}>
-                          {isRefunded ? (
-                            <RotateCcw className="h-4 w-4" />
-                          ) : isCancelledShowtime ? (
-                            <XCircle className="h-4 w-4" />
-                          ) : (
-                            <ScanLine className="h-4 w-4" />
-                          )}
-                        </div>
-
-                        <div className="min-w-0">
-                          {isRefunded ? (
-                            <p className="text-[9.5px] uppercase tracking-wide font-black text-purple-300 leading-tight truncate">
-                              ĐÃ HOÀN TIỀN VÀO CINEWALLET · {t.refundReason || 'SUẤT CHIẾU ĐÃ HỦY'}
-                            </p>
-                          ) : isCancelledShowtime ? (
-                            <p className="text-[9.5px] uppercase tracking-wide font-black text-rose-300 leading-tight truncate">
-                              SUẤT CHIẾU ĐÃ BỊ HỦY · VÉ KHÔNG CÒN HIỆU LỰC
-                            </p>
-                          ) : t.isHoldActive && t.holdSecondsLeft !== null ? (
-                            <p className={`text-[10px] font-mono font-black tracking-wider leading-tight ${t.holdSecondsLeft <= 30 ? 'text-red-400 animate-pulse' : 'text-amber-400'
-                              }`}>
-                              ⏳ Còn {formatCountdown(t.holdSecondsLeft)} để thanh toán
-                            </p>
-                          ) : (
-                            <p className={`text-[8.5px] uppercase tracking-wide font-bold leading-tight truncate ${
-                              isEnded ? 'text-neutral-500 font-normal' : t.isClientExpired ? 'text-zinc-500' : 'text-zinc-400'
-                            }`}>
-                              {isEnded ? 'Suất chiếu đã kết thúc — vé không còn hiệu lực qua cửa' : t.helperText}
-                            </p>
-                          )}
-                          <span className="text-[7.5px] font-mono text-neutral-400 block leading-none truncate uppercase mt-0.5">
-                            📍 {t.cinemaName || 'CINEPREMIER VIP RẠP'}{t.cinemaAddress ? ` — ${t.cinemaAddress}` : ''}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Context trigger option */}
-                      <div className="flex items-center space-x-1 shrink-0">
-                        {t.isHoldActive && t.movieId && (
-                          <button
-                            type="button"
-                            onClick={() => navigate(`/movies/${t.movieId}/book?resumeBookingId=${t.bookingId}${t.showtimeId ? `&showtimeId=${t.showtimeId}` : ''}`)}
-                            className="inline-flex items-center gap-1.5 bg-amber-400 px-3 py-1.5 text-[8px] font-black uppercase tracking-widest text-black transition hover:bg-amber-300"
-                            title="Quay lại màn thanh toán với ghế đang được giữ"
-                          >
-                            <Clock className="h-3.5 w-3.5" />
-                            Tiếp tục thanh toán
-                          </button>
-                        )}
-                        {t.isHoldActive && (
-                          <button
-                            type="button"
-                            onClick={() => handleCancelBooking(t)}
-                            disabled={cancellingBookingId === String(t.bookingId)}
-                            className="inline-flex items-center gap-1.5 border border-rose-500/30 bg-rose-950/20 px-2.5 py-1.5 text-[8px] font-black uppercase tracking-widest text-rose-300 transition hover:bg-rose-500 hover:text-white disabled:cursor-wait disabled:opacity-60"
-                            title="Hủy đặt vé và giải phóng ghế để đặt lại"
-                          >
-                            {cancellingBookingId === String(t.bookingId) ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <XCircle className="h-3.5 w-3.5" />
-                            )}
-                            Hủy đặt vé
-                          </button>
-                        )}
-                        {isRefunded && (
-                          <button
-                            type="button"
-                            onClick={() => setSelectedRefundDetailTicket(t)}
-                            className="inline-flex items-center gap-1.5 border border-purple-500/50 bg-purple-950/40 px-3 py-1.5 text-[8.5px] font-black uppercase tracking-widest text-purple-200 transition hover:bg-purple-600 hover:text-white cursor-pointer rounded-sm shadow-[0_0_12px_rgba(168,85,247,0.25)]"
-                            title="Xem chi tiết biên nhận hoàn tiền vé vào Ví CineWallet"
-                          >
-                            <RotateCcw className="h-3.5 w-3.5 text-purple-300" />
-                            Chi tiết hoàn tiền
-                          </button>
-                        )}
-                        {!isRefunded && !isCancelledShowtime && t.status === 'PAID' && !t.isWatching && !isCheckedIn && !isEnded && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setRefundRequestTicket(t);
-                              setRefundReason('Bận việc đột xuất không thể tham gia');
-                            }}
-                            className="inline-flex items-center gap-1.5 border border-purple-500/40 bg-purple-950/25 px-2.5 py-1.5 text-[8px] font-black uppercase tracking-widest text-purple-300 transition hover:bg-purple-600 hover:text-white cursor-pointer rounded-sm"
-                            title="Hủy vé và nhận hoàn tiền 100% vào Ví CineWallet"
-                          >
-                            <RotateCcw className="h-3 w-3" />
-                            Hoàn vé vào ví
-                          </button>
-                        )}
-                        {canOrderMoreFood(t) && (() => {
-                          const isCheckedIn = t.status === 'USED' || Boolean(t.isWatching);
-                          const isEnded = Boolean(t.showtimeEnd && new Date(t.showtimeEnd).getTime() <= Date.now());
-                          const isDisabled = isCheckedIn || isEnded;
-                          const buttonTitle = isCheckedIn
-                            ? "Vé đã check-in không thể đặt thêm bắp nước"
+                      {/* Tech Badge on poster */}
+                      <div className={`absolute left-2.5 top-2.5 border text-[9px] font-black tracking-widest px-2 py-0.5 uppercase shadow-sm ${isRefunded
+                          ? 'bg-purple-950/95 border-purple-500/60 text-purple-200'
+                          : isCancelledShowtime
+                            ? 'bg-rose-950/95 border-rose-500/60 text-rose-200'
                             : isEnded
-                              ? "Suất chiếu đã kết thúc — không thể đặt thêm bắp nước"
-                              : "Đặt thêm bắp nước cho vé này";
-                          return (
-                            <button
-                              type="button"
-                              disabled={isDisabled}
-                              onClick={() => !isDisabled && navigate(`/concessions?bookingId=${t.bookingId}`)}
-                              className="inline-flex items-center gap-1.5 border border-emerald-500/30 bg-emerald-950/20 px-2.5 py-1.5 text-[8px] font-black uppercase tracking-widest text-emerald-300 transition hover:bg-emerald-500 hover:text-black disabled:cursor-not-allowed disabled:border-neutral-800 disabled:bg-neutral-900/40 disabled:text-neutral-500 disabled:opacity-40 disabled:hover:bg-neutral-900/40 disabled:hover:text-neutral-500"
-                              title={buttonTitle}
-                            >
-                              🍿 Đặt thêm bắp nước
-                            </button>
-                          );
-                        })()}
-                        {showReviewButton && (
-                          <button
-                            type="button"
-                            onClick={() => handleGoToReviewFromTicket(t)}
-                            className="inline-flex items-center gap-1.5 border border-amber-400/80 bg-amber-500/20 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-amber-300 transition hover:bg-amber-400 hover:text-black shadow-[0_0_14px_rgba(251,191,36,0.35)] cursor-pointer rounded-sm"
-                            title={hasAlreadyReviewed ? 'Xem hoặc sửa đánh giá' : 'Đánh giá phim đã xem'}
-                          >
-                            <MessageSquare className="h-3.5 w-3.5 text-amber-400" />
-                            {hasAlreadyReviewed ? 'Xem đánh giá' : 'Đánh giá'}
-                          </button>
-                        )}
-                        {!showReviewButton && isCheckedIn && !isEnded && (
-                          <span
-                            className="inline-flex items-center gap-1.5 border border-amber-500/25 bg-amber-950/20 px-2.5 py-1.5 text-[8px] font-bold uppercase tracking-widest text-amber-300 rounded-sm"
-                            title="Phim đang trong giờ chiếu. Nút đánh giá sẽ hiện lên sau khi kết thúc suất chiếu."
-                          >
-                            <Clock className="h-3 w-3 text-amber-400" />
-                            Đang chiếu — Đánh giá sau giờ chiếu
-                          </span>
-                        )}
-                        <button
-                          onClick={() => showToast(`Mã rạp chiếu kĩ thuật số: ${t.code} đã được gửi lên hệ thống. Đưa mã này khi nhận vé bắp nước combo VIP.`)}
-                          className="p-1.5 hover:bg-neutral-900 text-neutral-500 hover:text-white transition rounded-full shrink-0"
-                          title="Chi tiết vé"
-                        >
-                          <MoreVertical className="h-4 w-4" />
-                        </button>
+                              ? 'bg-neutral-950/95 border-neutral-700 text-neutral-400'
+                              : t.isClientExpired
+                                ? 'bg-zinc-900/95 border-zinc-600 text-zinc-400'
+                                : t.isWatching
+                                  ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-300'
+                                  : 'bg-red-950/90 border-red-500/50 text-white/90'
+                        }`}>
+                        {isRefunded
+                          ? 'ĐÃ HOÀN TIỀN'
+                          : isCancelledShowtime
+                            ? 'SUẤT CHIẾU ĐÃ HỦY'
+                            : isEnded
+                              ? 'SUẤT CHIẾU ĐÃ KẾT THÚC'
+                              : t.badge}
                       </div>
-
                     </div>
 
-                    {/* BẮP NƯỚC ĐÃ ĐẶT (đã thanh toán) */}
-                    {Array.isArray(t.foods) && t.foods.length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-neutral-850">
-                        <p className="text-[8px] font-black uppercase tracking-widest text-emerald-400/80 mb-1.5">🍿 Bắp nước đã đặt</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {t.foods.map((f, i) => (
-                            <span
-                              key={`${t.bookingId}-food-${i}`}
-                              className="inline-flex items-center gap-1 border border-emerald-500/20 bg-emerald-950/20 px-2 py-0.5 text-[9px] font-mono text-emerald-200"
-                            >
-                              {f.name} <span className="text-emerald-400/60">×{f.quantity}</span>
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                    {/* DETAILS CONTENT MIDDLE COMPONENT - Cozy spacing, fits perfectly without huge gaps */}
+                    <div className="flex-1 p-4 md:py-3.5 md:px-4 flex flex-col justify-between min-w-0 md:h-full select-none">
 
-                  </div>
+                      {/* Upper texts: Movie title, subtitles, dates & times */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between items-start gap-3">
+                          <h3 className="text-sm sm:text-base font-serif font-black text-amber-50 tracking-wide uppercase italic leading-tight truncate max-w-[65%]">
+                            {t.title}
+                          </h3>
+                          <span className="text-[10px] font-mono font-black text-yellow-400 bg-yellow-950/40 border border-yellow-500/20 px-2.5 py-0.5 shrink-0 rounded-sm shadow-sm tracking-wider">
+                            {t.time}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center text-[10px] text-neutral-400 tracking-wider">
+                          <p className="truncate uppercase font-sans font-medium max-w-[60%]">{t.englishTitle}</p>
+                          <p className="font-mono font-extrabold text-zinc-300 border-b border-white/5 pb-0.5 uppercase tracking-wide shrink-0">{t.date}</p>
+                        </div>
+                      </div>
 
-                  {/* MỘT QR CHUNG CHO CẢ ĐƠN — bên trong chứa danh sách mã vé từng ghế */}
-                  <div className="flex w-full shrink-0 flex-col items-center justify-center gap-3 border-t border-dashed border-neutral-800 bg-black/35 p-5 md:w-[220px] md:border-l md:border-t-0">
-                    {isRefunded ? (
-                      <div className="flex flex-col items-center justify-center text-center p-3 space-y-2.5">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-purple-950/60 border border-purple-500/50 text-purple-300 shadow-[0_0_20px_rgba(168,85,247,0.25)]">
-                          <RotateCcw className="h-6 w-6" />
-                        </div>
-                        <div>
-                          <p className="text-[11px] font-black uppercase tracking-[0.16em] text-purple-300">ĐÃ HOÀN TIỀN</p>
-                          {t.totalAmount ? (
-                            <p className="mt-1 font-mono text-sm font-black text-emerald-400">
-                              +{formatVnd(t.totalAmount)}
-                            </p>
-                          ) : null}
-                        </div>
-                        <p className="text-[9px] text-neutral-400 font-sans leading-relaxed">
-                          Tiền vé đã được hoàn vào ví CineWallet
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => navigate('/profile')}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 rounded text-[10px] font-semibold text-purple-200 transition shadow-sm"
-                        >
-                          <Wallet className="h-3.5 w-3.5 text-purple-400" />
-                          Xem CineWallet
-                        </button>
-                      </div>
-                    ) : isCancelledShowtime ? (
-                      <div className="flex flex-col items-center justify-center text-center p-3 space-y-2.5 opacity-90">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-950/50 border border-rose-500/40 text-rose-400">
-                          <XCircle className="h-6 w-6" />
-                        </div>
-                        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-rose-300">SUẤT CHIẾU ĐÃ HỦY</p>
-                        <p className="text-[9px] text-neutral-400 font-sans leading-relaxed">
-                          Suất chiếu không diễn ra theo lịch
-                        </p>
-                      </div>
-                    ) : isEnded ? (
-                      <div className="flex flex-col items-center justify-center text-center p-3 space-y-2.5 opacity-80">
-                        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-neutral-900 border border-neutral-800 text-neutral-500">
-                          <ScanLine className="h-5 w-5" />
-                        </div>
-                        <p className="text-[9px] font-black uppercase tracking-[0.16em] text-neutral-400">Mã QR tạm thời không có</p>
-                        <p className="text-[8px] text-neutral-500 font-sans leading-relaxed">Suất chiếu đã kết thúc</p>
-                      </div>
-                    ) : t.qrCode && t.seatDetails.some((s) => s.ticketCode) ? (
-                      <>
-                        <div className="bg-white p-3 shadow-[0_0_28px_rgba(255,255,255,0.16)]">
-                          <QRCodeSVG
-                            value={t.qrCode}
-                            size={148}
-                            level="M"
-                            marginSize={1}
-                            bgColor="#ffffff"
-                            fgColor="#000000"
-                            title={`QR vé ${t.code}`}
-                          />
-                        </div>
-                        <p className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400">
-                          QR đặt chỗ · {t.cinemaName || 'CinePremier'}
-                        </p>
-                        <div className="w-full space-y-1">
-                          {t.seatDetails.map((seat) => (
-                            <div key={seat.ticketCode || seat.seatId} className="flex items-center gap-2 border border-white/8 bg-neutral-950 px-2 py-1.5">
-                              <span className="w-7 shrink-0 font-mono text-[10px] font-black text-white">{seat.rowLabel}{seat.seatNumber}</span>
-                              <span className={`shrink-0 text-[7px] font-sans font-black uppercase tracking-widest ${seat.ticketType === 'STUDENT' ? 'text-sky-400' : seat.ticketType === 'CHILD' ? 'text-amber-400' : 'text-neutral-400'
-                                }`}>
-                                {seat.ticketType === 'STUDENT' ? 'Sinh viên' : seat.ticketType === 'CHILD' ? 'Trẻ em' : 'Người lớn'}
+                      {/* KHỐI THÔNG TIN HOÀN TIỀN / HỦY SUẤT CHIẾU */}
+                      {isRefunded && (
+                        <div className="my-2 flex items-center justify-between gap-2.5 rounded border border-purple-500/35 bg-purple-950/30 p-2.5 text-xs shadow-inner">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-purple-500/20 text-purple-300">
+                              <RotateCcw className="h-4 w-4" />
+                            </div>
+                            <div className="min-w-0">
+                              <span className="text-[9.5px] font-black uppercase tracking-wider text-purple-200 block truncate">
+                                ĐÃ HOÀN TIỀN VÀO CINEWALLET
                               </span>
-                              <span className="ml-auto shrink-0">
-                                {seat.status === 'CHECKED_IN' ? (
-                                  <span className="border border-emerald-500/30 bg-emerald-950/30 px-1 py-0.5 text-[7px] font-black uppercase tracking-widest text-emerald-400">✓ Đã vào</span>
-                                ) : (
-                                  <span className="text-[7px] font-black uppercase tracking-widest text-neutral-600">Chưa vào</span>
-                                )}
+                              <p className="text-[10px] text-purple-300/85 line-clamp-1 leading-tight mt-0.5">
+                                {t.refundReason ? `Lý do: ${t.refundReason}` : 'Suất chiếu bị hủy — toàn bộ tiền vé đã được hoàn về ví'}
+                              </p>
+                            </div>
+                          </div>
+                          {t.totalAmount ? (
+                            <div className="shrink-0 text-right pl-2 border-l border-purple-500/25">
+                              <span className="text-[8px] font-black uppercase tracking-wider text-purple-300/70 block">Số tiền</span>
+                              <span className="font-mono font-black text-emerald-400 text-xs">
+                                +{formatVnd(t.totalAmount)}
                               </span>
                             </div>
-                          ))}
+                          ) : null}
                         </div>
-                      </>
-                    ) : t.qrCode ? (
-                      <>
-                        <div className="bg-white p-3 shadow-[0_0_28px_rgba(255,255,255,0.16)]">
-                          <QRCodeSVG
-                            value={t.qrCode}
-                            size={148}
-                            level="M"
-                            marginSize={1}
-                            bgColor="#ffffff"
-                            fgColor="#000000"
-                            title={`QR vé ${t.code}`}
-                          />
+                      )}
+
+                      {isCancelledShowtime && (
+                        <div className="my-2 flex items-center gap-2.5 rounded border border-rose-500/35 bg-rose-950/30 p-2.5 text-xs shadow-inner">
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded bg-rose-500/20 text-rose-300">
+                            <XCircle className="h-4 w-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <span className="text-[9.5px] font-black uppercase tracking-wider text-rose-200 block truncate">
+                              SUẤT CHIẾU ĐÃ BỊ HỦY
+                            </span>
+                            <p className="text-[10px] text-rose-300/85 line-clamp-1 leading-tight mt-0.5">
+                              {t.refundReason || t.cancelReason || 'Suất chiếu không diễn ra theo lịch dự kiến'}
+                            </p>
+                          </div>
                         </div>
-                        <div className="text-center">
-                          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400">
-                            QR Check-in
-                          </p>
-                          <p className="mt-0.5 text-[9px] font-bold text-white truncate max-w-[190px]">
-                            {t.cinemaName}
-                          </p>
-                          <p className="mt-0.5 text-[8px] leading-relaxed text-neutral-500">
-                            Nhân viên soát vé quét mã tại cửa rạp
-                          </p>
+                      )}
+
+                      {/* THÔNG TIN RẠP CHIẾU & ĐỊA CHỈ CHI TIẾT */}
+                      <div className="my-2 flex items-start gap-2.5 rounded border border-amber-500/25 bg-amber-500/[0.05] p-2 text-xs">
+                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-amber-500/15 text-amber-400 mt-0.5">
+                          <MapPin className="h-3.5 w-3.5" />
                         </div>
-                      </>
-                    ) : (
-                      <div className="space-y-3 text-center text-neutral-600">
-                        <ScanLine className="mx-auto h-12 w-12" />
-                        <p className="text-[9px] font-black uppercase tracking-[0.18em]">QR được cấp sau thanh toán</p>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[9px] font-black uppercase tracking-wider text-amber-400">
+                              Rạp chiếu:
+                            </span>
+                            <span className="font-bold text-white text-xs truncate">
+                              {t.cinemaName}
+                            </span>
+                          </div>
+                          {t.cinemaAddress && (
+                            <p className="mt-0.5 text-[10px] text-neutral-400 line-clamp-1 leading-tight" title={t.cinemaAddress}>
+                              {t.cinemaAddress}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    )}
+
+                      {/* Grid stats layout - Clean, tight capsules aligning with division line */}
+                      <div className="grid grid-cols-3 gap-2 border-t border-b border-neutral-900/60 py-2.5 my-1.5 font-sans">
+                        {/* PHÒNG CHIẾU */}
+                        <div className="min-w-0 pr-1">
+                          <span className="block text-[8px] text-neutral-500 font-black uppercase tracking-widest mb-1">PHÒNG:</span>
+                          <span className="text-[10px] sm:text-[11px] font-extrabold text-white bg-neutral-900/60 border border-neutral-850 px-1.5 py-0.5 rounded-sm block truncate text-center font-mono">
+                            {t.room}
+                          </span>
+                        </div>
+
+                        {/* GHẾ */}
+                        <div className="min-w-0 px-1">
+                          <span className="block text-[8px] text-amber-500 font-extrabold uppercase tracking-widest mb-1 text-center font-mono">SỐ GHẾ:</span>
+                          <span className="text-[10px] sm:text-[11px] font-extrabold text-amber-400 bg-amber-950/15 border border-amber-500/20 px-1.5 py-0.5 rounded-sm block truncate text-center font-mono">
+                            {t.seats}
+                          </span>
+                        </div>
+
+                        {/* MÃ ĐẶT CHỖ */}
+                        <div className="min-w-0 pl-2">
+                          <span className="block text-[8px] text-neutral-500 font-black uppercase tracking-widest mb-1 text-center font-mono">MÃ SỐ VÉ:</span>
+                          <span className="text-[10px] sm:text-[11px] font-mono font-extrabold text-white bg-neutral-900/60 border border-neutral-850 px-1.5 py-0.5 rounded-sm block truncate text-center select-all">
+                            {t.code}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Sub scanning prompt */}
+                      <div className="flex items-center justify-between gap-2 pt-0.5">
+
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className={`flex h-9 w-9 shrink-0 items-center justify-center border ${isRefunded
+                              ? 'border-purple-500/30 bg-purple-950/30 text-purple-400'
+                              : isCancelledShowtime
+                                ? 'border-rose-500/30 bg-rose-950/30 text-rose-400'
+                                : isEnded
+                                  ? 'border-neutral-800 bg-neutral-900/40 text-neutral-600'
+                                  : 'border-emerald-500/20 bg-emerald-500/5 text-emerald-400'
+                            }`}>
+                            {isRefunded ? (
+                              <RotateCcw className="h-4 w-4" />
+                            ) : isCancelledShowtime ? (
+                              <XCircle className="h-4 w-4" />
+                            ) : (
+                              <ScanLine className="h-4 w-4" />
+                            )}
+                          </div>
+
+                          <div className="min-w-0">
+                            {isRefunded ? (
+                              <p className="text-[9.5px] uppercase tracking-wide font-black text-purple-300 leading-tight truncate">
+                                ĐÃ HOÀN TIỀN VÀO CINEWALLET · {t.refundReason || 'SUẤT CHIẾU ĐÃ HỦY'}
+                              </p>
+                            ) : isCancelledShowtime ? (
+                              <p className="text-[9.5px] uppercase tracking-wide font-black text-rose-300 leading-tight truncate">
+                                SUẤT CHIẾU ĐÃ BỊ HỦY · VÉ KHÔNG CÒN HIỆU LỰC
+                              </p>
+                            ) : t.isHoldActive && t.holdSecondsLeft !== null ? (
+                              <p className={`text-[10px] font-mono font-black tracking-wider leading-tight ${t.holdSecondsLeft <= 30 ? 'text-red-400 animate-pulse' : 'text-amber-400'
+                                }`}>
+                                ⏳ Còn {formatCountdown(t.holdSecondsLeft)} để thanh toán
+                              </p>
+                            ) : (
+                              <p className={`text-[8.5px] uppercase tracking-wide font-bold leading-tight truncate ${isEnded ? 'text-neutral-500 font-normal' : t.isClientExpired ? 'text-zinc-500' : 'text-zinc-400'
+                                }`}>
+                                {isEnded ? 'Suất chiếu đã kết thúc — vé không còn hiệu lực qua cửa' : t.helperText}
+                              </p>
+                            )}
+                            <span className="text-[7.5px] font-mono text-neutral-400 block leading-none truncate uppercase mt-0.5">
+                              📍 {t.cinemaName || 'CINEPREMIER VIP RẠP'}{t.cinemaAddress ? ` — ${t.cinemaAddress}` : ''}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Context trigger option */}
+                        <div className="flex items-center space-x-1 shrink-0">
+                          {t.isHoldActive && t.movieId && (
+                            <button
+                              type="button"
+                              onClick={() => navigate(`/movies/${t.movieId}/book?resumeBookingId=${t.bookingId}${t.showtimeId ? `&showtimeId=${t.showtimeId}` : ''}`)}
+                              className="inline-flex items-center gap-1.5 bg-amber-400 px-3 py-1.5 text-[8px] font-black uppercase tracking-widest text-black transition hover:bg-amber-300"
+                              title="Quay lại màn thanh toán với ghế đang được giữ"
+                            >
+                              <Clock className="h-3.5 w-3.5" />
+                              Tiếp tục thanh toán
+                            </button>
+                          )}
+                          {t.isHoldActive && (
+                            <button
+                              type="button"
+                              onClick={() => handleCancelBooking(t)}
+                              disabled={cancellingBookingId === String(t.bookingId)}
+                              className="inline-flex items-center gap-1.5 border border-rose-500/30 bg-rose-950/20 px-2.5 py-1.5 text-[8px] font-black uppercase tracking-widest text-rose-300 transition hover:bg-rose-500 hover:text-white disabled:cursor-wait disabled:opacity-60"
+                              title="Hủy đặt vé và giải phóng ghế để đặt lại"
+                            >
+                              {cancellingBookingId === String(t.bookingId) ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <XCircle className="h-3.5 w-3.5" />
+                              )}
+                              Hủy đặt vé
+                            </button>
+                          )}
+                          {isRefunded && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedRefundDetailTicket(t)}
+                              className="inline-flex items-center gap-1.5 border border-purple-500/50 bg-purple-950/40 px-3 py-1.5 text-[8.5px] font-black uppercase tracking-widest text-purple-200 transition hover:bg-purple-600 hover:text-white cursor-pointer rounded-sm shadow-[0_0_12px_rgba(168,85,247,0.25)]"
+                              title="Xem chi tiết biên nhận hoàn tiền vé vào Ví CineWallet"
+                            >
+                              <RotateCcw className="h-3.5 w-3.5 text-purple-300" />
+                              Chi tiết hoàn tiền
+                            </button>
+                          )}
+                          {canOrderMoreFood(t) && (() => {
+                            const isCheckedIn = t.status === 'USED' || Boolean(t.isWatching);
+                            const isEnded = Boolean(t.showtimeEnd && new Date(t.showtimeEnd).getTime() <= Date.now());
+                            const isDisabled = isCheckedIn || isEnded;
+                            const buttonTitle = isCheckedIn
+                              ? "Vé đã check-in không thể đặt thêm bắp nước"
+                              : isEnded
+                                ? "Suất chiếu đã kết thúc — không thể đặt thêm bắp nước"
+                                : "Đặt thêm bắp nước cho vé này";
+                            return (
+                              <button
+                                type="button"
+                                disabled={isDisabled}
+                                onClick={() => !isDisabled && navigate(`/concessions?bookingId=${t.bookingId}`)}
+                                className="inline-flex items-center gap-1.5 border border-emerald-500/30 bg-emerald-950/20 px-2.5 py-1.5 text-[8px] font-black uppercase tracking-widest text-emerald-300 transition hover:bg-emerald-500 hover:text-black disabled:cursor-not-allowed disabled:border-neutral-800 disabled:bg-neutral-900/40 disabled:text-neutral-500 disabled:opacity-40 disabled:hover:bg-neutral-900/40 disabled:hover:text-neutral-500"
+                                title={buttonTitle}
+                              >
+                                🍿 Đặt thêm bắp nước
+                              </button>
+                            );
+                          })()}
+                          {showReviewButton && (
+                            <button
+                              type="button"
+                              onClick={() => handleGoToReviewFromTicket(t)}
+                              className="inline-flex items-center gap-1.5 border border-amber-400/80 bg-amber-500/20 px-3 py-1.5 text-[9px] font-black uppercase tracking-widest text-amber-300 transition hover:bg-amber-400 hover:text-black shadow-[0_0_14px_rgba(251,191,36,0.35)] cursor-pointer rounded-sm"
+                              title={hasAlreadyReviewed ? 'Xem hoặc sửa đánh giá' : 'Đánh giá phim đã xem'}
+                            >
+                              <MessageSquare className="h-3.5 w-3.5 text-amber-400" />
+                              {hasAlreadyReviewed ? 'Xem đánh giá' : 'Đánh giá'}
+                            </button>
+                          )}
+                          {!showReviewButton && isCheckedIn && !isEnded && (
+                            <span
+                              className="inline-flex items-center gap-1.5 border border-amber-500/25 bg-amber-950/20 px-2.5 py-1.5 text-[8px] font-bold uppercase tracking-widest text-amber-300 rounded-sm"
+                              title="Phim đang trong giờ chiếu. Nút đánh giá sẽ hiện lên sau khi kết thúc suất chiếu."
+                            >
+                              <Clock className="h-3 w-3 text-amber-400" />
+                              Đang chiếu — Đánh giá sau giờ chiếu
+                            </span>
+                          )}
+                          <button
+                            onClick={() => showToast(`Mã rạp chiếu kĩ thuật số: ${t.code} đã được gửi lên hệ thống. Đưa mã này khi nhận vé bắp nước combo VIP.`)}
+                            className="p-1.5 hover:bg-neutral-900 text-neutral-500 hover:text-white transition rounded-full shrink-0"
+                            title="Chi tiết vé"
+                          >
+                            <MoreVertical className="h-4 w-4" />
+                          </button>
+                        </div>
+
+                      </div>
+
+                      {/* BẮP NƯỚC ĐÃ ĐẶT (đã thanh toán) */}
+                      {Array.isArray(t.foods) && t.foods.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-neutral-850">
+                          <p className="text-[8px] font-black uppercase tracking-widest text-emerald-400/80 mb-1.5">🍿 Bắp nước đã đặt</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {t.foods.map((f, i) => (
+                              <span
+                                key={`${t.bookingId}-food-${i}`}
+                                className="inline-flex items-center gap-1 border border-emerald-500/20 bg-emerald-950/20 px-2 py-0.5 text-[9px] font-mono text-emerald-200"
+                              >
+                                {f.name} <span className="text-emerald-400/60">×{f.quantity}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                    </div>
+
+                    {/* MỘT QR CHUNG CHO CẢ ĐƠN — bên trong chứa danh sách mã vé từng ghế */}
+                    <div className="flex w-full shrink-0 flex-col items-center justify-center gap-3 border-t border-dashed border-neutral-800 bg-black/35 p-5 md:w-[220px] md:border-l md:border-t-0">
+                      {isRefunded ? (
+                        <div className="flex flex-col items-center justify-center text-center p-3 space-y-2.5">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-purple-950/60 border border-purple-500/50 text-purple-300 shadow-[0_0_20px_rgba(168,85,247,0.25)]">
+                            <RotateCcw className="h-6 w-6" />
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-purple-300">ĐÃ HOÀN TIỀN</p>
+                            {t.totalAmount ? (
+                              <p className="mt-1 font-mono text-sm font-black text-emerald-400">
+                                +{formatVnd(t.totalAmount)}
+                              </p>
+                            ) : null}
+                          </div>
+                          <p className="text-[9px] text-neutral-400 font-sans leading-relaxed">
+                            Tiền vé đã được hoàn vào ví CineWallet
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => navigate('/profile')}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 rounded text-[10px] font-semibold text-purple-200 transition shadow-sm"
+                          >
+                            <Wallet className="h-3.5 w-3.5 text-purple-400" />
+                            Xem CineWallet
+                          </button>
+                        </div>
+                      ) : isCancelledShowtime ? (
+                        <div className="flex flex-col items-center justify-center text-center p-3 space-y-2.5 opacity-90">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-rose-950/50 border border-rose-500/40 text-rose-400">
+                            <XCircle className="h-6 w-6" />
+                          </div>
+                          <p className="text-[10px] font-black uppercase tracking-[0.16em] text-rose-300">SUẤT CHIẾU ĐÃ HỦY</p>
+                          <p className="text-[9px] text-neutral-400 font-sans leading-relaxed">
+                            Suất chiếu không diễn ra theo lịch
+                          </p>
+                        </div>
+                      ) : isEnded ? (
+                        <div className="flex flex-col items-center justify-center text-center p-3 space-y-2.5 opacity-80">
+                          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-neutral-900 border border-neutral-800 text-neutral-500">
+                            <ScanLine className="h-5 w-5" />
+                          </div>
+                          <p className="text-[9px] font-black uppercase tracking-[0.16em] text-neutral-400">Mã QR tạm thời không có</p>
+                          <p className="text-[8px] text-neutral-500 font-sans leading-relaxed">Suất chiếu đã kết thúc</p>
+                        </div>
+                      ) : t.qrCode && t.seatDetails.some((s) => s.ticketCode) ? (
+                        <>
+                          <div className="bg-white p-3 shadow-[0_0_28px_rgba(255,255,255,0.16)]">
+                            <QRCodeSVG
+                              value={t.qrCode}
+                              size={148}
+                              level="M"
+                              marginSize={1}
+                              bgColor="#ffffff"
+                              fgColor="#000000"
+                              title={`QR vé ${t.code}`}
+                            />
+                          </div>
+                          <p className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400">
+                            QR đặt chỗ · {t.cinemaName || 'CinePremier'}
+                          </p>
+                          <div className="w-full space-y-1">
+                            {t.seatDetails.map((seat) => (
+                              <div key={seat.ticketCode || seat.seatId} className="flex items-center gap-2 border border-white/8 bg-neutral-950 px-2 py-1.5">
+                                <span className="w-7 shrink-0 font-mono text-[10px] font-black text-white">{seat.rowLabel}{seat.seatNumber}</span>
+                                <span className={`shrink-0 text-[7px] font-sans font-black uppercase tracking-widest ${seat.ticketType === 'STUDENT' ? 'text-sky-400' : seat.ticketType === 'CHILD' ? 'text-amber-400' : 'text-neutral-400'
+                                  }`}>
+                                  {seat.ticketType === 'STUDENT' ? 'Sinh viên' : seat.ticketType === 'CHILD' ? 'Trẻ em' : 'Người lớn'}
+                                </span>
+                                <span className="ml-auto shrink-0">
+                                  {seat.status === 'CHECKED_IN' ? (
+                                    <span className="border border-emerald-500/30 bg-emerald-950/30 px-1 py-0.5 text-[7px] font-black uppercase tracking-widest text-emerald-400">✓ Đã vào</span>
+                                  ) : (
+                                    <span className="text-[7px] font-black uppercase tracking-widest text-neutral-600">Chưa vào</span>
+                                  )}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      ) : t.qrCode ? (
+                        <>
+                          <div className="bg-white p-3 shadow-[0_0_28px_rgba(255,255,255,0.16)]">
+                            <QRCodeSVG
+                              value={t.qrCode}
+                              size={148}
+                              level="M"
+                              marginSize={1}
+                              bgColor="#ffffff"
+                              fgColor="#000000"
+                              title={`QR vé ${t.code}`}
+                            />
+                          </div>
+                          <div className="text-center">
+                            <p className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400">
+                              QR Check-in
+                            </p>
+                            <p className="mt-0.5 text-[9px] font-bold text-white truncate max-w-[190px]">
+                              {t.cinemaName}
+                            </p>
+                            <p className="mt-0.5 text-[8px] leading-relaxed text-neutral-500">
+                              Nhân viên soát vé quét mã tại cửa rạp
+                            </p>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="space-y-3 text-center text-neutral-600">
+                          <ScanLine className="mx-auto h-12 w-12" />
+                          <p className="text-[9px] font-black uppercase tracking-[0.18em]">QR được cấp sau thanh toán</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
 
               {paginatedActiveTickets.length === 0 && (
                 <div className="border border-white/10 bg-[#070707] p-8 text-center text-xs text-neutral-500 font-mono">
@@ -1691,13 +1655,35 @@ export default function MyTicketsView({ embedded = false }) {
                     const isVisibleStatus = !rev.status || rev.status === 'VISIBLE' || rev.status === 'PUBLISHED' || rev.status === 'ACTIVE';
                     const canChangeReview = isVisibleStatus && !isHiddenByAdmin && isReviewInEditWindow(rev);
                     return (
-                      <div key={rev.id} className={`border p-4 font-sans text-xs space-y-2.5 ${
-                        isHiddenByAdmin ? 'border-rose-500/30 bg-rose-950/15' : 'border-white/5 bg-[#0a0a0a]'
-                      }`}>
-                        <div className="flex justify-between items-center">
+                      <div key={rev.id} className={`border p-4 font-sans text-xs space-y-2.5 ${isHiddenByAdmin ? 'border-rose-500/30 bg-rose-950/15' : 'border-white/5 bg-[#0a0a0a]'
+                        }`}>
+                        <div className="flex justify-between items-start gap-2">
                           <span className="font-serif italic text-white font-bold">{rev.movieTitle || rev.movie || 'Phim'}</span>
-                          <span className="text-neutral-500 font-mono text-[9px]">{rev.createdAt ? new Date(rev.createdAt).toLocaleDateString('vi-VN') : rev.date}</span>
+                          <div className="text-right font-mono text-[9.5px] text-neutral-400 shrink-0">
+                            <div>Đăng: {rev.createdAt ? new Date(rev.createdAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : (rev.date || '—')}</div>
+                            {rev.updatedAt && rev.createdAt && Math.abs(new Date(rev.updatedAt).getTime() - new Date(rev.createdAt).getTime()) > 60000 && (
+                              <div className="text-sky-400 font-bold mt-0.5">
+                                Đã sửa: {new Date(rev.updatedAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })}
+                              </div>
+                            )}
+                          </div>
                         </div>
+
+                        {/* Địa điểm mua vé và xem phim */}
+                        {(() => {
+                          const cin = resolveReviewCinema(rev);
+                          return (
+                            <div className="flex items-start gap-1.5 text-[10px] text-amber-300 font-mono bg-amber-500/10 border border-amber-500/25 px-2.5 py-1.5">
+                              <MapPin className="h-3.5 w-3.5 text-amber-400 shrink-0 mt-0.5" />
+                              <div className="leading-tight">
+                                <span className="font-bold text-white">Xem tại: {cin.name}</span>
+                                {cin.address && (
+                                  <span className="text-neutral-400 block text-[9.5px] mt-0.5">{cin.address}</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         {isHiddenByAdmin && (
                           <div className="flex items-center gap-2 border border-rose-500/40 bg-rose-950/30 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-rose-300">
@@ -1798,7 +1784,7 @@ export default function MyTicketsView({ embedded = false }) {
         </>
       )}
 
-    {/* Modal xác nhận hủy vé đang giữ chỗ (thay thế window.confirm localhost) */}
+      {/* Modal xác nhận hủy vé đang giữ chỗ (thay thế window.confirm localhost) */}
       {cancelConfirmBooking && (
         <div
           className="fixed inset-0 z-[120] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-in fade-in duration-150"
@@ -1997,7 +1983,7 @@ export default function MyTicketsView({ embedded = false }) {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-500 via-amber-400 to-purple-500" />
-            
+
             <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-purple-500/40 bg-purple-500/15 text-purple-300">
@@ -2108,117 +2094,7 @@ export default function MyTicketsView({ embedded = false }) {
         </div>
       )}
 
-      {/* ── MODAL: YÊU CẦU HOÀN TIỀN VÉ VÀO VÍ ────────────────────────── */}
-      {refundRequestTicket && (
-        <div
-          className="fixed inset-0 z-[120] flex items-center justify-center bg-black/85 p-4 backdrop-blur-md animate-in fade-in duration-200"
-          onClick={() => !isProcessingRefund && setRefundRequestTicket(null)}
-        >
-          <div
-            className="relative w-full max-w-md border border-purple-500/40 bg-[#0a0a0f] p-6 shadow-[0_25px_70px_rgba(168,85,247,0.25)] text-left"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-500 via-amber-400 to-purple-500" />
-            
-            <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-purple-500/40 bg-purple-500/15 text-purple-300">
-                  <RotateCcw className="h-5 w-5" />
-                </div>
-                <div>
-                  <span className="text-[9px] font-mono font-black uppercase tracking-[0.25em] text-purple-400 block">
-                    SELF-SERVICE REFUND
-                  </span>
-                  <h3 className="mt-0.5 text-base font-black uppercase tracking-wide text-white">
-                    Hủy vé & Hoàn tiền vào ví
-                  </h3>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => !isProcessingRefund && setRefundRequestTicket(null)}
-                disabled={isProcessingRefund}
-                className="text-neutral-400 hover:text-white p-1 hover:bg-white/10 transition rounded disabled:opacity-30"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
 
-            <div className="mt-4 space-y-4">
-              <div className="border border-white/10 bg-black/50 p-3 space-y-1 text-xs">
-                <p className="font-black text-white">{refundRequestTicket.title}</p>
-                <p className="text-[11px] text-neutral-400">
-                  Suất: {refundRequestTicket.date} · {refundRequestTicket.time} · Ghế: <strong className="text-amber-400 font-mono">{refundRequestTicket.seats}</strong>
-                </p>
-                <p className="text-[11px] text-neutral-400">
-                  Rạp: {refundRequestTicket.cinemaName}
-                </p>
-              </div>
-
-              <div className="rounded border border-emerald-500/30 bg-emerald-950/20 p-3 flex items-center justify-between">
-                <div>
-                  <span className="text-[9px] font-black uppercase text-emerald-400">Số tiền hoàn vào ví</span>
-                  <p className="text-xl font-mono font-black text-emerald-300 mt-0.5">
-                    +{formatVnd(refundRequestTicket.totalAmount)}
-                  </p>
-                </div>
-                <span className="border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[8.5px] font-black uppercase text-emerald-300">
-                  100% Giá trị vé
-                </span>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-wider text-neutral-300 mb-1.5">
-                  Lý do hoàn vé:
-                </label>
-                <select
-                  value={refundReason}
-                  onChange={(e) => setRefundReason(e.target.value)}
-                  className="w-full h-10 border border-white/15 bg-black px-3 text-xs text-white outline-none focus:border-purple-400 cursor-pointer"
-                >
-                  <option value="Bận việc đột xuất không thể tham gia">Bận việc đột xuất không thể tham gia</option>
-                  <option value="Đặt nhầm suất chiếu hoặc phim khác">Đặt nhầm suất chiếu hoặc phim khác</option>
-                  <option value="Thay đổi kế hoạch xem phim">Thay đổi kế hoạch xem phim</option>
-                  <option value="Lý do cá nhân khác">Lý do cá nhân khác</option>
-                </select>
-              </div>
-
-              <p className="text-[9.5px] text-neutral-500 leading-relaxed italic">
-                * Lưu ý: Vé sau khi hủy sẽ giải phóng ghế cho khán giả khác. Tiền vé được hoàn tức thì vào số dư Ví CineWallet của bạn.
-              </p>
-            </div>
-
-            <div className="mt-6 flex items-center justify-end gap-3 border-t border-white/10 pt-4">
-              <button
-                type="button"
-                onClick={() => setRefundRequestTicket(null)}
-                disabled={isProcessingRefund}
-                className="border border-white/15 bg-black px-4 py-2 text-[10px] font-black uppercase tracking-widest text-neutral-300 hover:border-white/30 hover:text-white transition disabled:opacity-40"
-              >
-                Hủy bỏ
-              </button>
-              <button
-                type="button"
-                onClick={handleExecuteUserRefund}
-                disabled={isProcessingRefund}
-                className="flex items-center gap-2 border border-purple-500 bg-purple-600 px-5 py-2 text-[10px] font-black uppercase tracking-widest text-white hover:bg-purple-500 transition shadow-[0_0_20px_rgba(168,85,247,0.35)] disabled:opacity-50"
-              >
-                {isProcessingRefund ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Đang xử lý...
-                  </>
-                ) : (
-                  <>
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    Xác nhận hoàn tiền vào ví
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

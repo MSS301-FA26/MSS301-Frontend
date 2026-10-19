@@ -144,7 +144,7 @@ export default function QuickBookingBar({ className = '', movies }) {
         const valid = raw.filter((st) => {
           if (!st.startTime) return false;
           const stTime = new Date(st.startTime);
-          return stTime > now && (st.status === 'OPEN' || st.status === 'SCHEDULED' || !st.status);
+          return stTime > now && (st.status === 'OPEN' || !st.status);
         });
         valid.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
         setAllShowtimes(valid);
@@ -168,7 +168,7 @@ export default function QuickBookingBar({ className = '', movies }) {
           const now = new Date();
           const valid = raw.filter((st) => {
             if (!st.startTime) return false;
-            return new Date(st.startTime) > now && (st.status === 'OPEN' || st.status === 'SCHEDULED' || !st.status);
+            return new Date(st.startTime) > now && (st.status === 'OPEN' || !st.status);
           });
           setAllShowtimes((prev) => {
             const existingIds = new Set(prev.map((s) => String(s.id)));

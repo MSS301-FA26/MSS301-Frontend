@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -958,6 +958,7 @@ export default function AdminDashboard({
     'pricing',
     'showtime-incidents',
     'tickets',
+    'reviews',
     'staff',
     'loyalty',
     'fnb-report',
@@ -1742,6 +1743,7 @@ export default function AdminDashboard({
     setHeroBannerInitialMovieId,
     isAdmin,
     isManager,
+    isEffectiveManager,
     currentUser
   };
 
@@ -1818,6 +1820,7 @@ export default function AdminDashboard({
                 { icon: DollarSign, tab: 'pricing', sound: 475 },
                 { icon: AlertCircle, tab: 'showtime-incidents', sound: 486 },
                 { icon: FileText, tab: 'tickets', sound: 492 },
+                { icon: MessageSquare, tab: 'reviews', sound: 515 },
                 null,
                 { icon: Shield, tab: 'staff', sound: 512 },
                 null,
@@ -1928,7 +1931,8 @@ export default function AdminDashboard({
 
                 {isEffectiveManager && (
                   <>
-                    <NavSectionLabel>Chính sách điểm</NavSectionLabel>
+                    <NavSectionLabel>Khách hàng &amp; Phản hồi</NavSectionLabel>
+                    <NavItem indent icon={MessageSquare} label="Đánh giá khán giả" active={activeTab === 'reviews'} onClick={() => { playPulseSound(515, 'sine', 0.05); changeAdminSection('reviews'); }} />
                     <NavItem indent icon={DollarSign} label="Điểm tích lũy rạp" active={activeTab === 'loyalty'} onClick={() => { playPulseSound(520, 'sine', 0.05); changeAdminSection('loyalty'); }} />
                   </>
                 )}

@@ -22,6 +22,7 @@ import {
   Building2,
   Sparkles,
   Popcorn,
+  X,
 } from 'lucide-react';
 import jsQR from 'jsqr';
 import { motion } from 'motion/react';
@@ -32,6 +33,7 @@ import { staffService } from '../../services/staffService';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useUiStore } from '../../stores/useUiStore';
 import StaffFoodCheckInPanel from './StaffFoodCheckInPanel';
+import TicketPrintModal from './TicketPrintModal';
 
 const FOOD_PAGE_SIZE = 10;
 const BOOKINGS_PAGE_SIZE = 8;
@@ -159,6 +161,7 @@ function ResultCard({
   onOpenCounterSale,
   assignedCinemaId,
   activeCinema,
+  onPrintTickets,
 }) {
   if (!result) {
     return (
@@ -539,9 +542,14 @@ function ResultCard({
         </div>
       )}
 
-      {result.type === 'success' && (
-        <button type="button" className="mt-5 flex w-full items-center justify-center gap-2 border border-emerald-400/40 bg-emerald-400 px-4 py-3 text-[9px] font-black uppercase tracking-widest text-black transition hover:bg-emerald-300">
-          <Printer className="h-3.5 w-3.5" /> In vé vào cửa
+      {booking && (result.type === 'success' || ['PAID', 'USED'].includes(booking.status)) && (
+        <button
+          type="button"
+          onClick={() => onPrintTickets?.(booking)}
+          className="mt-5 flex w-full items-center justify-center gap-2 border border-emerald-400/40 bg-emerald-400 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-black transition hover:bg-emerald-300 active:bg-emerald-500 shadow-[0_4px_20px_rgba(16,185,129,0.3)] cursor-pointer"
+          title="In vé giấy vào cửa phòng chiếu cho khách"
+        >
+          <Printer className="h-4 w-4" /> In vé vào cửa
         </button>
       )}
     </motion.div>
@@ -553,6 +561,19 @@ export default function StaffCheckInPage() {
   const showToast = useUiStore((state) => state.showToast);
   const currentUser = useAuthStore((state) => state.currentUser);
   const [cinemas, setCinemas] = useState([]);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  useEffect(() => {
+    if (!showLogoutModal) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && !isLoggingOut) {
+        setShowLogoutModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showLogoutModal, isLoggingOut]);
 
   // Staff chỉ được làm việc ở 1 rạp duy nhất theo phân công của hệ thống
   const assignedCinemaId = useMemo(() => {
@@ -598,6 +619,7 @@ export default function StaffCheckInPage() {
   const [cashGiven, setCashGiven] = useState(''); // tiền khách đưa (trống = thu đúng số)
   const [counterSaleReceipt, setCounterSaleReceipt] = useState(null); // biên lai sau khi thu
   const [pendingFnbCount, setPendingFnbCount] = useState(0);
+  const [printTicketsBooking, setPrintTicketsBooking] = useState(null);
   const qrVideoRef = useRef(null);
   const qrCanvasRef = useRef(null);
   const qrStreamRef = useRef(null);
@@ -629,15 +651,22 @@ export default function StaffCheckInPage() {
     return found || cinemas.find((c) => Number(c.id) === 5) || cinemas[0];
   }, [cinemas, assignedCinemaId]);
 
-  const handleStaffLogout = () => {
+  const handleStaffLogout = async () => {
+    setIsLoggingOut(true);
     const { refreshToken } = getStoredAuth();
     if (refreshToken) {
-      authService.logout(refreshToken).catch(() => { });
+      try {
+        await authService.logout(refreshToken);
+      } catch (error) {
+        console.warn('Backend staff logout warning:', error);
+      }
     }
     clearAuthSession();
     useAuthStore.getState().clearAuth();
     useAuthStore.getState().setIsAuthReady(true);
-    showToast('Đã đăng xuất khỏi hệ thống Staff.');
+    showToast('Đã kết thúc ca trực và đăng xuất khỏi hệ thống Staff.');
+    setShowLogoutModal(false);
+    setIsLoggingOut(false);
     navigate('/');
   };
 
@@ -1383,7 +1412,7 @@ export default function StaffCheckInPage() {
               {/* NÚT ĐĂNG XUẤT */}
               <button
                 type="button"
-                onClick={handleStaffLogout}
+                onClick={() => setShowLogoutModal(true)}
                 className="flex items-center gap-2 rounded-xl border border-rose-500/35 bg-gradient-to-r from-rose-500/15 to-rose-600/10 px-3.5 py-2 text-xs font-black uppercase tracking-wider text-rose-300 transition-all hover:border-rose-500 hover:from-rose-500/25 hover:to-rose-600/20 hover:text-white hover:shadow-[0_0_25px_rgba(244,63,94,0.35)] active:scale-95 cursor-pointer"
                 title="Đăng xuất khỏi ca trực Staff"
               >
@@ -1627,6 +1656,7 @@ export default function StaffCheckInPage() {
                 onOpenCounterSale={openCounterSale}
                 assignedCinemaId={assignedCinemaId}
                 activeCinema={activeCinema}
+                onPrintTickets={(b) => setPrintTicketsBooking(b)}
               />
             </section>
 
@@ -2261,6 +2291,133 @@ export default function StaffCheckInPage() {
             )}
           </>
         )}
+
+        {/* MODAL XÁC NHẬN ĐĂNG XUẤT ROLE STAFF */}
+        {showLogoutModal && (
+          <div
+            className="fixed inset-0 z-[300] flex items-center justify-center bg-black/85 p-4 backdrop-blur-md animate-in fade-in duration-200"
+            onClick={(e) => {
+              if (e.target === e.currentTarget && !isLoggingOut) setShowLogoutModal(false);
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.2 }}
+              className="relative w-full max-w-md overflow-hidden rounded-2xl border border-rose-500/30 bg-gradient-to-b from-[#151921] via-[#0d1017] to-[#08090d] p-6 sm:p-7 shadow-[0_25px_70px_rgba(244,63,94,0.3)] text-left"
+            >
+              {/* Background ambient radial glow */}
+              <div className="absolute -right-16 -top-16 h-44 w-44 rounded-full bg-rose-500/15 blur-3xl pointer-events-none" />
+              <div className="absolute -left-16 -bottom-16 h-44 w-44 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
+
+              {/* Close (X) button */}
+              <button
+                type="button"
+                onClick={() => !isLoggingOut && setShowLogoutModal(false)}
+                disabled={isLoggingOut}
+                className="absolute right-4 top-4 rounded-lg p-1.5 text-neutral-400 transition hover:bg-white/10 hover:text-white disabled:opacity-30 cursor-pointer"
+                title="Đóng"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              {/* Header: Icon + Title */}
+              <div className="flex items-start gap-4">
+                <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-rose-500/40 bg-gradient-to-br from-rose-500/20 to-rose-600/10 text-rose-400 shadow-[0_0_25px_rgba(244,63,94,0.3)]">
+                  <LogOut className="h-6 w-6" />
+                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                    <span className="absolute inset-0 rounded-full bg-rose-400 opacity-75 animate-ping" />
+                    <span className="relative h-3 w-3 rounded-full bg-rose-500" />
+                  </span>
+                </div>
+                <div className="min-w-0 pr-6">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/30 bg-rose-500/10 px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-rose-300">
+                    <ShieldCheck className="h-3 w-3" /> Xác nhận đăng xuất
+                  </span>
+                  <h3 className="mt-1.5 text-base sm:text-lg font-black uppercase tracking-wide text-white">
+                    Kết thúc ca trực Staff?
+                  </h3>
+                </div>
+              </div>
+
+              {/* Staff Workstation Card */}
+              <div className="mt-5 space-y-2.5 rounded-xl border border-white/10 bg-white/[0.03] p-3.5 backdrop-blur-sm text-xs">
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Tài khoản</span>
+                  <span className="font-bold text-white truncate max-w-[200px]">
+                    {currentUser?.fullName || currentUser?.name || 'CinemaAI Staff'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Email</span>
+                  <span className="font-mono text-neutral-300 truncate max-w-[200px]">
+                    {currentUser?.email || 'staff@cinemaai.com'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Vai trò</span>
+                  <span className="rounded bg-rose-500/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-rose-300 border border-rose-500/30">
+                    Staff (Nhân viên)
+                  </span>
+                </div>
+                <div className="flex items-center justify-between pt-0.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Rạp phân công</span>
+                  <span className="font-extrabold text-amber-300 truncate max-w-[200px]">
+                    {activeCinema?.name}
+                  </span>
+                </div>
+              </div>
+
+              {/* Notice text */}
+              <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-[11px] leading-relaxed text-amber-200/90">
+                <AlertCircle className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
+                <p>
+                  Khi đăng xuất, phiên làm việc ca trực của bạn sẽ kết thúc và hệ thống sẽ quay về trang chủ. Vui lòng đảm bảo các thao tác soát vé và bàn giao đơn bắp nước đã hoàn tất.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="mt-6 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowLogoutModal(false)}
+                  disabled={isLoggingOut}
+                  className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2.5 px-4 text-xs font-bold uppercase tracking-wider text-neutral-300 transition hover:bg-white/10 hover:text-white disabled:opacity-40 cursor-pointer"
+                >
+                  Ở lại ca trực
+                </button>
+                <button
+                  type="button"
+                  onClick={handleStaffLogout}
+                  disabled={isLoggingOut}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-rose-500/40 bg-gradient-to-r from-rose-600 to-rose-700 py-2.5 px-4 text-xs font-black uppercase tracking-wider text-white shadow-[0_0_25px_rgba(244,63,94,0.4)] transition hover:from-rose-500 hover:to-rose-600 active:scale-95 disabled:opacity-50 cursor-pointer"
+                >
+                  {isLoggingOut ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      <span>Đang đăng xuất...</span>
+                    </>
+                  ) : (
+                    <>
+                      <LogOut className="h-4 w-4" />
+                      <span>Đăng xuất</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Ticket Print Modal */}
+        <TicketPrintModal
+          isOpen={Boolean(printTicketsBooking)}
+          onClose={() => setPrintTicketsBooking(null)}
+          booking={printTicketsBooking}
+          activeCinema={activeCinema}
+          currentUser={currentUser}
+        />
       </main>
     </div>
   );
