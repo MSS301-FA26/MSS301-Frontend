@@ -31,8 +31,8 @@ const VIETNAM_MAINLAND_GIS = [
   [108.22, 16.08], [108.65, 15.48], [108.92, 14.85], [109.25, 14.12],
   [109.32, 13.35], [109.45, 12.65], [109.22, 11.88], [108.85, 11.35],
   [108.15, 10.92], [107.52, 10.52], [107.08, 10.35], [106.78, 9.95],
-  [106.35, 9.45],  [105.75, 9.05],  [105.15, 8.62],  [104.78, 8.58],
-  [104.82, 9.18],  [105.05, 9.75],  [104.48, 10.38], [105.08, 10.82],
+  [106.35, 9.45], [105.75, 9.05], [105.15, 8.62], [104.78, 8.58],
+  [104.82, 9.18], [105.05, 9.75], [104.48, 10.38], [105.08, 10.82],
   [105.55, 10.98], [105.92, 11.48], [106.15, 11.95], [106.62, 11.88],
   [107.28, 12.25], [107.55, 13.15], [107.42, 14.05], [107.52, 14.68],
   [107.18, 15.52], [106.58, 16.32], [105.82, 17.25], [105.18, 18.08],
@@ -56,91 +56,91 @@ function isPointInPolygon(lon, lat, polygon) {
 // Comprehensive 63 Provinces & Cities GIS Coordinates of Vietnam
 const VIETNAM_PROVINCES_GIS = {
   // ── ĐỒNG BẰNG SÔNG HỒNG & ĐÔNG BẮC / TÂY BẮC (MIỀN BẮC) ─────────────────────
-  "HÀ NỘI":          { lon: 105.84, lat: 21.03, region: "MIỀN BẮC", archType: "TWIN" },
-  "HANOI":           { lon: 105.84, lat: 21.03, region: "MIỀN BẮC", archType: "TWIN" },
-  "HẢI PHÒNG":       { lon: 106.68, lat: 20.86, region: "MIỀN BẮC", archType: "ROYAL" },
-  "QUẢNG NINH":      { lon: 107.07, lat: 20.95, region: "MIỀN BẮC", archType: "DOME" },
-  "BẮC NINH":        { lon: 106.07, lat: 21.18, region: "MIỀN BẮC", archType: "TWIN" },
-  "BẮC GIANG":       { lon: 106.20, lat: 21.27, region: "MIỀN BẮC", archType: "TWIN" },
-  "HẢI DƯƠNG":       { lon: 106.32, lat: 20.94, region: "MIỀN BẮC", archType: "ROYAL" },
-  "HƯNG YÊN":        { lon: 106.05, lat: 20.65, region: "MIỀN BẮC", archType: "ROYAL" },
-  "HÀ NAM":          { lon: 105.92, lat: 20.54, region: "MIỀN BẮC", archType: "ROYAL" },
-  "NAM ĐỊNH":        { lon: 106.17, lat: 20.43, region: "MIỀN BẮC", archType: "ROYAL" },
-  "THÁI BÌNH":       { lon: 106.34, lat: 20.45, region: "MIỀN BẮC", archType: "ROYAL" },
-  "NINH BÌNH":       { lon: 105.97, lat: 20.25, region: "MIỀN BẮC", archType: "ROYAL" },
-  "VĨNH PHÚC":       { lon: 105.60, lat: 21.31, region: "MIỀN BẮC", archType: "TWIN" },
-  "PHÚ THỌ":         { lon: 105.30, lat: 21.32, region: "MIỀN BẮC", archType: "TWIN" },
-  "THÁI NGUYÊN":     { lon: 105.84, lat: 21.59, region: "MIỀN BẮC", archType: "TWIN" },
-  "TUYÊN QUANG":     { lon: 105.21, lat: 21.82, region: "MIỀN BẮC", archType: "TWIN" },
-  "HÀ GIANG":        { lon: 104.98, lat: 22.82, region: "MIỀN BẮC", archType: "TWIN" },
-  "CAO BẰNG":        { lon: 106.26, lat: 22.67, region: "MIỀN BẮC", archType: "TWIN" },
-  "BẮC KẠN":         { lon: 105.83, lat: 22.15, region: "MIỀN BẮC", archType: "TWIN" },
-  "LẠNG SƠN":        { lon: 106.76, lat: 21.85, region: "MIỀN BẮC", archType: "TWIN" },
-  "LÀO CAI":         { lon: 103.97, lat: 22.48, region: "MIỀN BẮC", archType: "TWIN" },
-  "YÊN BÁI":         { lon: 104.87, lat: 21.72, region: "MIỀN BẮC", archType: "TWIN" },
-  "HÒA BÌNH":        { lon: 105.34, lat: 20.82, region: "MIỀN BẮC", archType: "TWIN" },
-  "SƠN LA":          { lon: 103.91, lat: 21.33, region: "MIỀN BẮC", archType: "TWIN" },
-  "ĐIỆN BIÊN":       { lon: 103.02, lat: 21.39, region: "MIỀN BẮC", archType: "TWIN" },
-  "LAI CHÂU":        { lon: 103.46, lat: 22.40, region: "MIỀN BẮC", archType: "TWIN" },
+  "HÀ NỘI": { lon: 105.84, lat: 21.03, region: "MIỀN BẮC", archType: "TWIN" },
+  "HANOI": { lon: 105.84, lat: 21.03, region: "MIỀN BẮC", archType: "TWIN" },
+  "HẢI PHÒNG": { lon: 106.68, lat: 20.86, region: "MIỀN BẮC", archType: "ROYAL" },
+  "QUẢNG NINH": { lon: 107.07, lat: 20.95, region: "MIỀN BẮC", archType: "DOME" },
+  "BẮC NINH": { lon: 106.07, lat: 21.18, region: "MIỀN BẮC", archType: "TWIN" },
+  "BẮC GIANG": { lon: 106.20, lat: 21.27, region: "MIỀN BẮC", archType: "TWIN" },
+  "HẢI DƯƠNG": { lon: 106.32, lat: 20.94, region: "MIỀN BẮC", archType: "ROYAL" },
+  "HƯNG YÊN": { lon: 106.05, lat: 20.65, region: "MIỀN BẮC", archType: "ROYAL" },
+  "HÀ NAM": { lon: 105.92, lat: 20.54, region: "MIỀN BẮC", archType: "ROYAL" },
+  "NAM ĐỊNH": { lon: 106.17, lat: 20.43, region: "MIỀN BẮC", archType: "ROYAL" },
+  "THÁI BÌNH": { lon: 106.34, lat: 20.45, region: "MIỀN BẮC", archType: "ROYAL" },
+  "NINH BÌNH": { lon: 105.97, lat: 20.25, region: "MIỀN BẮC", archType: "ROYAL" },
+  "VĨNH PHÚC": { lon: 105.60, lat: 21.31, region: "MIỀN BẮC", archType: "TWIN" },
+  "PHÚ THỌ": { lon: 105.30, lat: 21.32, region: "MIỀN BẮC", archType: "TWIN" },
+  "THÁI NGUYÊN": { lon: 105.84, lat: 21.59, region: "MIỀN BẮC", archType: "TWIN" },
+  "TUYÊN QUANG": { lon: 105.21, lat: 21.82, region: "MIỀN BẮC", archType: "TWIN" },
+  "HÀ GIANG": { lon: 104.98, lat: 22.82, region: "MIỀN BẮC", archType: "TWIN" },
+  "CAO BẰNG": { lon: 106.26, lat: 22.67, region: "MIỀN BẮC", archType: "TWIN" },
+  "BẮC KẠN": { lon: 105.83, lat: 22.15, region: "MIỀN BẮC", archType: "TWIN" },
+  "LẠNG SƠN": { lon: 106.76, lat: 21.85, region: "MIỀN BẮC", archType: "TWIN" },
+  "LÀO CAI": { lon: 103.97, lat: 22.48, region: "MIỀN BẮC", archType: "TWIN" },
+  "YÊN BÁI": { lon: 104.87, lat: 21.72, region: "MIỀN BẮC", archType: "TWIN" },
+  "HÒA BÌNH": { lon: 105.34, lat: 20.82, region: "MIỀN BẮC", archType: "TWIN" },
+  "SƠN LA": { lon: 103.91, lat: 21.33, region: "MIỀN BẮC", archType: "TWIN" },
+  "ĐIỆN BIÊN": { lon: 103.02, lat: 21.39, region: "MIỀN BẮC", archType: "TWIN" },
+  "LAI CHÂU": { lon: 103.46, lat: 22.40, region: "MIỀN BẮC", archType: "TWIN" },
 
   // ── BẮC TRUNG BỘ & DUYÊN HẢI MIỀN TRUNG ─────────────────────────────────────
-  "THANH HÓA":       { lon: 105.78, lat: 19.81, region: "MIỀN TRUNG", archType: "ROYAL" },
-  "NGHỆ AN":         { lon: 105.68, lat: 18.67, region: "MIỀN TRUNG", archType: "ROYAL" },
-  "HÀ TĨNH":         { lon: 105.90, lat: 18.34, region: "MIỀN TRUNG", archType: "ROYAL" },
-  "QUẢNG BÌNH":      { lon: 106.60, lat: 17.47, region: "MIỀN TRUNG", archType: "ROYAL" },
-  "QUẢNG TRỊ":       { lon: 107.19, lat: 16.82, region: "MIỀN TRUNG", archType: "ROYAL" },
-  "THỪA THIÊN HUẾ":  { lon: 107.59, lat: 16.46, region: "MIỀN TRUNG", archType: "ROYAL" },
-  "HUẾ":             { lon: 107.59, lat: 16.46, region: "MIỀN TRUNG", archType: "ROYAL" },
-  "ĐÀ NẴNG":         { lon: 108.22, lat: 16.06, region: "MIỀN TRUNG", archType: "DRAGON" },
-  "QUẢNG NAM":       { lon: 108.20, lat: 15.57, region: "MIỀN TRUNG", archType: "DRAGON" },
-  "QUẢNG NGÃI":      { lon: 108.80, lat: 15.12, region: "MIỀN TRUNG", archType: "DOME" },
-  "BÌNH ĐỊNH":       { lon: 109.05, lat: 13.78, region: "MIỀN TRUNG", archType: "DOME" },
-  "PHÚ YÊN":         { lon: 109.28, lat: 13.09, region: "MIỀN TRUNG", archType: "DOME" },
-  "KHÁNH HÒA":       { lon: 109.19, lat: 12.24, region: "MIỀN TRUNG", archType: "DOME" },
-  "NHA TRANG":       { lon: 109.19, lat: 12.24, region: "MIỀN TRUNG", archType: "DOME" },
-  "NINH THUẬN":      { lon: 108.99, lat: 11.57, region: "MIỀN TRUNG", archType: "DOME" },
-  "BÌNH THUẬN":      { lon: 108.10, lat: 10.93, region: "MIỀN TRUNG", archType: "DOME" },
+  "THANH HÓA": { lon: 105.78, lat: 19.81, region: "MIỀN TRUNG", archType: "ROYAL" },
+  "NGHỆ AN": { lon: 105.68, lat: 18.67, region: "MIỀN TRUNG", archType: "ROYAL" },
+  "HÀ TĨNH": { lon: 105.90, lat: 18.34, region: "MIỀN TRUNG", archType: "ROYAL" },
+  "QUẢNG BÌNH": { lon: 106.60, lat: 17.47, region: "MIỀN TRUNG", archType: "ROYAL" },
+  "QUẢNG TRỊ": { lon: 107.19, lat: 16.82, region: "MIỀN TRUNG", archType: "ROYAL" },
+  "THỪA THIÊN HUẾ": { lon: 107.59, lat: 16.46, region: "MIỀN TRUNG", archType: "ROYAL" },
+  "HUẾ": { lon: 107.59, lat: 16.46, region: "MIỀN TRUNG", archType: "ROYAL" },
+  "ĐÀ NẴNG": { lon: 108.22, lat: 16.06, region: "MIỀN TRUNG", archType: "DRAGON" },
+  "QUẢNG NAM": { lon: 108.20, lat: 15.57, region: "MIỀN TRUNG", archType: "DRAGON" },
+  "QUẢNG NGÃI": { lon: 108.80, lat: 15.12, region: "MIỀN TRUNG", archType: "DOME" },
+  "BÌNH ĐỊNH": { lon: 109.05, lat: 13.78, region: "MIỀN TRUNG", archType: "DOME" },
+  "PHÚ YÊN": { lon: 109.28, lat: 13.09, region: "MIỀN TRUNG", archType: "DOME" },
+  "KHÁNH HÒA": { lon: 109.19, lat: 12.24, region: "MIỀN TRUNG", archType: "DOME" },
+  "NHA TRANG": { lon: 109.19, lat: 12.24, region: "MIỀN TRUNG", archType: "DOME" },
+  "NINH THUẬN": { lon: 108.99, lat: 11.57, region: "MIỀN TRUNG", archType: "DOME" },
+  "BÌNH THUẬN": { lon: 108.10, lat: 10.93, region: "MIỀN TRUNG", archType: "DOME" },
 
   // ── TÂY NGUYÊN (CENTRAL HIGHLANDS) ──────────────────────────────────────────
-  "ĐẮK LẮK":         { lon: 108.05, lat: 12.68, region: "TÂY NGUYÊN", archType: "LOTUS" },
-  "ĐẮC LẮC":         { lon: 108.05, lat: 12.68, region: "TÂY NGUYÊN", archType: "LOTUS" },
-  "DAK LAK":         { lon: 108.05, lat: 12.68, region: "TÂY NGUYÊN", archType: "LOTUS" },
-  "BUÔN MA THUỘT":   { lon: 108.05, lat: 12.68, region: "TÂY NGUYÊN", archType: "LOTUS" },
-  "CƯ KUIN":         { lon: 108.08, lat: 12.58, region: "TÂY NGUYÊN", archType: "LOTUS" },
-  "GIA LAI":         { lon: 108.00, lat: 13.98, region: "TÂY NGUYÊN", archType: "LOTUS" },
-  "PLEIKU":          { lon: 108.00, lat: 13.98, region: "TÂY NGUYÊN", archType: "LOTUS" },
-  "KON TUM":         { lon: 108.00, lat: 14.35, region: "TÂY NGUYÊN", archType: "LOTUS" },
-  "ĐẮK NÔNG":        { lon: 107.69, lat: 12.00, region: "TÂY NGUYÊN", archType: "LOTUS" },
-  "DAK NONG":        { lon: 107.69, lat: 12.00, region: "TÂY NGUYÊN", archType: "LOTUS" },
-  "LÂM ĐỒNG":        { lon: 108.44, lat: 11.94, region: "TÂY NGUYÊN", archType: "LOTUS" },
-  "ĐÀ LẠT":          { lon: 108.44, lat: 11.94, region: "TÂY NGUYÊN", archType: "LOTUS" },
+  "ĐẮK LẮK": { lon: 108.05, lat: 12.68, region: "TÂY NGUYÊN", archType: "LOTUS" },
+  "ĐẮC LẮC": { lon: 108.05, lat: 12.68, region: "TÂY NGUYÊN", archType: "LOTUS" },
+  "DAK LAK": { lon: 108.05, lat: 12.68, region: "TÂY NGUYÊN", archType: "LOTUS" },
+  "BUÔN MA THUỘT": { lon: 108.05, lat: 12.68, region: "TÂY NGUYÊN", archType: "LOTUS" },
+  "CƯ KUIN": { lon: 108.08, lat: 12.58, region: "TÂY NGUYÊN", archType: "LOTUS" },
+  "GIA LAI": { lon: 108.00, lat: 13.98, region: "TÂY NGUYÊN", archType: "LOTUS" },
+  "PLEIKU": { lon: 108.00, lat: 13.98, region: "TÂY NGUYÊN", archType: "LOTUS" },
+  "KON TUM": { lon: 108.00, lat: 14.35, region: "TÂY NGUYÊN", archType: "LOTUS" },
+  "ĐẮK NÔNG": { lon: 107.69, lat: 12.00, region: "TÂY NGUYÊN", archType: "LOTUS" },
+  "DAK NONG": { lon: 107.69, lat: 12.00, region: "TÂY NGUYÊN", archType: "LOTUS" },
+  "LÂM ĐỒNG": { lon: 108.44, lat: 11.94, region: "TÂY NGUYÊN", archType: "LOTUS" },
+  "ĐÀ LẠT": { lon: 108.44, lat: 11.94, region: "TÂY NGUYÊN", archType: "LOTUS" },
 
   // ── ĐÔNG NAM BỘ (MIỀN NAM) ──────────────────────────────────────────────────
   "TP. HỒ CHÍ MINH": { lon: 106.70, lat: 10.78, region: "MIỀN NAM", archType: "BITEXCO" },
-  "HỒ CHÍ MINH":     { lon: 106.70, lat: 10.78, region: "MIỀN NAM", archType: "BITEXCO" },
-  "SÀI GÒN":         { lon: 106.70, lat: 10.78, region: "MIỀN NAM", archType: "BITEXCO" },
-  "BÌNH DƯƠNG":      { lon: 106.65, lat: 10.98, region: "MIỀN NAM", archType: "LANDMARK" },
-  "ĐỒNG NAI":        { lon: 106.84, lat: 10.95, region: "MIỀN NAM", archType: "LANDMARK" },
+  "HỒ CHÍ MINH": { lon: 106.70, lat: 10.78, region: "MIỀN NAM", archType: "BITEXCO" },
+  "SÀI GÒN": { lon: 106.70, lat: 10.78, region: "MIỀN NAM", archType: "BITEXCO" },
+  "BÌNH DƯƠNG": { lon: 106.65, lat: 10.98, region: "MIỀN NAM", archType: "LANDMARK" },
+  "ĐỒNG NAI": { lon: 106.84, lat: 10.95, region: "MIỀN NAM", archType: "LANDMARK" },
   "BÀ RỊA - VŨNG TÀU": { lon: 107.18, lat: 10.50, region: "MIỀN NAM", archType: "DOME" },
-  "VŨNG TÀU":        { lon: 107.08, lat: 10.35, region: "MIỀN NAM", archType: "DOME" },
-  "TÂY NINH":        { lon: 106.10, lat: 11.31, region: "MIỀN NAM", archType: "DOME" },
-  "BÌNH PHƯỚC":      { lon: 106.88, lat: 11.53, region: "MIỀN NAM", archType: "DOME" },
+  "VŨNG TÀU": { lon: 107.08, lat: 10.35, region: "MIỀN NAM", archType: "DOME" },
+  "TÂY NINH": { lon: 106.10, lat: 11.31, region: "MIỀN NAM", archType: "DOME" },
+  "BÌNH PHƯỚC": { lon: 106.88, lat: 11.53, region: "MIỀN NAM", archType: "DOME" },
 
   // ── ĐỒNG BẰNG SÔNG CỬU LONG (MIỀN TÂY) ───────────────────────────────────────
-  "CẦN THƠ":         { lon: 105.78, lat: 10.03, region: "MIỀN TÂY", archType: "LOTUS" },
-  "LONG AN":         { lon: 106.41, lat: 10.53, region: "MIỀN TÂY", archType: "LOTUS" },
-  "TIỀN GIANG":      { lon: 106.36, lat: 10.36, region: "MIỀN TÂY", archType: "LOTUS" },
-  "BẾN TRE":         { lon: 106.38, lat: 10.24, region: "MIỀN TÂY", archType: "LOTUS" },
-  "TRÀ VINH":        { lon: 106.34, lat: 9.93, region: "MIỀN TÂY", archType: "LOTUS" },
-  "VĨNH LONG":       { lon: 105.97, lat: 10.25, region: "MIỀN TÂY", archType: "LOTUS" },
-  "ĐỒNG THÁP":       { lon: 105.63, lat: 10.46, region: "MIỀN TÂY", archType: "LOTUS" },
-  "AN GIANG":        { lon: 105.13, lat: 10.52, region: "MIỀN TÂY", archType: "LOTUS" },
-  "KIÊN GIANG":      { lon: 105.08, lat: 10.01, region: "MIỀN TÂY", archType: "LOTUS" },
-  "PHÚ QUỐC":        { lon: 103.96, lat: 10.22, region: "MIỀN TÂY", archType: "DOME" },
-  "HẬU GIANG":       { lon: 105.47, lat: 9.78, region: "MIỀN TÂY", archType: "LOTUS" },
-  "SÓC TRĂNG":       { lon: 105.97, lat: 9.60, region: "MIỀN TÂY", archType: "LOTUS" },
-  "BẠC LIÊU":        { lon: 105.72, lat: 9.29, region: "MIỀN TÂY", archType: "LOTUS" },
-  "CÀ MAU":          { lon: 105.15, lat: 9.18, region: "MIỀN TÂY", archType: "LOTUS" }
+  "CẦN THƠ": { lon: 105.78, lat: 10.03, region: "MIỀN TÂY", archType: "LOTUS" },
+  "LONG AN": { lon: 106.41, lat: 10.53, region: "MIỀN TÂY", archType: "LOTUS" },
+  "TIỀN GIANG": { lon: 106.36, lat: 10.36, region: "MIỀN TÂY", archType: "LOTUS" },
+  "BẾN TRE": { lon: 106.38, lat: 10.24, region: "MIỀN TÂY", archType: "LOTUS" },
+  "TRÀ VINH": { lon: 106.34, lat: 9.93, region: "MIỀN TÂY", archType: "LOTUS" },
+  "VĨNH LONG": { lon: 105.97, lat: 10.25, region: "MIỀN TÂY", archType: "LOTUS" },
+  "ĐỒNG THÁP": { lon: 105.63, lat: 10.46, region: "MIỀN TÂY", archType: "LOTUS" },
+  "AN GIANG": { lon: 105.13, lat: 10.52, region: "MIỀN TÂY", archType: "LOTUS" },
+  "KIÊN GIANG": { lon: 105.08, lat: 10.01, region: "MIỀN TÂY", archType: "LOTUS" },
+  "PHÚ QUỐC": { lon: 103.96, lat: 10.22, region: "MIỀN TÂY", archType: "DOME" },
+  "HẬU GIANG": { lon: 105.47, lat: 9.78, region: "MIỀN TÂY", archType: "LOTUS" },
+  "SÓC TRĂNG": { lon: 105.97, lat: 9.60, region: "MIỀN TÂY", archType: "LOTUS" },
+  "BẠC LIÊU": { lon: 105.72, lat: 9.29, region: "MIỀN TÂY", archType: "LOTUS" },
+  "CÀ MAU": { lon: 105.15, lat: 9.18, region: "MIỀN TÂY", archType: "LOTUS" }
 };
 
 // Robust Location Resolver for Any Cinema in Vietnam
@@ -224,10 +224,10 @@ function resolveLocationInfo(cityRaw, addressRaw) {
 export default function AdminCinemaPanel({ ctx = {} }) {
   const {
     getAdminToken = () => null,
-    showToast = () => {},
-    addAuditLog = () => {},
-    onCinemaChanged = () => {},
-    onSectionChange = () => {},
+    showToast = () => { },
+    addAuditLog = () => { },
+    onCinemaChanged = () => { },
+    onSectionChange = () => { },
     isAdmin = false,
     isManager = false,
     currentUser = null
@@ -378,7 +378,7 @@ export default function AdminCinemaPanel({ ctx = {} }) {
       const archTypes = ["BITEXCO", "LANDMARK", "TWIN", "ROYAL", "DRAGON", "LOTUS", "DOME"];
       const decorated = cinemaList.map((c, idx) => {
         const loc = resolveLocationInfo(c.city, c.address);
-        
+
         // Count rooms for this cinema
         const roomCount = roomsList.filter(r => (r.cinemaId === c.id || r.cinema?.id === c.id)).length;
 
@@ -2103,7 +2103,7 @@ export default function AdminCinemaPanel({ ctx = {} }) {
       showToast?.(`Đã xóa cụm rạp "${deleteConfirmCinema.name}" thành công!`, 'success');
       triggerLocalToast(`Đã xóa cụm rạp: ${deleteConfirmCinema.name}`);
       addAuditLog?.('Xóa cụm rạp', `${deleteConfirmCinema.name} (ID: ${deleteConfirmCinema.id})`);
-      
+
       const remaining = cinemas.filter(c => c.id !== deleteConfirmCinema.id);
       if (remaining.length > 0) {
         setSelectedCinemaId(remaining[0].id);
@@ -2120,11 +2120,10 @@ export default function AdminCinemaPanel({ ctx = {} }) {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className={`relative flex flex-col bg-[#04060a] text-[#f5f5f5] select-none overflow-hidden transition-all duration-300 ${
-      isFullscreen
+    <div className={`relative flex flex-col bg-[#04060a] text-[#f5f5f5] select-none overflow-hidden transition-all duration-300 ${isFullscreen
         ? "fixed inset-0 z-[100] w-screen h-screen"
         : "w-full h-[calc(100vh-100px)] min-h-[720px] rounded-xl border border-[#1c2230] shadow-2xl"
-    }`}>
+      }`}>
       {/* Dynamic CSS Styles */}
       <style>{`
         .stage-3d { perspective: 1400px; transform-style: preserve-3d; }
@@ -2275,11 +2274,10 @@ export default function AdminCinemaPanel({ ctx = {} }) {
               <button
                 type="button"
                 onClick={() => { setCurrentCityFilter("ALL"); flyToVietnamOverview(); }}
-                className={`px-2.5 py-1 rounded-sm whitespace-nowrap transition ${
-                  currentCityFilter === "ALL"
+                className={`px-2.5 py-1 rounded-sm whitespace-nowrap transition ${currentCityFilter === "ALL"
                     ? "bg-[#f59e0b] text-black font-extrabold"
                     : "text-[#a3a3a3] hover:text-white"
-                }`}
+                  }`}
               >
                 🇻🇳 Tất cả ({cinemas.length})
               </button>
@@ -2303,11 +2301,10 @@ export default function AdminCinemaPanel({ ctx = {} }) {
                         const first = cinemas.find(c => c.city === cityName);
                         if (first) selectCinema(first.id, true);
                       }}
-                      className={`px-2.5 py-1 rounded-sm whitespace-nowrap transition ${
-                        currentCityFilter === cityName
+                      className={`px-2.5 py-1 rounded-sm whitespace-nowrap transition ${currentCityFilter === cityName
                           ? "bg-[#f59e0b] text-black font-extrabold"
                           : "text-[#a3a3a3] hover:text-white"
-                      }`}
+                        }`}
                     >
                       {label} ({count})
                     </button>
@@ -2321,22 +2318,20 @@ export default function AdminCinemaPanel({ ctx = {} }) {
               <button
                 type="button"
                 onClick={() => setDisplayMode3D("MAP")}
-                className={`px-2.5 py-1 rounded-sm transition flex items-center gap-1 ${
-                  displayMode3D === "MAP"
+                className={`px-2.5 py-1 rounded-sm transition flex items-center gap-1 ${displayMode3D === "MAP"
                     ? "bg-[#06b6d4] text-black"
                     : "text-[#06b6d4] hover:text-white"
-                }`}
+                  }`}
               >
                 <span>🗺️ Sa Bàn Chữ S 3D</span>
               </button>
               <button
                 type="button"
                 onClick={() => setDisplayMode3D("CAROUSEL")}
-                className={`px-2.5 py-1 rounded-sm transition flex items-center gap-1 ${
-                  displayMode3D === "CAROUSEL"
+                className={`px-2.5 py-1 rounded-sm transition flex items-center gap-1 ${displayMode3D === "CAROUSEL"
                     ? "bg-[#06b6d4] text-black"
                     : "text-[#06b6d4] hover:text-white"
-                }`}
+                  }`}
               >
                 <span>🎠 Vòng Xoay Thẻ 3D</span>
               </button>
@@ -2348,11 +2343,10 @@ export default function AdminCinemaPanel({ ctx = {} }) {
             <button
               type="button"
               onClick={() => setAutoOrbitEnabled(prev => !prev)}
-              className={`border font-bold text-xs px-3 py-1.5 rounded flex items-center gap-1.5 transition ${
-                autoOrbitEnabled
+              className={`border font-bold text-xs px-3 py-1.5 rounded flex items-center gap-1.5 transition ${autoOrbitEnabled
                   ? "bg-[#f59e0b] text-black border-[#f59e0b] font-extrabold shadow-lg shadow-amber-500/30"
                   : "bg-[#111520] hover:bg-[#191f2e] border-[#283044] text-[#d4d4d4]"
-              }`}
+                }`}
             >
               <span className={autoOrbitEnabled ? "animate-spin inline-block" : ""}>🔄</span>
               <span>
@@ -2368,7 +2362,7 @@ export default function AdminCinemaPanel({ ctx = {} }) {
             >
               <span>🗺️ TOÀN CẢNH CHỮ S</span>
             </button>
-            {displayMode3D === "MAP" && (
+            {/* {displayMode3D === "MAP" && (
               <button
                 type="button"
                 onClick={() => {
@@ -2388,7 +2382,7 @@ export default function AdminCinemaPanel({ ctx = {} }) {
                 {showCallouts ? <EyeOff className="w-3.5 h-3.5 text-[#06b6d4]" /> : <Eye className="w-3.5 h-3.5 text-[#f59e0b]" />}
                 <span>{showCallouts ? "ẨN THẺ RẠP" : "HIỆN THẺ RẠP"}</span>
               </button>
-            )}
+            )} */}
             <button
               type="button"
               onClick={() => setIsFullscreen(prev => !prev)}
@@ -2437,9 +2431,8 @@ export default function AdminCinemaPanel({ ctx = {} }) {
         {/* 2D Callouts Layer (Visible in MAP mode) */}
         <div
           ref={labelsOverlayRef}
-          className={`absolute inset-0 w-full h-full pointer-events-none z-20 overflow-hidden ${
-            displayMode3D === "MAP" ? "" : "hidden"
-          }`}
+          className={`absolute inset-0 w-full h-full pointer-events-none z-20 overflow-hidden ${displayMode3D === "MAP" ? "" : "hidden"
+            }`}
         >
           {/* Sovereign Island Badges */}
           <div
@@ -2475,9 +2468,8 @@ export default function AdminCinemaPanel({ ctx = {} }) {
                 key={c.id}
                 id={`callout-card-${c.id}`}
                 onClick={() => selectCinema(c.id, true)}
-                className={`map-callout-card pointer-events-auto cursor-pointer absolute top-0 left-0 w-[205px] rounded-lg px-2.5 py-1.5 ${
-                  isSel ? 'active-callout' : ''
-                }`}
+                className={`map-callout-card pointer-events-auto cursor-pointer absolute top-0 left-0 w-[205px] rounded-lg px-2.5 py-1.5 ${isSel ? 'active-callout' : ''
+                  }`}
               >
                 <div className="flex items-center justify-between text-[9px] font-extrabold uppercase tracking-wider">
                   <span className="text-[#f59e0b] truncate">{c.city}</span>
@@ -2566,9 +2558,8 @@ export default function AdminCinemaPanel({ ctx = {} }) {
                         zIndex,
                         pointerEvents: opacity === 0 ? 'none' : 'auto'
                       }}
-                      className={`carousel-3d-card cursor-pointer rounded-2xl p-5 select-none ${
-                        isSel ? 'active-3d-card' : 'hover:border-[#f59e0b]/70 hover:scale-[1.02]'
-                      }`}
+                      className={`carousel-3d-card cursor-pointer rounded-2xl p-5 select-none ${isSel ? 'active-3d-card' : 'hover:border-[#f59e0b]/70 hover:scale-[1.02]'
+                        }`}
                     >
                       <div className="flex items-center justify-between">
                         <span className="px-2.5 py-0.5 rounded text-[10px] font-extrabold uppercase bg-[#f59e0b]/15 text-[#f59e0b] border border-[#f59e0b]/45">
@@ -2633,11 +2624,10 @@ export default function AdminCinemaPanel({ ctx = {} }) {
                         type="button"
                         onClick={(e) => { e.stopPropagation(); selectCinema(c.id, true); }}
                         title={c.name}
-                        className={`transition-all duration-300 rounded-full ${
-                          isCur
+                        className={`transition-all duration-300 rounded-full ${isCur
                             ? "w-6 h-2 bg-[#f59e0b] shadow-md shadow-amber-500/50"
                             : "w-2 h-2 bg-white/25 hover:bg-white/60"
-                        }`}
+                          }`}
                       />
                     );
                   });
@@ -2659,11 +2649,10 @@ export default function AdminCinemaPanel({ ctx = {} }) {
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); setAutoOrbitEnabled(prev => !prev); }}
-                className={`text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full transition flex items-center gap-1.5 ${
-                  autoOrbitEnabled
+                className={`text-[10px] font-extrabold uppercase px-2.5 py-1 rounded-full transition flex items-center gap-1.5 ${autoOrbitEnabled
                     ? "bg-[#f59e0b] text-black shadow-md shadow-amber-500/30"
                     : "bg-[#141824] hover:bg-[#1f2538] text-[#a3a3a3] hover:text-white"
-                }`}
+                  }`}
               >
                 <span className={autoOrbitEnabled ? "animate-spin inline-block" : ""}>🔄</span>
                 <span>{autoOrbitEnabled ? "Đang Tự Xoay" : "Tự Động Xoay"}</span>
@@ -2698,11 +2687,10 @@ export default function AdminCinemaPanel({ ctx = {} }) {
                   });
                 }}
                 title={showCallouts ? "Ẩn các thẻ thông tin cụm rạp trên sa bàn 3D" : "Hiện các thẻ thông tin cụm rạp trên sa bàn 3D"}
-                className={`text-[11px] font-extrabold uppercase tracking-wider px-3 py-1.5 rounded-lg shadow-xl flex items-center gap-1.5 transition border backdrop-blur-md ${
-                  showCallouts
+                className={`text-[11px] font-extrabold uppercase tracking-wider px-3 py-1.5 rounded-lg shadow-xl flex items-center gap-1.5 transition border backdrop-blur-md ${showCallouts
                     ? "bg-[#0c1018]/90 hover:bg-[#141b28] border-[#242b3d] text-[#e2e8f0]"
                     : "bg-[#f59e0b]/20 hover:bg-[#f59e0b]/30 border-[#f59e0b] text-[#f59e0b]"
-                }`}
+                  }`}
               >
                 {showCallouts ? <EyeOff className="w-3.5 h-3.5 text-[#06b6d4]" /> : <Eye className="w-3.5 h-3.5 text-[#f59e0b]" />}
                 <span>{showCallouts ? "Ẩn nhãn rạp" : "Hiện nhãn rạp"}</span>
@@ -2758,11 +2746,10 @@ export default function AdminCinemaPanel({ ctx = {} }) {
                               key={c.id}
                               type="button"
                               onClick={() => selectCinema(c.id, true)}
-                              className={`w-full text-left px-2 py-1 rounded text-[10px] flex items-center justify-between transition ${
-                                isSel
+                              className={`w-full text-left px-2 py-1 rounded text-[10px] flex items-center justify-between transition ${isSel
                                   ? 'bg-[#f59e0b] text-black font-extrabold'
                                   : 'bg-[#121622] hover:bg-[#1a2030] text-[#d4d4d4]'
-                              }`}
+                                }`}
                             >
                               <span className="truncate">● {c.name.replace(/CINEMAAI\s*|CINEPREMIER\s*/i, '')}</span>
                               <span className="font-mono ml-1">{c.rooms}P</span>
@@ -2863,22 +2850,20 @@ export default function AdminCinemaPanel({ ctx = {} }) {
                     <button
                       type="button"
                       onClick={() => setMiniPreviewMode("TOWER")}
-                      className={`px-2 py-0.5 rounded-sm text-[9px] font-extrabold uppercase transition ${
-                        miniPreviewMode === "TOWER"
+                      className={`px-2 py-0.5 rounded-sm text-[9px] font-extrabold uppercase transition ${miniPreviewMode === "TOWER"
                           ? "bg-[#f59e0b] text-black"
                           : "text-[#a3a3a3] hover:text-white"
-                      }`}
+                        }`}
                     >
                       🏢 Tòa tháp 3D
                     </button>
                     <button
                       type="button"
                       onClick={() => setMiniPreviewMode("HALL")}
-                      className={`px-2 py-0.5 rounded-sm text-[9px] font-extrabold uppercase transition ${
-                        miniPreviewMode === "HALL"
+                      className={`px-2 py-0.5 rounded-sm text-[9px] font-extrabold uppercase transition ${miniPreviewMode === "HALL"
                           ? "bg-[#06b6d4] text-black"
                           : "text-[#a3a3a3] hover:text-white"
-                      }`}
+                        }`}
                     >
                       🎬 Phòng IMAX 3D
                     </button>
@@ -3086,11 +3071,10 @@ export default function AdminCinemaPanel({ ctx = {} }) {
                     return next;
                   });
                 }}
-                className={`shrink-0 px-2.5 py-1 rounded border font-bold text-[11px] flex items-center gap-1.5 transition ${
-                  showCallouts
+                className={`shrink-0 px-2.5 py-1 rounded border font-bold text-[11px] flex items-center gap-1.5 transition ${showCallouts
                     ? "bg-[#141720] hover:bg-[#1e222f] text-[#06b6d4] border-[#06b6d4]/40"
                     : "bg-[#f59e0b]/20 hover:bg-[#f59e0b]/30 text-[#f59e0b] border-[#f59e0b]"
-                }`}
+                  }`}
                 title={showCallouts ? "Ẩn các thẻ rạp trên sa bàn 3D" : "Hiện các thẻ rạp trên sa bàn 3D"}
               >
                 {showCallouts ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -3107,11 +3091,10 @@ export default function AdminCinemaPanel({ ctx = {} }) {
                     key={c.id}
                     type="button"
                     onClick={() => selectCinema(c.id, true)}
-                    className={`shrink-0 px-2.5 py-1 rounded text-[11px] font-bold flex items-center gap-1.5 transition ${
-                      isSel
+                    className={`shrink-0 px-2.5 py-1 rounded text-[11px] font-bold flex items-center gap-1.5 transition ${isSel
                         ? 'bg-[#f59e0b] text-black font-extrabold'
                         : 'bg-[#141720] hover:bg-[#1e222f] text-[#d4d4d4] border border-[#262a38]'
-                    }`}
+                      }`}
                   >
                     <span className={`w-1.5 h-1.5 rounded-full ${isSel ? 'bg-black' : dot}`} />
                     <span>#{c.id} {c.name.replace(/CINEMAAI\s*|CINEPREMIER\s*/i, '')}</span>
@@ -3187,11 +3170,10 @@ export default function AdminCinemaPanel({ ctx = {} }) {
                     <label className="text-[11px] font-extrabold uppercase tracking-wider text-[#d4d4d4]">
                       SỐ ĐIỆN THOẠI HOTLINE <span className="text-[#f59e0b]">*</span>
                     </label>
-                    <span className={`text-[11px] ${
-                      formPhone.replace(/\D/g, '').length >= 9 && formPhone.startsWith('0')
+                    <span className={`text-[11px] ${formPhone.replace(/\D/g, '').length >= 9 && formPhone.startsWith('0')
                         ? "text-[#10b981] font-semibold"
                         : "text-[#737373]"
-                    }`}>
+                      }`}>
                       {formPhone.replace(/\D/g, '').length}/10 số (bắt đầu bằng 0)
                     </span>
                   </div>
@@ -3318,9 +3300,8 @@ export default function AdminCinemaPanel({ ctx = {} }) {
                   <label className="text-[11px] font-extrabold uppercase tracking-wider text-[#d4d4d4]">
                     TRẠNG THÁI HOẠT ĐỘNG
                   </label>
-                  <span className={`text-[11px] font-extrabold uppercase ${
-                    formStatus === "ACTIVE" ? "text-[#10b981]" : "text-[#f59e0b]"
-                  }`}>
+                  <span className={`text-[11px] font-extrabold uppercase ${formStatus === "ACTIVE" ? "text-[#10b981]" : "text-[#f59e0b]"
+                    }`}>
                     {formStatus === "ACTIVE" ? "• ĐANG MỞ CỬA" : "• TẠM DỪNG"}
                   </span>
                 </div>
@@ -3397,9 +3378,8 @@ export default function AdminCinemaPanel({ ctx = {} }) {
       )}
 
       {/* Local 3D Cockpit Toast Notification */}
-      <div className={`fixed top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-all duration-300 ${
-        localToast.show ? "opacity-100 scale-100" : "opacity-0 scale-95"
-      }`}>
+      <div className={`fixed top-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-all duration-300 ${localToast.show ? "opacity-100 scale-100" : "opacity-0 scale-95"
+        }`}>
         <div className="bg-[#0e121b] border border-[#f59e0b] text-[#f59e0b] px-4 py-2 rounded-lg shadow-2xl text-xs font-bold flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-[#f59e0b] animate-ping" />
           <span>{localToast.msg}</span>

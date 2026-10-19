@@ -6,8 +6,8 @@ export default function Modal({ open, title, children, onClose, className = '' }
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 px-4 backdrop-blur-sm">
-      <section className={`relative w-full max-w-lg border border-white/10 bg-black p-6 text-white shadow-2xl ${className}`}>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur-sm" onClick={(e) => { if (e.target === e.currentTarget && onClose) onClose(); }}>
+      <section className={`relative w-full max-w-lg my-auto border border-white/10 bg-black p-6 text-white shadow-2xl ${className}`}>
         <div className="mb-5 flex items-center justify-between gap-4 border-b border-white/10 pb-4">
           {title && <h2 className="font-serif text-lg font-black italic uppercase tracking-wider">{title}</h2>}
           <Button variant="ghost" className="ml-auto h-9 w-9 p-0" onClick={onClose} aria-label="Dong modal">

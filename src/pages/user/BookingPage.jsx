@@ -293,6 +293,7 @@ const getShowtimeEndTimeStr = (showtime, movieDurationMinutes = 120) => {
 
 const isShowtimeBookable = (showtime) => {
   if (!showtime?.startTime) return false;
+  if (showtime.status && showtime.status !== 'OPEN') return false;
   const startMs = new Date(showtime.startTime).getTime();
   // Khóa đặt vé trước 10 phút
   return startMs - Date.now() >= 10 * 60 * 1000;
@@ -729,6 +730,10 @@ export default function BookingPage() {
           return;
         }
 
+        if (stData.status === 'SCHEDULED') {
+          showToast('Suất chiếu này đang ở trạng thái Lên lịch, chưa mở bán vé chính thức.', 'warning');
+        }
+
         const dateFromParam = searchParams.get('date');
         const dateFromStart = stData.startTime?.split('T')[0] || '';
         setSelectedDate(dateFromParam || dateFromStart);
@@ -1114,6 +1119,10 @@ export default function BookingPage() {
   const handleProceedToSeats = async () => {
     if (!selectedShowtime) {
       showToast('Vui lòng chọn một suất chiếu trước.');
+      return;
+    }
+    if (selectedShowtime.status === 'SCHEDULED') {
+      showToast('Suất chiếu này đang ở trạng thái Lên lịch, chưa mở bán vé chính thức.');
       return;
     }
     if (!isShowtimeBookable(selectedShowtime)) {
@@ -1543,8 +1552,8 @@ export default function BookingPage() {
       const secondsLeft = Math.max(0, Math.ceil((expiresAtMs - Date.now()) / 1000));
       setHoldSecondsLeft(secondsLeft);
 
-      if (secondsLeft === 0) {
-        showToast('Thời gian giữ ghế đã hết. Vui lòng chọn lại ghế.');
+      if (secondsLeft <= 0) {
+        showToast('Thời gian giữ ghế (3 phút) đã hết. Vui lòng chọn lại ghế.', 'error');
         setPaymentState('booking');
         setBookingStep('seats');
         setSelectedSeats([]);
@@ -1713,6 +1722,15 @@ export default function BookingPage() {
       return;
     }
 
+    if (selectedShowtime?.status === 'SCHEDULED') {
+      showToast('Suất chiếu này đang ở trạng thái Lên lịch, chưa mở bán vé chính thức.');
+      return;
+    }
+    if (!isShowtimeBookable(selectedShowtime)) {
+      showToast('Suất chiếu này đã đóng đặt vé online.');
+      return;
+    }
+
     setIsHolding(true);
     try {
       if (holdBookingId) {
@@ -1746,7 +1764,15 @@ export default function BookingPage() {
       setHoldExpiresAt(holdResult.holdExpiresAt || holdResult.expiresAt || null);
       setPaymentState('payment_method');
     } catch (err) {
-      showToast(err?.message || 'Không thể giữ ghế. Vui lòng thử lại.');
+      const rawMsg = err?.response?.data?.message || err?.message || '';
+      let cleanMsg = 'Không thể giữ ghế. Vui lòng thử lại.';
+      if (rawMsg.includes('Suất chiếu chưa mở đặt vé') || rawMsg.includes('Showtime is not open')) {
+        cleanMsg = 'Suất chiếu chưa mở đặt vé. Vui lòng kiểm tra lại trạng thái suất chiếu.';
+      } else if (rawMsg) {
+        const match = rawMsg.match(/"message"\s*:\s*"([^"]+)"/);
+        cleanMsg = match ? match[1] : rawMsg;
+      }
+      showToast(cleanMsg);
       refreshSeatMap();
     } finally {
       setIsHolding(false);
@@ -1765,6 +1791,17 @@ export default function BookingPage() {
       return;
     }
 
+    if (holdExpiresAt && new Date(holdExpiresAt).getTime() <= Date.now()) {
+      showToast('Thời gian giữ ghế đã hết hạn (3 phút). Vui lòng chọn lại ghế.', 'error');
+      setPaymentState('booking');
+      setBookingStep('seats');
+      setSelectedSeats([]);
+      setHoldBookingId(null);
+      setHoldExpiresAt(null);
+      refreshSeatMap();
+      return;
+    }
+
     setPaymentState('payment_processing');
     try {
       // Đồng bộ vé, bắp nước và điểm thưởng mới nhất vào đơn giữ chỗ trước khi tạo URL VNPay
@@ -1775,7 +1812,18 @@ export default function BookingPage() {
           loyaltyPointsToRedeem: pointsToUseNumber > 0 ? pointsToUseNumber : null
         });
       } catch (syncErr) {
-        console.warn('Cảnh báo đồng bộ giữ chỗ trước VNPay:', syncErr);
+        console.warn('Lỗi đồng bộ giữ chỗ trước VNPay:', syncErr);
+        const errMsg = syncErr?.response?.data?.message || syncErr?.message || '';
+        if (errMsg.includes('hết hạn') || errMsg.includes('expired') || errMsg.includes('EXPIRED')) {
+          showToast('Thời gian giữ ghế đã hết hạn. Vui lòng chọn lại ghế.', 'error');
+          setPaymentState('booking');
+          setBookingStep('seats');
+          setSelectedSeats([]);
+          setHoldBookingId(null);
+          setHoldExpiresAt(null);
+          refreshSeatMap();
+          return;
+        }
       }
 
       // Tạo URL thanh toán VNPay
@@ -1788,8 +1836,18 @@ export default function BookingPage() {
         throw new Error('Không nhận được URL thanh toán từ VNPay.');
       }
     } catch (err) {
-      showToast(err?.message || 'Không thể kết nối cổng VNPay.');
-      setPaymentState('payment_failed');
+      const errMsg = err?.response?.data?.message || err?.message || 'Không thể kết nối cổng VNPay.';
+      showToast(errMsg, 'error');
+      if (errMsg.includes('hết hạn') || errMsg.includes('expired') || errMsg.includes('EXPIRED')) {
+        setPaymentState('booking');
+        setBookingStep('seats');
+        setSelectedSeats([]);
+        setHoldBookingId(null);
+        setHoldExpiresAt(null);
+        refreshSeatMap();
+      } else {
+        setPaymentState('payment_failed');
+      }
     }
   };
 
@@ -2012,16 +2070,24 @@ export default function BookingPage() {
                 </div>
 
                 {/* Hold Timer Banner (Rule 19) */}
-                <div className="border border-amber-500/30 bg-amber-950/20 p-4 rounded-xl flex items-center justify-between">
+                <div className={`border p-4 rounded-xl flex items-center justify-between ${
+                  holdSecondsLeft !== null && holdSecondsLeft <= 30
+                    ? 'border-rose-500/40 bg-rose-950/20 text-rose-300'
+                    : 'border-amber-500/30 bg-amber-950/20 text-amber-300'
+                }`}>
                   <div className="flex items-center gap-3">
-                    <Clock className="w-5 h-5 text-amber-400 animate-pulse" />
+                    <Clock className={`w-5 h-5 ${holdSecondsLeft !== null && holdSecondsLeft <= 30 ? 'text-rose-400 animate-bounce' : 'text-amber-400 animate-pulse'}`} />
                     <div>
                       <div className="text-xs font-bold text-white uppercase">Thời Gian Giữ Ghế</div>
-                      <div className="text-[11px] text-neutral-400">Ghế được bảo đảm giữ trong thời gian này</div>
+                      <div className="text-[11px] text-neutral-400">
+                        {holdSecondsLeft !== null && holdSecondsLeft <= 30
+                          ? 'Sắp hết hạn giữ ghế! Vui lòng thanh toán ngay'
+                          : 'Ghế được bảo đảm giữ trong 3 phút'}
+                      </div>
                     </div>
                   </div>
-                  <div className="font-mono font-bold text-lg text-amber-400">
-                    {holdSecondsLeft !== null ? formatHoldSeconds(holdSecondsLeft) : '10:00'}
+                  <div className={`font-mono font-bold text-lg ${holdSecondsLeft !== null && holdSecondsLeft <= 30 ? 'text-rose-400' : 'text-amber-400'}`}>
+                    {holdSecondsLeft !== null ? formatHoldSeconds(holdSecondsLeft) : '03:00'}
                   </div>
                 </div>
 
@@ -2040,11 +2106,16 @@ export default function BookingPage() {
 
               <div className="space-y-3 pt-4">
                 <button
+                  disabled={holdSecondsLeft === 0 || !holdExpiresAt || (holdExpiresAt && new Date(holdExpiresAt).getTime() <= Date.now())}
                   onClick={handleVnpayPayment}
-                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-black font-extrabold uppercase tracking-wider text-sm py-4 rounded-xl shadow-lg shadow-amber-500/20 transition"
+                  className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-black font-extrabold uppercase tracking-wider text-sm py-4 rounded-xl shadow-lg shadow-amber-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <CheckCircle className="h-5 w-5" />
-                  <span>Xác nhận & Thanh toán {formatVnd(displayTotal)}</span>
+                  <span>
+                    {holdSecondsLeft === 0
+                      ? 'HẾT THỜI GIAN GIỮ GHẾ'
+                      : `Xác nhận & Thanh toán ${formatVnd(displayTotal)}`}
+                  </span>
                 </button>
                 <div className="p-3 bg-amber-500/10 border border-amber-500/25 rounded-xl flex items-center gap-2.5 text-xs text-amber-300">
                   <Gift className="w-4 h-4 text-amber-400 shrink-0" />
@@ -2487,6 +2558,18 @@ export default function BookingPage() {
 
                 {/* Seat Map Screen - MATCHING ADMIN ROOMS UI */}
                 <div className="border border-[#292e35] rounded-none bg-[#080a0d] shadow-xl overflow-hidden flex flex-col select-none">
+                  {selectedShowtime?.status === 'SCHEDULED' && (
+                    <div className="mx-4 sm:mx-6 mt-4 p-3.5 bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 text-xs text-amber-300">
+                      <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+                      <div>
+                        <div className="font-bold text-amber-400 uppercase tracking-wide">Suất chiếu chưa mở bán vé</div>
+                        <div className="text-neutral-300 text-[11px] mt-0.5">
+                          Suất chiếu này hiện đang ở trạng thái <strong>Đã lên lịch</strong> (bản thảo). Quý khách chưa thể giữ ghế hoặc thanh toán cho suất chiếu này.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   {totalTickets === 0 && (
                     <div className="mx-4 sm:mx-6 mt-4 p-3 bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 text-xs text-amber-300">
                       <div className="flex items-center gap-2">
@@ -2937,9 +3020,7 @@ export default function BookingPage() {
                 <div>
                   <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
                     <ShoppingBag className="w-4 h-4 text-amber-500" /> THỰC ĐƠN BẮP NƯỚC & COMBO
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-[10px] text-amber-400 font-bold ml-1.5 normal-case tracking-normal">
-                      <Sparkles className="w-3 h-3 text-amber-400" /> Tích 1% CinePoints
-                    </span>
+
                   </h3>
                   <p className="text-xs text-neutral-400 mt-0.5">Đặt trước trực tuyến nhận ngay tại quầy nhanh chóng.</p>
                 </div>
@@ -3112,8 +3193,18 @@ export default function BookingPage() {
               {selectedShowtime && (
                 <div className="flex justify-between items-center pt-1 border-t border-white/5 text-[11px]">
                   <span>Trạng thái:</span>
-                  <span className={`font-semibold ${isShowtimeBookable(selectedShowtime) ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {isShowtimeBookable(selectedShowtime) ? '🟢 Đang mở bán vé' : '🔴 Đã đóng vé online'}
+                  <span className={`font-semibold ${
+                    selectedShowtime.status === 'SCHEDULED'
+                      ? 'text-amber-400'
+                      : isShowtimeBookable(selectedShowtime)
+                        ? 'text-emerald-400'
+                        : 'text-rose-400'
+                  }`}>
+                    {selectedShowtime.status === 'SCHEDULED'
+                      ? '⏳ Chưa mở bán (Đã lên lịch)'
+                      : isShowtimeBookable(selectedShowtime)
+                        ? '🟢 Đang mở bán vé'
+                        : '🔴 Đã đóng vé online'}
                   </span>
                 </div>
               )}
@@ -3442,18 +3533,24 @@ export default function BookingPage() {
             </button>
           ) : (
             <button
-              disabled={!ticketsMatchSeats || isHolding}
+              disabled={!ticketsMatchSeats || isHolding || selectedShowtime?.status === 'SCHEDULED' || !isShowtimeBookable(selectedShowtime)}
               onClick={handleProceedToPayment}
               className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-black font-extrabold uppercase tracking-wider text-xs rounded-none shadow-lg shadow-amber-500/20 transition disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
               {isHolding ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-              <span>{isHolding ? 'ĐANG GIỮ GHẾ...' : 'TIẾP TỤC THANH TOÁN'}</span>
+              <span>
+                {isHolding
+                  ? 'ĐANG GIỮ GHẾ...'
+                  : selectedShowtime?.status === 'SCHEDULED'
+                    ? 'CHƯA MỞ BÁN VÉ'
+                    : 'TIẾP TỤC THANH TOÁN'}
+              </span>
             </button>
           )}
 
           {bookingStep === 'combos' && (
             <button
-              disabled={!ticketsMatchSeats || isHolding}
+              disabled={!ticketsMatchSeats || isHolding || selectedShowtime?.status === 'SCHEDULED' || !isShowtimeBookable(selectedShowtime)}
               onClick={handleProceedToPayment}
               className="w-full py-2 text-xs text-neutral-400 hover:text-white text-center transition disabled:opacity-30 disabled:cursor-not-allowed"
             >

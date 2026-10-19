@@ -56,11 +56,12 @@ export default function MovieCard({
   // Duration
   const durationMinutes = movie?.durationMinutes || movie?.duration || 0;
 
-  // Rating
+  // Rating (chuẩn hóa thang điểm 5 sao)
   let ratingVal = null;
-  if (movie?.ratings?.overall) ratingVal = Number(movie.ratings.overall).toFixed(1);
-  else if (movie?.rating) ratingVal = Number(movie.rating).toFixed(1);
-  else if (movie?.voteAverage) ratingVal = Number(movie.voteAverage).toFixed(1);
+  const rawRatingVal = Number(movie?.ratings?.overall || movie?.rating || movie?.voteAverage || 0);
+  if (rawRatingVal > 0) {
+    ratingVal = (rawRatingVal > 5 ? rawRatingVal / 2 : rawRatingVal).toFixed(1);
+  }
 
   // Poster Image
   const rawPoster = movie?.posterUrl || movie?.poster || movie?.avatarUrl || movie?.thumbnailUrl;

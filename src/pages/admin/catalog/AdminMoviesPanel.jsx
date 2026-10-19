@@ -3732,7 +3732,12 @@ export default function AdminMoviesPanel({ ctx }) {
                         <div className="flex items-center gap-2">
                           <span className="text-xl font-black text-amber-300 font-mono flex items-center gap-1">
                             <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
-                            {movieDetailModal.voteAverage ? Number(movieDetailModal.voteAverage).toFixed(1) : (movieDetailModal.rating || '—')} / 10
+                            {(() => {
+                              const raw = Number(movieDetailModal.voteAverage || movieDetailModal.rating || 0);
+                              if (!raw) return movieDetailModal.rating || '—';
+                              const val = raw > 5 ? raw / 2 : raw;
+                              return val.toFixed(1);
+                            })()} / 5
                           </span>
                           <span className="text-xs text-neutral-400">
                             • {movieDetailModal.voteCount || movieDetailModal.totalVotes || 0} lượt đánh giá

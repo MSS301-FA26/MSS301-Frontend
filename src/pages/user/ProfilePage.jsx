@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Camera, CreditCard, Lock, LogOut, Settings, User,
+  Camera, CreditCard, Landmark, Lock, LogOut, Settings, User,
   ChevronRight, Award, Flame, Eye, Film, Sparkles,
   ChevronDown, Check, Shield, Volume2, VolumeX, EyeOff,
   Save, Trash2, Sliders, Smartphone, Mail, Phone, Cake, BadgeCheck, Loader2, Ticket, ScanLine, Wallet, ArrowUpRight, RefreshCw,
@@ -110,18 +110,168 @@ export default function ProfileView() {
   const [showBankDropdown, setShowBankDropdown] = useState(false);
   const [isProfileLoading, setIsProfileLoading] = useState(false);
 
+  // CineWallet Linked Bank States
+  const [linkedBank, setLinkedBank] = useState(null);
+  const [bankForm, setBankForm] = useState({ bankName: '', accountNumber: '', accountHolder: '' });
+  const [bankErrors, setBankErrors] = useState({});
+  const [isLinkingBank, setIsLinkingBank] = useState(false);
+  const [bankDropdownOpen, setBankDropdownOpen] = useState(false);
+
+  // Tự động tải danh sách ngân hàng VietQR & tài khoản đã liên kết
+  React.useEffect(() => {
+    fetch('https://api.vietqr.io/v2/banks')
+      .then(r => r.json())
+      .then(d => {
+        if (d && Array.isArray(d.data)) setBankList(d.data);
+      })
+      .catch(() => { });
+  }, []);
+
+  React.useEffect(() => {
+    const uid = currentUser?.id || currentUser?.sub || currentUser?.email || 'default';
+    const storageKey = `cinewallet_linked_bank_${uid}`;
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.bankName && parsed.accountNumber) {
+          setLinkedBank(parsed);
+          setBankForm({
+            bankName: parsed.bankName || '',
+            accountNumber: parsed.accountNumber || '',
+            accountHolder: parsed.accountHolder || '',
+          });
+          return;
+        }
+      } catch (e) { }
+    }
+
+    // Tự động nhận diện từ lịch sử rút tiền trước đó nếu có
+    if (withdrawals && withdrawals.length > 0) {
+      const lastWd = withdrawals[0];
+      if (lastWd && lastWd.bankName && lastWd.accountNumber) {
+        const detected = {
+          bankName: lastWd.bankName,
+          accountNumber: lastWd.accountNumber,
+          accountHolder: lastWd.accountHolder || (currentUser?.name || currentUser?.fullName || ''),
+        };
+        setLinkedBank(detected);
+        setBankForm(detected);
+        localStorage.setItem(storageKey, JSON.stringify(detected));
+      }
+    }
+  }, [currentUser, withdrawals]);
+
+  // Xử lý liên kết tài khoản ngân hàng mới
+  const handleLinkBank = () => {
+    const errs = {};
+    if (!bankForm.bankName) errs.bankName = 'Vui lòng chọn ngân hàng';
+    if (!bankForm.accountNumber || bankForm.accountNumber.length < 8) {
+      errs.accountNumber = 'Số tài khoản phải từ 8 đến 15 chữ số';
+    } else if (bankForm.accountNumber.length > 15) {
+      errs.accountNumber = 'Số tài khoản không được vượt quá 15 chữ số';
+    }
+    const cleanHolder = (bankForm.accountHolder || '').trim().toUpperCase();
+    if (!cleanHolder || cleanHolder.length < 2) {
+      errs.accountHolder = 'Vui lòng nhập họ tên chủ tài khoản hợp lệ';
+    }
+    if (Object.keys(errs).length > 0) {
+      setBankErrors(errs);
+      return;
+    }
+
+    setIsLinkingBank(true);
+    setBankErrors({});
+    try {
+      const selectedBankMeta = bankList.find(b => (b.short_name || b.shortName) === bankForm.bankName);
+      const dataToSave = {
+        bankName: bankForm.bankName,
+        accountNumber: bankForm.accountNumber,
+        accountHolder: cleanHolder,
+        bankLogo: selectedBankMeta?.logo || null,
+        bankFullName: selectedBankMeta?.name || bankForm.bankName,
+        updatedAt: new Date().toISOString()
+      };
+      const uid = currentUser?.id || currentUser?.sub || currentUser?.email || 'default';
+      localStorage.setItem(`cinewallet_linked_bank_${uid}`, JSON.stringify(dataToSave));
+      setLinkedBank(dataToSave);
+      setBankForm(dataToSave);
+      playPing(987.77, 'sine', 0.25);
+      showToast('✓ Đã xác thực & liên kết tài khoản ngân hàng thành công!', 'success');
+    } catch (e) {
+      setBankErrors({ general: 'Không thể lưu liên kết tài khoản. Vui lòng thử lại.' });
+    } finally {
+      setIsLinkingBank(false);
+    }
+  };
+
+  const handleUnlinkBank = () => {
+    const uid = currentUser?.id || currentUser?.sub || currentUser?.email || 'default';
+    localStorage.removeItem(`cinewallet_linked_bank_${uid}`);
+    setLinkedBank(null);
+    setBankForm({ bankName: '', accountNumber: '', accountHolder: '' });
+    showToast('Đã gỡ liên kết tài khoản ngân hàng.');
+  };
+
+  const handleCreateWithdrawal = async () => {
+    const errs = {};
+    const amountNum = Number(withdrawForm.amount);
+    const balanceNum = Number(wallet?.balance || 0);
+
+    if (!withdrawForm.amount || isNaN(amountNum) || amountNum < 10000) {
+      errs.amount = 'Số tiền rút tối thiểu là 10.000đ';
+    } else if (amountNum > balanceNum) {
+      errs.amount = `Số dư khả dụng không đủ (tối đa ${balanceNum.toLocaleString('vi-VN')}đ)`;
+    }
+
+    if (!linkedBank || !linkedBank.bankName || !linkedBank.accountNumber) {
+      errs.general = 'Chưa có tài khoản ngân hàng liên kết. Vui lòng liên kết tài khoản tại mục Phương thức thanh toán.';
+    }
+
+    if (Object.keys(errs).length > 0) {
+      setWithdrawErrors(errs);
+      return;
+    }
+
+    const { accessToken } = getStoredAuth();
+    if (!accessToken) {
+      setWithdrawErrors({ general: 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.' });
+      return;
+    }
+
+    setWithdrawLoading(true);
+    setWithdrawErrors({});
+    try {
+      await walletService.createWithdrawal(accessToken, {
+        amount: amountNum,
+        bankName: linkedBank.bankName,
+        accountNumber: linkedBank.accountNumber,
+        accountHolder: linkedBank.accountHolder,
+        walletPhone: withdrawForm.walletPhone || null,
+      });
+
+      const [w, txData, wdData] = await Promise.all([
+        walletService.getWallet(accessToken),
+        walletService.getTransactions(accessToken, { page: 0, size: 5 }),
+        walletService.getMyWithdrawals(accessToken, { page: 0, size: 10 }),
+      ]);
+      setWallet(w);
+      setWalletTxs(txData?.content ?? txData?.items ?? []);
+      setWithdrawals(wdData?.content ?? wdData?.items ?? []);
+      setShowWithdrawForm(false);
+      setShowWithdrawals(true);
+      setWithdrawForm(f => ({ ...f, amount: '' }));
+      showToast('✓ Yêu cầu rút tiền đã được gửi thành công!', 'success');
+    } catch (e) {
+      setWithdrawErrors({ general: e.message || 'Không thể tạo yêu cầu rút tiền. Vui lòng thử lại.' });
+    } finally {
+      setWithdrawLoading(false);
+    }
+  };
+
   // CineWallet - Lọc & Chi tiết giao dịch hoàn tiền
   const [txFilter, setTxFilter] = useState('ALL'); // 'ALL' | 'REFUND' | 'WITHDRAW'
   const [selectedTxDetail, setSelectedTxDetail] = useState(null);
-
-  // Settings - Payment card states
-  const [cardNumber, setCardNumber] = useState('4611 •••• •••• 8899');
-  const [cardHolder, setCardHolder] = useState('MINH HONG');
-  const [cardExpiry, setCardExpiry] = useState('12/29');
-  const [cardCvv, setCardCvv] = useState('***');
-  const [isCardFlipped, setIsCardFlipped] = useState(false);
-  const [cardType, setCardType] = useState('visa'); // visa | mastercard
-  const [linkingSuccess, setLinkingSuccess] = useState(false);
 
   // Settings - Password & Security states
   const [oldPassword, setOldPassword] = useState('');
@@ -816,11 +966,10 @@ export default function ProfileView() {
                       <button
                         key={tab.key}
                         onClick={() => setTxFilter(tab.key)}
-                        className={`px-2.5 py-1 text-[8px] font-black uppercase tracking-wider rounded transition shrink-0 ${
-                          txFilter === tab.key
-                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                            : 'text-neutral-500 hover:text-white border border-transparent'
-                        }`}
+                        className={`px-2.5 py-1 text-[8px] font-black uppercase tracking-wider rounded transition shrink-0 ${txFilter === tab.key
+                          ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                          : 'text-neutral-500 hover:text-white border border-transparent'
+                          }`}
                       >
                         {tab.label}
                       </button>
@@ -861,8 +1010,8 @@ export default function ProfileView() {
                                   <p className="text-[10px] font-bold text-white group-hover:text-amber-300 transition">
                                     {isRefund ? '+ Hoàn tiền vé'
                                       : tx.type === 'WITHDRAWAL_HOLD' ? '- Yêu cầu rút tiền'
-                                      : tx.type === 'WITHDRAWAL_REJECTED' ? '↩ Hoàn trả lại ví'
-                                      : tx.type}
+                                        : tx.type === 'WITHDRAWAL_REJECTED' ? '↩ Hoàn trả lại ví'
+                                          : tx.type}
                                   </p>
                                   {isRefund && (
                                     <span className="text-[7px] font-black px-1 py-0.2 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded uppercase">
@@ -954,189 +1103,147 @@ export default function ProfileView() {
                   {showWithdrawForm && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                       <div className="pt-3 border-t border-amber-500/15 space-y-3">
-                        <p className="text-[9px] font-black uppercase tracking-[0.14em] text-amber-500/70">Yêu cầu rút tiền</p>
+                        <div className="flex items-center justify-between">
+                          <p className="text-[9px] font-black uppercase tracking-[0.14em] text-amber-500/80">Yêu cầu rút tiền</p>
+                          <span className="text-[9px] text-neutral-500">Khả dụng: <strong className="text-amber-400 font-mono">{Number(wallet?.balance || 0).toLocaleString('vi-VN')}đ</strong></span>
+                        </div>
+
+                        {/* Tài khoản nhận tiền rút */}
+                        {linkedBank ? (
+                          <div className="bg-neutral-900/90 border border-amber-500/30 p-3 relative group rounded-sm">
+                            <div className="flex items-center justify-between pb-2 border-b border-white/5">
+                              <span className="text-[8px] font-black uppercase tracking-[0.14em] text-amber-500/90 flex items-center gap-1">
+                                <CheckCircle2 className="h-3 w-3 text-emerald-400" /> Tài khoản nhận tiền (Đã liên kết)
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActivePanel('payment');
+                                  setTimeout(() => {
+                                    document.getElementById('payment-method-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                  }, 100);
+                                }}
+                                className="text-[9px] font-bold text-amber-400 hover:text-amber-300 flex items-center gap-1 transition"
+                              >
+                                Thay đổi trong Phương thức thanh toán ↗
+                              </button>
+                            </div>
+                            <div className="flex items-center gap-3 pt-2.5">
+                              {(() => {
+                                const logo = bankList.find(b => (b.short_name || b.shortName) === linkedBank.bankName)?.logo || linkedBank.bankLogo;
+                                return logo ? (
+                                  <img src={logo} alt={linkedBank.bankName} className="h-8 w-12 object-contain bg-white/10 rounded p-1 shrink-0" />
+                                ) : (
+                                  <div className="h-8 w-12 bg-amber-500/20 border border-amber-500/30 rounded flex items-center justify-center text-[10px] font-black text-amber-400 shrink-0">
+                                    BANK
+                                  </div>
+                                );
+                              })()}
+                              <div className="min-w-0">
+                                <p className="text-[12px] font-black text-white flex items-center gap-2">
+                                  <span>{linkedBank.bankName}</span>
+                                  <span className="text-amber-300/80 font-mono text-[11px]">•••• {String(linkedBank.accountNumber).slice(-4)}</span>
+                                </p>
+                                <p className="text-[10px] text-neutral-400 font-mono tracking-wider uppercase truncate">
+                                  Chủ TK: {linkedBank.accountHolder}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-sm space-y-2">
+                            <div className="flex items-center gap-2">
+                              <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />
+                              <p className="text-[11px] font-black text-amber-300">Chưa liên kết tài khoản ngân hàng</p>
+                            </div>
+                            <p className="text-[10px] text-neutral-300 leading-relaxed">
+                              Quý khách vui lòng liên kết tài khoản ngân hàng trước tại mục <strong>Phương thức thanh toán</strong> để nhận tiền rút từ CineWallet.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActivePanel('payment');
+                                setTimeout(() => {
+                                  document.getElementById('payment-method-section')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                }, 100);
+                              }}
+                              className="w-full py-1.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 text-[10px] font-black uppercase tracking-wider transition flex items-center justify-center gap-1.5"
+                            >
+                              <Plus className="h-3 w-3" /> Liên kết tài khoản ngay ↗
+                            </button>
+                          </div>
+                        )}
 
                         {/* Số tiền */}
                         <div>
-                          <label className="block text-[10px] font-black text-neutral-400 uppercase tracking-[0.18em] mb-1">Số tiền (VND)</label>
-                          <input
-                            type="number"
-                            value={withdrawForm.amount}
-                            onChange={e => { setWithdrawForm(f => ({ ...f, amount: e.target.value })); setWithdrawErrors(err => ({ ...err, amount: '' })); }}
-                            className={`w-full bg-black/40 border px-3 py-2 text-[11px] text-white outline-none transition ${withdrawErrors.amount ? 'border-rose-500/70' : 'border-white/10 focus:border-amber-500/50'}`}
-                          />
+                          <label className="block text-[10px] font-black text-neutral-400 uppercase tracking-[0.18em] mb-1">
+                            Số tiền muốn rút (VND)
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min="10000"
+                              step="10000"
+                              placeholder="Tối thiểu 10.000đ"
+                              value={withdrawForm.amount}
+                              onChange={e => {
+                                setWithdrawForm(f => ({ ...f, amount: e.target.value }));
+                                setWithdrawErrors(err => ({ ...err, amount: '', general: '' }));
+                              }}
+                              className={`w-full bg-black/40 border px-3 py-2 text-[11px] text-white outline-none transition font-mono ${withdrawErrors.amount ? 'border-rose-500/70' : 'border-white/10 focus:border-amber-500/50'
+                                }`}
+                            />
+                            <span className="absolute right-3 top-2 text-[10px] text-neutral-500 font-mono font-bold">VND</span>
+                          </div>
+                          {/* Quick amount shortcuts */}
+                          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                            {[50000, 100000, 200000, 500000].map(amt => (
+                              <button
+                                key={amt}
+                                type="button"
+                                disabled={Number(wallet?.balance || 0) < amt}
+                                onClick={() => {
+                                  setWithdrawForm(f => ({ ...f, amount: String(amt) }));
+                                  setWithdrawErrors(err => ({ ...err, amount: '', general: '' }));
+                                }}
+                                className="px-2 py-1 bg-white/5 hover:bg-white/10 disabled:opacity-30 border border-white/10 rounded text-[9px] font-mono text-neutral-300 hover:text-white transition shrink-0"
+                              >
+                                {amt.toLocaleString('vi-VN')}đ
+                              </button>
+                            ))}
+                            {Number(wallet?.balance || 0) >= 10000 && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setWithdrawForm(f => ({ ...f, amount: String(Math.floor(Number(wallet?.balance || 0))) }));
+                                  setWithdrawErrors(err => ({ ...err, amount: '', general: '' }));
+                                }}
+                                className="px-2 py-1 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 rounded text-[9px] font-mono text-amber-300 transition shrink-0 font-bold"
+                              >
+                                Tất cả số dư
+                              </button>
+                            )}
+                          </div>
                           {withdrawErrors.amount && <p className="mt-1 text-[9px] text-rose-400">{withdrawErrors.amount}</p>}
                         </div>
 
-                        {/* Ngân hàng */}
-                        <div className="relative">
-                          <label className="block text-[10px] font-black text-neutral-400 uppercase tracking-[0.18em] mb-1">Ngân hàng</label>
-
-                          {/* Trigger button */}
-                          <button
-                            type="button"
-                            onClick={() => setShowBankDropdown(v => !v)}
-                            className={`w-full flex items-center gap-2 bg-[#111] border px-3 py-2 text-[11px] text-left outline-none transition ${withdrawErrors.bankName ? 'border-rose-500/70' : 'border-white/10 hover:border-amber-500/40'}`}
-                          >
-                            {withdrawForm.bankName ? (
-                              <>
-                                {bankList.find(b => b.short_name === withdrawForm.bankName || b.shortName === withdrawForm.bankName)?.logo && (
-                                  <img
-                                    src={bankList.find(b => b.short_name === withdrawForm.bankName || b.shortName === withdrawForm.bankName)?.logo}
-                                    alt=""
-                                    className="h-5 w-8 object-contain bg-white/5 rounded"
-                                  />
-                                )}
-                                <span className="text-white font-bold flex-1">{withdrawForm.bankName}</span>
-                              </>
-                            ) : (
-                              <span className="text-neutral-500 flex-1">-- Chọn ngân hàng --</span>
-                            )}
-                            <ChevronDown className={`h-3.5 w-3.5 text-neutral-500 transition-transform ${showBankDropdown ? 'rotate-180' : ''}`} />
-                          </button>
-
-                          {/* Dropdown panel */}
-                          {showBankDropdown && (
-                            <div className="absolute z-50 left-0 right-0 mt-1 bg-[#0f0f0f] border border-white/10 shadow-2xl max-h-56 flex flex-col">
-                              {/* Search */}
-                              <div className="p-2 border-b border-white/5">
-                                <input
-                                  autoFocus
-                                  type="text"
-                                  placeholder="Tìm ngân hàng..."
-                                  value={bankSearch}
-                                  onChange={e => setBankSearch(e.target.value)}
-                                  className="w-full bg-black/60 border border-white/10 px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-amber-500/40 placeholder:text-neutral-600"
-                                />
-                              </div>
-                              {/* List */}
-                              <div className="overflow-y-auto flex-1">
-                                {bankList
-                                  .filter(b => {
-                                    const q = bankSearch.toLowerCase();
-                                    return !q || (b.short_name || b.shortName || '').toLowerCase().includes(q) || (b.name || '').toLowerCase().includes(q);
-                                  })
-                                  .map(b => {
-                                    const sn = b.short_name || b.shortName;
-                                    const selected = withdrawForm.bankName === sn;
-                                    return (
-                                      <button
-                                        key={b.bin}
-                                        type="button"
-                                        onClick={() => {
-                                          setWithdrawForm(f => ({ ...f, bankName: sn }));
-                                          setWithdrawErrors(err => ({ ...err, bankName: '' }));
-                                          setShowBankDropdown(false);
-                                          setBankSearch('');
-                                        }}
-                                        className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-[11px] transition hover:bg-white/5 ${selected ? 'bg-amber-500/10' : ''}`}
-                                      >
-                                        {b.logo ? (
-                                          <img src={b.logo} alt={sn} className="h-5 w-8 object-contain bg-white/5 rounded flex-shrink-0" />
-                                        ) : (
-                                          <div className="h-5 w-8 bg-white/5 rounded flex-shrink-0" />
-                                        )}
-                                        <span className={`font-bold flex-shrink-0 ${selected ? 'text-amber-400' : 'text-white'}`}>{sn}</span>
-                                        <span className="text-neutral-500 truncate text-[10px]">{b.name}</span>
-                                      </button>
-                                    );
-                                  })}
-                                {bankList.filter(b => {
-                                  const q = bankSearch.toLowerCase();
-                                  return !q || (b.short_name || b.shortName || '').toLowerCase().includes(q) || (b.name || '').toLowerCase().includes(q);
-                                }).length === 0 && (
-                                    <p className="text-center text-[10px] text-neutral-600 py-4">Không tìm thấy ngân hàng</p>
-                                  )}
-                              </div>
-                            </div>
-                          )}
-                          {withdrawErrors.bankName && <p className="mt-1 text-[9px] text-rose-400">{withdrawErrors.bankName}</p>}
-                        </div>
-
-                        {/* Số tài khoản */}
-                        <div>
-                          <label className="block text-[10px] font-black text-neutral-400 uppercase tracking-[0.18em] mb-1">Số tài khoản</label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            maxLength={15}
-                            value={withdrawForm.accountNumber}
-                            onChange={e => {
-                              const digits = e.target.value.replace(/\D/g, '').slice(0, 15);
-                              setWithdrawForm(f => ({ ...f, accountNumber: digits }));
-                              setWithdrawErrors(err => ({ ...err, accountNumber: '' }));
-                            }}
-                            placeholder="8 – 15 chữ số"
-                            className={`w-full bg-black/40 border px-3 py-2 text-[11px] text-white outline-none transition font-mono tracking-widest ${withdrawErrors.accountNumber ? 'border-rose-500/70' : 'border-white/10 focus:border-amber-500/50'}`}
-                          />
-                          {withdrawErrors.accountNumber && <p className="mt-1 text-[9px] text-rose-400">{withdrawErrors.accountNumber}</p>}
-                        </div>
-
-                        {/* Chủ tài khoản */}
-                        <div>
-                          <label className="block text-[10px] font-black text-neutral-400 uppercase tracking-[0.18em] mb-1">Chủ tài khoản</label>
-                          <input
-                            type="text"
-                            value={withdrawForm.accountHolder}
-                            onChange={e => {
-                              // Strip digits and special chars, auto-uppercase
-                              const cleaned = e.target.value.replace(/[^a-zA-Z\s\u00C0-\u024F\u1E00-\u1EFF]/g, '').toUpperCase();
-                              setWithdrawForm(f => ({ ...f, accountHolder: cleaned }));
-                              setWithdrawErrors(err => ({ ...err, accountHolder: '' }));
-                            }}
-                            placeholder="VD: NGUYEN VAN A"
-                            className={`w-full bg-black/40 border px-3 py-2 text-[11px] text-white outline-none transition uppercase tracking-wider ${withdrawErrors.accountHolder ? 'border-rose-500/70' : 'border-white/10 focus:border-amber-500/50'}`}
-                          />
-                          {withdrawErrors.accountHolder && <p className="mt-1 text-[9px] text-rose-400">{withdrawErrors.accountHolder}</p>}
-                        </div>
-
                         {withdrawErrors.general && (
-                          <p className="text-[9px] text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-2">{withdrawErrors.general}</p>
+                          <p className="text-[9px] text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-2">
+                            {withdrawErrors.general}
+                          </p>
                         )}
+
                         <button
-                          disabled={withdrawLoading}
-                          onClick={async () => {
-                            const errs = {};
-                            if (!withdrawForm.amount || Number(withdrawForm.amount) < 10000) errs.amount = 'Số tiền tối thiểu 10,000đ';
-                            if (!withdrawForm.bankName) errs.bankName = 'Vui lòng chọn ngân hàng';
-                            if (!withdrawForm.accountNumber || withdrawForm.accountNumber.length < 8) errs.accountNumber = 'Số tài khoản phải có tối thiểu 8 chữ số';
-                            else if (withdrawForm.accountNumber.length > 15) errs.accountNumber = 'Số tài khoản không quá 15 chữ số';
-                            if (!withdrawForm.accountHolder.trim()) errs.accountHolder = 'Vui lòng nhập tên chủ tài khoản';
-                            else if (withdrawForm.accountHolder.trim().length < 2) errs.accountHolder = 'Tên chủ tài khoản không hợp lệ';
-                            if (Object.keys(errs).length) { setWithdrawErrors(errs); return; }
-                            const { accessToken } = getStoredAuth();
-                            if (!accessToken) return;
-                            setWithdrawLoading(true);
-                            setWithdrawErrors({});
-                            try {
-                              await walletService.createWithdrawal(accessToken, {
-                                amount: Number(withdrawForm.amount),
-                                bankName: withdrawForm.bankName,
-                                accountNumber: withdrawForm.accountNumber,
-                                accountHolder: withdrawForm.accountHolder,
-                                walletPhone: withdrawForm.walletPhone || null,
-                              });
-                              const [w, txData, wdData] = await Promise.all([
-                                walletService.getWallet(accessToken),
-                                walletService.getTransactions(accessToken, { page: 0, size: 5 }),
-                                walletService.getMyWithdrawals(accessToken, { page: 0, size: 10 }),
-                              ]);
-                              setWallet(w);
-                              setWalletTxs(txData?.content ?? txData?.items ?? []);
-                              setWithdrawals(wdData?.content ?? wdData?.items ?? []);
-                              setShowWithdrawForm(false);
-                              setShowWithdrawals(true);
-                              setWithdrawForm({ amount: '', bankName: '', accountNumber: '', accountHolder: '', walletPhone: '' });
-                            } catch (e) {
-                              setWithdrawErrors({ general: e.message || 'Không thể tạo yêu cầu rút tiền. Vui lòng thử lại.' });
-                            } finally { setWithdrawLoading(false); }
-                          }}
-                          className="w-full bg-amber-500 text-black text-[10px] font-black uppercase tracking-widest py-2.5 hover:bg-amber-400 transition disabled:opacity-50 flex items-center justify-center gap-2"
+                          disabled={withdrawLoading || !linkedBank}
+                          onClick={handleCreateWithdrawal}
+                          className="w-full bg-amber-500 text-black text-[10px] font-black uppercase tracking-widest py-2.5 hover:bg-amber-400 transition disabled:opacity-50 flex items-center justify-center gap-2 shadow-lg"
                         >
                           {withdrawLoading ? <RefreshCw className="h-3 w-3 animate-spin" /> : <ArrowUpRight className="h-3 w-3" />}
                           Gửi yêu cầu rút tiền
                         </button>
-                        <p className="text-[9px] text-neutral-600 leading-relaxed">Quản trị viên (Admin) sẽ xem xét và chuyển khoản thủ công trong vòng 1-3 ngày làm việc.</p>
+                        <p className="text-[9px] text-neutral-600 leading-relaxed">
+                          Quản trị viên (Admin) sẽ xem xét và chuyển khoản thủ công trong vòng 1-3 ngày làm việc.
+                        </p>
                       </div>
                     </motion.div>
                   )}
@@ -1331,20 +1438,19 @@ export default function ProfileView() {
                     </AnimatePresence>
                   </div>
 
-                  {/* 2. PHƯƠNG THỨC THANH TOÁN (Visa / Master Card VIP golden linkage) */}
-                  <div className="border border-white/5 bg-black/40 overflow-hidden text-neutral-400">
+                  {/* 2. PHƯƠNG THỨC THANH TOÁN (Tài khoản ngân hàng VietQR rút ví & nhận tiền) */}
+                  <div id="payment-method-section" className="border border-white/5 bg-black/40 overflow-hidden text-neutral-400">
                     <button
                       onClick={() => {
                         playPing(activePanel === 'payment' ? 380 : 450, 'sine', 0.1);
                         setActivePanel(activePanel === 'payment' ? null : 'payment');
-                        setLinkingSuccess(false);
                       }}
                       className={`w-full flex items-center justify-between p-3.5 text-xs text-neutral-400 hover:text-white transition duration-200 text-left ${activePanel === 'payment' ? 'bg-neutral-950/60 pb-2 text-white border-b border-white/5' : ''
                         }`}
                     >
                       <span className="flex items-center gap-2.5 font-bold uppercase tracking-wider">
-                        <CreditCard className={`h-4 w-4 ${activePanel === 'payment' ? 'text-amber-400' : 'text-neutral-500'}`} />
-                        Phương thức thanh toán
+                        <Landmark className={`h-4 w-4 ${activePanel === 'payment' ? 'text-amber-400' : 'text-neutral-500'}`} />
+                        Tài khoản ngân hàng (Rút ví)
                       </span>
                       <ChevronDown className={`h-3.5 w-3.5 text-neutral-500 transition-transform duration-300 ${activePanel === 'payment' ? 'rotate-180 text-white' : ''
                         }`} />
@@ -1359,179 +1465,254 @@ export default function ProfileView() {
                           className="overflow-hidden"
                         >
                           <div className="p-4 space-y-4 text-xs">
-
-                            {/* Interactive Credit Card Widget Representation */}
+                            {/* Visual Bank Card Representation */}
                             <div
-                              className="relative w-full aspect-[1.58/1] rounded-lg p-5 overflow-hidden text-white flex flex-col justify-between cursor-pointer border shadow-2xl transition-all duration-500 hover:scale-102"
+                              className="relative w-full aspect-[1.58/1] rounded-xl p-5 overflow-hidden text-white flex flex-col justify-between border shadow-2xl transition-all duration-300"
                               style={{
-                                background: glowColor === 'gold' ? 'linear-gradient(135deg, #161208 0%, #0e0a03 50%, #1e1505 100%)' :
-                                  glowColor === 'neon' ? 'linear-gradient(135deg, #091a1e 0%, #040d10 50%, #0a252d 100%)' :
-                                    glowColor === 'ruby' ? 'linear-gradient(135deg, #1e090c 0%, #0e0304 50%, #2e0d13 100%)' :
-                                      'linear-gradient(135deg, #091e11 0%, #030d06 50%, #112d1b 100%)',
-                                borderColor: glowColor === 'gold' ? 'rgba(234, 179, 8, 0.4)' :
-                                  glowColor === 'neon' ? 'rgba(6, 182, 212, 0.4)' :
-                                    glowColor === 'ruby' ? 'rgba(244, 63, 94, 0.4)' :
-                                      'rgba(16, 185, 129, 0.4)'
+                                background: 'linear-gradient(135deg, #12100e 0%, #1c150b 45%, #0d0a06 100%)',
+                                borderColor: 'rgba(245, 158, 11, 0.45)',
+                                boxShadow: '0 15px 35px -10px rgba(245, 158, 11, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.12)'
                               }}
-                              onClick={() => {
-                                playPing(600, 'sine', 0.15);
-                                setIsCardFlipped(!isCardFlipped);
-                              }}
-                              title="Nhấp để xoay lật mặt thẻ bảo mật"
                             >
-                              <div className="absolute top-0 right-0 w-32 h-32 bg-white/2 rounded-full -mr-10 -mt-10 pointer-events-none blur-lg"></div>
+                              {/* Ambient golden glow */}
+                              <div className="absolute top-0 right-0 w-44 h-44 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
+                              <div className="absolute bottom-0 left-0 w-36 h-36 bg-amber-600/5 rounded-full blur-xl pointer-events-none" />
 
-                              {/* Card state wrapper with nice motion flip */}
-                              <AnimatePresence mode="wait">
-                                {!isCardFlipped ? (
-                                  <motion.div
-                                    key="front"
-                                    initial={{ opacity: 0, rotateY: 90 }}
-                                    animate={{ opacity: 1, rotateY: 0 }}
-                                    exit={{ opacity: 0, rotateY: -90 }}
-                                    className="h-full flex flex-col justify-between"
-                                  >
-                                    {/* Top chip and logo */}
-                                    <div className="flex justify-between items-start">
-                                      <div className="space-y-1">
-                                        <span className="text-[8px] tracking-[0.2em] font-black uppercase text-neutral-400">
-                                          CINEPREMIER
-                                        </span>
-                                        {/* Golden Chip */}
-                                        <div className="h-5 w-7 bg-amber-500/30 border border-amber-300/30 rounded-[3px] shadow"></div>
+                              {/* Card Top: Bank Logo / Name & NAPAS badge */}
+                              <div className="flex justify-between items-start z-10">
+                                <div className="flex items-center gap-2.5">
+                                  {(() => {
+                                    const found = bankList.find(b => (b.short_name || b.shortName) === bankForm.bankName);
+                                    if (found?.logo) {
+                                      return (
+                                        <div className="bg-white/95 rounded px-2 py-0.5 shadow-md flex items-center justify-center">
+                                          <img src={found.logo} alt={found.short_name} className="h-4.5 max-w-[75px] object-contain" />
+                                        </div>
+                                      );
+                                    }
+                                    return (
+                                      <div className="flex items-center gap-1.5 bg-amber-500/20 border border-amber-500/40 px-2 py-0.5 rounded text-[10px] font-black text-amber-400">
+                                        <Landmark className="h-3 w-3" />
+                                        <span>{bankForm.bankName || 'NGÂN HÀNG'}</span>
                                       </div>
-                                      <span className="text-sm font-serif italic font-black uppercase tracking-wider">
-                                        {cardType === 'visa' ? 'VISA PREMIUM' : 'MASTER CARD'}
-                                      </span>
-                                    </div>
+                                    );
+                                  })()}
+                                  <span className="text-[8px] tracking-[0.2em] font-mono text-neutral-400 uppercase">
+                                    CINEWALLET LINKED
+                                  </span>
+                                </div>
 
-                                    {/* Middle number with secure layout */}
-                                    <div className="text-base sm:text-lg font-mono tracking-widest font-bold py-1 select-all text-center">
-                                      {cardNumber || '•••• •••• •••• ••••'}
-                                    </div>
+                                <div className="text-right">
 
-                                    {/* Lowerholder info */}
-                                    <div className="flex justify-between items-end text-[9px] font-mono">
-                                      <div>
-                                        <span className="block text-[7px] text-neutral-500 font-extrabold">CHỦ THẺ</span>
-                                        <span className="uppercase text-neutral-300 font-black tracking-wide">{cardHolder || 'MINH HONG'}</span>
-                                      </div>
-                                      <div className="text-right">
-                                        <span className="block text-[7px] text-neutral-500 font-extrabold">HẾT HẠN</span>
-                                        <span className="text-neutral-300 font-black">{cardExpiry || '12/29'}</span>
-                                      </div>
-                                    </div>
-                                  </motion.div>
-                                ) : (
-                                  <motion.div
-                                    key="back"
-                                    initial={{ opacity: 0, rotateY: -90 }}
-                                    animate={{ opacity: 1, rotateY: 0 }}
-                                    exit={{ opacity: 0, rotateY: 90 }}
-                                    className="h-full flex flex-col justify-between py-2"
-                                  >
-                                    {/* Back design magnetic strip */}
-                                    <div className="w-full h-7 bg-neutral-900 -mx-5 mt-1 border-t border-b border-black"></div>
-
-                                    {/* Sign strip */}
-                                    <div className="flex items-center gap-3">
-                                      <div className="flex-1 h-5 bg-neutral-800 text-[8px] font-mono text-neutral-400 flex items-center px-2 select-all font-black">
-                                        Mã bảo an quốc tế:
-                                      </div>
-                                      <div className="bg-amber-100 text-black px-2.5 py-0.5 text-[10px] font-mono font-bold tracking-widest rounded-sm">
-                                        {cardCvv || '***'}
-                                      </div>
-                                    </div>
-
-                                    <div className="text-center text-[7px] text-neutral-500 tracking-wider">
-                                      THÀNH VIÊN ĐẶC QUYỀN ĐỒNG THỂ • CINEPREMIER 2026
-                                    </div>
-                                  </motion.div>
-                                )}
-                              </AnimatePresence>
-                            </div>
-
-                            <span className="block text-[8px] text-zinc-500 text-center font-mono uppercase tracking-widest">
-                              💡 Nhấp vào hình ảnh thẻ ở trên để xoay lật mặt bảo mật
-                            </span>
-
-                            {/* Inputs with real dynamic visualization */}
-                            <div className="grid grid-cols-2 gap-2.5 pt-1">
-                              <div className="space-y-1">
-                                <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-400 font-black">Tên chủ thẻ</label>
-                                <input
-                                  type="text"
-                                  placeholder="MINH HONG"
-                                  value={cardHolder}
-                                  onChange={(e) => setCardHolder(e.target.value.toUpperCase())}
-                                  className="w-full bg-black border border-neutral-850 p-2 text-[11px] text-white focus:outline-none focus:border-white uppercase font-bold"
-                                />
+                                </div>
                               </div>
 
-                              <div className="space-y-1">
-                                <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-400 font-black">Số Thẻ Di Động</label>
-                                <input
-                                  type="text"
-                                  placeholder="4611 1234 5678 8899"
-                                  value={cardNumber}
-                                  onChange={(e) => setCardNumber(e.target.value)}
-                                  className="w-full bg-black border border-neutral-850 p-2 text-[11px] text-white focus:outline-none focus:border-white font-mono"
-                                />
+                              {/* Card Middle: EMV Chip & Account Number */}
+                              <div className="space-y-2 z-10 my-auto">
+                                <div className="flex items-center gap-3">
+                                  {/* Golden Chip */}
+                                  <div className="h-5 w-7 bg-gradient-to-br from-amber-300 via-amber-500 to-amber-700 rounded-[3px] p-0.5 shadow border border-amber-200/50 flex flex-col justify-between">
+                                    <div className="w-full h-[1px] bg-amber-900/40 my-auto" />
+                                    <div className="w-full h-[1px] bg-amber-900/40" />
+                                  </div>
+                                  <span className="text-amber-400/60 text-[10px] font-mono">))))</span>
+                                </div>
+
+                                <div className="text-center">
+                                  <p className="text-base sm:text-xl font-mono tracking-[0.2em] font-black text-white select-all drop-shadow">
+                                    {bankForm.accountNumber
+                                      ? bankForm.accountNumber.replace(/(\d{4})/g, '$1 ').trim()
+                                      : '•••• •••• •••• ••••'}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Card Bottom: Holder Name & Status */}
+                              <div className="flex justify-between items-end text-[9px] font-mono z-10 border-t border-white/10 pt-2">
+                                <div>
+                                  <span className="block text-[7px] text-neutral-400 font-extrabold uppercase tracking-wider">CHỦ TÀI KHOẢN</span>
+                                  <span className="uppercase text-amber-300 font-black tracking-wider text-[11px] truncate max-w-[200px] block">
+                                    {bankForm.accountHolder || (currentUser?.name || currentUser?.fullName || 'NGUYỄN VĂN A')}
+                                  </span>
+                                </div>
+                                <div className="text-right">
+                                  <span className="block text-[7px] text-neutral-400 font-extrabold uppercase tracking-wider">TRẠNG THÁI</span>
+                                  {linkedBank && linkedBank.accountNumber === bankForm.accountNumber ? (
+                                    <span className="text-emerald-400 font-black flex items-center justify-end gap-1">
+                                      <CheckCircle2 className="h-3 w-3" /> ĐÃ LIÊN KẾT
+                                    </span>
+                                  ) : (
+                                    <span className="text-amber-400/80 font-bold">CHƯA LƯU</span>
+                                  )}
+                                </div>
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-3 gap-2.5">
-                              <div className="space-y-1">
-                                <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-400 font-black">Hạn dùng</label>
-                                <input
-                                  type="text"
-                                  placeholder="12/29"
-                                  maxLength={5}
-                                  value={cardExpiry}
-                                  onChange={(e) => setCardExpiry(e.target.value)}
-                                  className="w-full bg-black border border-neutral-850 p-2 text-[11px] text-white focus:outline-none focus:border-white font-mono text-center"
-                                />
-                              </div>
-
-                              <div className="space-y-1">
-                                <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-400 font-black">Mã CVV</label>
-                                <input
-                                  type="password"
-                                  placeholder="***"
-                                  maxLength={3}
-                                  value={cardCvv}
-                                  onChange={(e) => setCardCvv(e.target.value)}
-                                  onFocus={() => { playPing(400, 'sine', 0.1); setIsCardFlipped(true); }}
-                                  onBlur={() => setIsCardFlipped(false)}
-                                  className="w-full bg-black border border-neutral-850 p-2 text-[11px] text-white focus:outline-none focus:border-white font-mono text-center tracking-widest"
-                                />
-                              </div>
-
-                              <div className="space-y-1">
-                                <label className="text-[10px] uppercase tracking-[0.18em] text-neutral-400 font-black">Loại thẻ</label>
-                                <select
-                                  value={cardType}
-                                  onChange={(e) => { playPing(480, 'sine', 0.05); setCardType(e.target.value); }}
-                                  className="w-full bg-black border border-neutral-850 p-2 text-[11px] text-white focus:outline-none focus:border-white"
+                            {/* Form liên kết tài khoản ngân hàng */}
+                            <div className="space-y-3 pt-1">
+                              {/* Ngân hàng dropdown */}
+                              <div className="relative">
+                                <label className="block text-[10px] font-black text-neutral-400 uppercase tracking-[0.18em] mb-1">
+                                  Ngân hàng thụ hưởng
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setBankDropdownOpen(v => !v);
+                                    if (bankList.length === 0) {
+                                      fetch('https://api.vietqr.io/v2/banks')
+                                        .then(r => r.json())
+                                        .then(d => setBankList(d.data || []))
+                                        .catch(() => { });
+                                    }
+                                  }}
+                                  className={`w-full flex items-center gap-2.5 bg-black/60 border px-3 py-2 text-[11px] text-left outline-none transition ${bankErrors.bankName ? 'border-rose-500/70' : 'border-neutral-800 hover:border-amber-500/50'
+                                    }`}
                                 >
-                                  <option value="visa">VISA VIP</option>
-                                  <option value="mastercard">MASTER</option>
-                                </select>
+                                  {bankForm.bankName ? (
+                                    <>
+                                      {bankList.find(b => (b.short_name || b.shortName) === bankForm.bankName)?.logo && (
+                                        <img
+                                          src={bankList.find(b => (b.short_name || b.shortName) === bankForm.bankName)?.logo}
+                                          alt=""
+                                          className="h-5 w-8 object-contain bg-white/10 rounded p-0.5"
+                                        />
+                                      )}
+                                      <span className="text-white font-bold flex-1">{bankForm.bankName}</span>
+                                    </>
+                                  ) : (
+                                    <span className="text-neutral-500 flex-1">-- Chọn ngân hàng trong hệ thống VietQR / NAPAS --</span>
+                                  )}
+                                  <ChevronDown className={`h-3.5 w-3.5 text-neutral-500 transition-transform ${bankDropdownOpen ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {bankDropdownOpen && (
+                                  <div className="absolute z-50 left-0 right-0 mt-1 bg-[#0f0f0f] border border-white/15 shadow-2xl max-h-60 flex flex-col rounded">
+                                    <div className="p-2 border-b border-white/10">
+                                      <input
+                                        autoFocus
+                                        type="text"
+                                        placeholder="Tìm theo tên ngân hàng, mã viết tắt..."
+                                        value={bankSearch}
+                                        onChange={e => setBankSearch(e.target.value)}
+                                        className="w-full bg-black/70 border border-white/10 px-2.5 py-1.5 text-[11px] text-white outline-none focus:border-amber-500 placeholder:text-neutral-600 font-sans"
+                                      />
+                                    </div>
+                                    <div className="overflow-y-auto flex-1 max-h-48 divide-y divide-white/5">
+                                      {bankList
+                                        .filter(b => {
+                                          const q = bankSearch.toLowerCase();
+                                          return !q || (b.short_name || b.shortName || '').toLowerCase().includes(q) || (b.name || '').toLowerCase().includes(q);
+                                        })
+                                        .map(b => {
+                                          const sn = b.short_name || b.shortName;
+                                          const selected = bankForm.bankName === sn;
+                                          return (
+                                            <button
+                                              key={b.bin || b.id || sn}
+                                              type="button"
+                                              onClick={() => {
+                                                setBankForm(f => ({ ...f, bankName: sn }));
+                                                setBankErrors(err => ({ ...err, bankName: '' }));
+                                                setBankDropdownOpen(false);
+                                                setBankSearch('');
+                                              }}
+                                              className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-[11px] transition hover:bg-white/10 ${selected ? 'bg-amber-500/15' : ''
+                                                }`}
+                                            >
+                                              {b.logo ? (
+                                                <img src={b.logo} alt={sn} className="h-5 w-8 object-contain bg-white/10 rounded flex-shrink-0 p-0.5" />
+                                              ) : (
+                                                <div className="h-5 w-8 bg-white/10 rounded flex-shrink-0" />
+                                              )}
+                                              <span className={`font-bold flex-shrink-0 ${selected ? 'text-amber-400' : 'text-white'}`}>{sn}</span>
+                                              <span className="text-neutral-400 truncate text-[10px]">{b.name}</span>
+                                            </button>
+                                          );
+                                        })}
+                                    </div>
+                                  </div>
+                                )}
+                                {bankErrors.bankName && <p className="mt-1 text-[9px] text-rose-400">{bankErrors.bankName}</p>}
                               </div>
+
+                              {/* Số tài khoản & Tên chủ tài khoản */}
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                <div>
+                                  <label className="block text-[10px] font-black text-neutral-400 uppercase tracking-[0.18em] mb-1">
+                                    Số tài khoản ngân hàng
+                                  </label>
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    maxLength={15}
+                                    value={bankForm.accountNumber}
+                                    onChange={e => {
+                                      const digits = e.target.value.replace(/\D/g, '').slice(0, 15);
+                                      setBankForm(f => ({ ...f, accountNumber: digits }));
+                                      setBankErrors(err => ({ ...err, accountNumber: '' }));
+                                    }}
+                                    placeholder="8 - 15 chữ số"
+                                    className={`w-full bg-black/60 border px-3 py-2 text-[11px] text-white outline-none transition font-mono tracking-wider ${bankErrors.accountNumber ? 'border-rose-500/70' : 'border-neutral-800 focus:border-amber-500'
+                                      }`}
+                                  />
+                                  {bankErrors.accountNumber && <p className="mt-1 text-[9px] text-rose-400">{bankErrors.accountNumber}</p>}
+                                </div>
+
+                                <div>
+                                  <label className="block text-[10px] font-black text-neutral-400 uppercase tracking-[0.18em] mb-1">
+                                    Tên chủ tài khoản (in hoa)
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={bankForm.accountHolder}
+                                    onChange={e => {
+                                      const cleaned = e.target.value.replace(/[^a-zA-Z\s\u00C0-\u024F\u1E00-\u1EFF]/g, '').toUpperCase();
+                                      setBankForm(f => ({ ...f, accountHolder: cleaned }));
+                                      setBankErrors(err => ({ ...err, accountHolder: '' }));
+                                    }}
+                                    placeholder="VD: NGUYEN VAN A"
+                                    className={`w-full bg-black/60 border px-3 py-2 text-[11px] text-white outline-none transition uppercase tracking-wider font-bold ${bankErrors.accountHolder ? 'border-rose-500/70' : 'border-neutral-800 focus:border-amber-500'
+                                      }`}
+                                  />
+                                  {bankErrors.accountHolder && <p className="mt-1 text-[9px] text-rose-400">{bankErrors.accountHolder}</p>}
+                                </div>
+                              </div>
+
+                              {bankErrors.general && (
+                                <p className="text-[9px] text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-2">{bankErrors.general}</p>
+                              )}
+
+                              {/* Action Buttons */}
+                              <div className="flex gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  disabled={isLinkingBank}
+                                  onClick={handleLinkBank}
+                                  className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-400 text-black font-sans uppercase text-[10px] font-black tracking-widest transition flex items-center justify-center gap-2 shadow-lg"
+                                >
+                                  {isLinkingBank ? (
+                                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Check className="h-3.5 w-3.5" />
+                                  )}
+                                  XÁC THỰC & LIÊN KẾT TÀI KHOẢN NGÂN HÀNG
+                                </button>
+                                {linkedBank && (
+                                  <button
+                                    type="button"
+                                    onClick={handleUnlinkBank}
+                                    className="px-3 py-2.5 bg-neutral-900 border border-white/10 hover:border-rose-500/50 hover:bg-rose-950/20 text-neutral-400 hover:text-rose-400 text-[10px] font-mono transition"
+                                    title="Hủy liên kết tài khoản"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                              <p className="text-[9px] text-neutral-500 leading-relaxed italic">
+                                * Thông tin tài khoản ngân hàng sẽ được lưu trữ an toàn và dùng để nhận tiền khi thực hiện lệnh rút từ ví CineWallet.
+                              </p>
                             </div>
-
-                            <button
-                              onClick={() => {
-                                playPing(987.77, 'sine', 0.3);
-                                setLinkingSuccess(true);
-                                showToast("Mã hóa liên kết thẻ tín dụng Thượng hạng thành công!");
-                                setActivePanel(null);
-                              }}
-                              className="w-full py-2.5 bg-neutral-900 border border-white/10 text-white font-sans uppercase text-[10px] hover:border-white hover:bg-neutral-950 transition tracking-widest font-black"
-                            >
-                              ✓ XÁC THỰC & LIÊN KẾT AN TOÀN
-                            </button>
-
                           </div>
                         </motion.div>
                       )}
@@ -1689,11 +1870,10 @@ export default function ProfileView() {
             {/* Header */}
             <div className="flex items-start justify-between border-b border-white/10 pb-4">
               <div className="flex items-center gap-3">
-                <div className={`w-10 h-10 rounded flex items-center justify-center ${
-                  selectedTxDetail.type === 'REFUND_CREDIT'
-                    ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
-                    : 'bg-amber-500/20 border border-amber-500/40 text-amber-400'
-                }`}>
+                <div className={`w-10 h-10 rounded flex items-center justify-center ${selectedTxDetail.type === 'REFUND_CREDIT'
+                  ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
+                  : 'bg-amber-500/20 border border-amber-500/40 text-amber-400'
+                  }`}>
                   {selectedTxDetail.type === 'REFUND_CREDIT' ? (
                     <CheckCircle2 className="h-5 w-5" />
                   ) : (
@@ -1705,10 +1885,10 @@ export default function ProfileView() {
                     {selectedTxDetail.type === 'REFUND_CREDIT'
                       ? 'Biên nhận hoàn tiền vé'
                       : selectedTxDetail.type === 'WITHDRAWAL_HOLD'
-                      ? 'Chi tiết yêu cầu rút tiền'
-                      : selectedTxDetail.type === 'WITHDRAWAL_REJECTED'
-                      ? 'Biên nhận hoàn trả số dư rút'
-                      : 'Chi tiết giao dịch ví'}
+                        ? 'Chi tiết yêu cầu rút tiền'
+                        : selectedTxDetail.type === 'WITHDRAWAL_REJECTED'
+                          ? 'Biên nhận hoàn trả số dư rút'
+                          : 'Chi tiết giao dịch ví'}
                   </h3>
                   <p className="text-[10px] text-neutral-400">
                     {selectedTxDetail.type === 'REFUND_CREDIT'
@@ -1729,22 +1909,20 @@ export default function ProfileView() {
             {/* Số tiền biến động */}
             <div className="text-center py-4 bg-black/60 border border-white/5 rounded space-y-1">
               <p className="text-[10px] font-black uppercase tracking-widest text-neutral-400">Số tiền giao dịch</p>
-              <p className={`text-2xl font-mono font-black ${
-                selectedTxDetail.type === 'REFUND_CREDIT'
-                  ? 'text-emerald-400'
-                  : selectedTxDetail.type === 'WITHDRAWAL_REJECTED'
+              <p className={`text-2xl font-mono font-black ${selectedTxDetail.type === 'REFUND_CREDIT'
+                ? 'text-emerald-400'
+                : selectedTxDetail.type === 'WITHDRAWAL_REJECTED'
                   ? 'text-sky-400'
                   : 'text-amber-400'
-              }`}>
+                }`}>
                 {selectedTxDetail.type === 'REFUND_CREDIT' || selectedTxDetail.type === 'WITHDRAWAL_REJECTED' ? '+' : '-'}
                 {Math.abs(Number(selectedTxDetail.amount || 0)).toLocaleString('vi-VN')}đ
               </p>
               <div className="inline-block mt-1">
-                <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${
-                  selectedTxDetail.type === 'REFUND_CREDIT'
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                }`}>
+                <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-wider ${selectedTxDetail.type === 'REFUND_CREDIT'
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                  : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                  }`}>
                   {selectedTxDetail.type === 'REFUND_CREDIT' ? 'Đã hoàn tiền vào ví thành công (100%)' : 'Giao dịch thành công'}
                 </span>
               </div>
@@ -1782,10 +1960,10 @@ export default function ProfileView() {
                   {selectedTxDetail.type === 'REFUND_CREDIT'
                     ? 'Hoàn tiền vé (Refund Ticket)'
                     : selectedTxDetail.type === 'WITHDRAWAL_HOLD'
-                    ? 'Khấu trừ rút tiền (Withdrawal Hold)'
-                    : selectedTxDetail.type === 'WITHDRAWAL_REJECTED'
-                    ? 'Hoàn tiền rút bị từ chối'
-                    : selectedTxDetail.type}
+                      ? 'Khấu trừ rút tiền (Withdrawal Hold)'
+                      : selectedTxDetail.type === 'WITHDRAWAL_REJECTED'
+                        ? 'Hoàn tiền rút bị từ chối'
+                        : selectedTxDetail.type}
                 </span>
               </div>
 

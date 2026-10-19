@@ -131,6 +131,7 @@ export default function ShowtimesPage() {
   const cols = useColumnCount();
 
   // Zustand Store sync
+  const showToast = useUiStore((state) => state.showToast);
   const storeSelectedCinema = useMovieStore((state) => state.selectedCinema);
   const setStoreSelectedCinema = useMovieStore((state) => state.setSelectedCinema);
   const { moviesList = [] } = useMovies();
@@ -397,12 +398,11 @@ export default function ShowtimesPage() {
 
       const poster = catalogMovie?.posterUrl || catalogMovie?.avatarUrl || catalogMovie?.poster;
 
-      // Rating thực tế từ catalog
+      // Rating thực tế từ catalog (chuẩn hóa thang điểm 5 sao)
       let calculatedRating = null;
-      if (catalogMovie?.voteAverage) {
-        calculatedRating = Number(catalogMovie.voteAverage).toFixed(1);
-      } else if (catalogMovie?.rating) {
-        calculatedRating = Number(catalogMovie.rating).toFixed(1);
+      const rawRatingVal = Number(catalogMovie?.voteAverage || catalogMovie?.rating || 0);
+      if (rawRatingVal > 0) {
+        calculatedRating = (rawRatingVal > 5 ? rawRatingVal / 2 : rawRatingVal).toFixed(1);
       }
 
       // Age rating normalization
@@ -953,14 +953,27 @@ export default function ShowtimesPage() {
                                         <div className="flex flex-wrap items-center gap-2 flex-1">
                                           {slots.map((st) => {
                                             const startTime = formatTimeOnly(st.startTime);
+                                            const isScheduled = st.status === 'SCHEDULED';
                                             return (
                                               <button
                                                 key={st.id}
-                                                onClick={() => handleSelectShowtime(st, selectedMovie)}
-                                                className="h-8 px-3.5 rounded-none border border-white/15 bg-white/[0.04] text-xs sm:text-[13px] font-bold text-white hover:border-[#F7C600] hover:bg-[#F7C600] hover:text-black hover:scale-105 active:scale-95 transition-all select-none flex items-center justify-center cursor-pointer shadow-sm"
-                                                title={`Suất chiếu ${startTime} - Phòng: ${st.roomName || 'Tiêu chuẩn'} - Giá từ: ${formatVnd(st.basePrice || st.adultStandardPrice)}`}
+                                                disabled={isScheduled}
+                                                onClick={() => {
+                                                  if (isScheduled) {
+                                                    showToast?.('Suất chiếu này đang ở trạng thái lên lịch, chưa mở bán vé chính thức.');
+                                                    return;
+                                                  }
+                                                  handleSelectShowtime(st, selectedMovie);
+                                                }}
+                                                className={`h-8 px-3.5 rounded-none border text-xs sm:text-[13px] font-bold select-none flex items-center justify-center shadow-sm transition-all ${
+                                                  isScheduled
+                                                    ? 'border-white/5 bg-white/[0.02] text-neutral-500 cursor-not-allowed opacity-60'
+                                                    : 'border-white/15 bg-white/[0.04] text-white hover:border-[#F7C600] hover:bg-[#F7C600] hover:text-black hover:scale-105 active:scale-95 cursor-pointer'
+                                                }`}
+                                                title={isScheduled ? `Suất chiếu ${startTime} đang lên lịch (Chưa mở bán vé)` : `Suất chiếu ${startTime} - Phòng: ${st.roomName || 'Tiêu chuẩn'} - Giá từ: ${formatVnd(st.basePrice || st.adultStandardPrice)}`}
                                               >
-                                                {startTime}
+                                                <span>{startTime}</span>
+                                                {isScheduled && <span className="ml-1 text-[9px] text-amber-400 font-normal">(Sắp mở)</span>}
                                               </button>
                                             );
                                           })}
@@ -994,14 +1007,27 @@ export default function ShowtimesPage() {
                                   <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 flex-1">
                                     {slots.map((st) => {
                                       const startTime = formatTimeOnly(st.startTime);
+                                      const isScheduled = st.status === 'SCHEDULED';
                                       return (
                                         <button
                                           key={st.id}
-                                          onClick={() => handleSelectShowtime(st, selectedMovie)}
-                                          className="h-8 px-3.5 rounded-none border border-white/15 bg-white/[0.04] text-xs sm:text-[13px] font-bold text-white hover:border-[#F7C600] hover:bg-[#F7C600] hover:text-black hover:scale-105 active:scale-95 transition-all select-none flex items-center justify-center cursor-pointer shadow-sm"
-                                          title={`Suất chiếu ${startTime} - Phòng: ${st.roomName || 'Tiêu chuẩn'} - Giá từ: ${formatVnd(st.basePrice || st.adultStandardPrice)}`}
+                                          disabled={isScheduled}
+                                          onClick={() => {
+                                            if (isScheduled) {
+                                              showToast?.('Suất chiếu này đang ở trạng thái lên lịch, chưa mở bán vé chính thức.');
+                                              return;
+                                            }
+                                            handleSelectShowtime(st, selectedMovie);
+                                          }}
+                                          className={`h-8 px-3.5 rounded-none border text-xs sm:text-[13px] font-bold select-none flex items-center justify-center shadow-sm transition-all ${
+                                            isScheduled
+                                              ? 'border-white/5 bg-white/[0.02] text-neutral-500 cursor-not-allowed opacity-60'
+                                              : 'border-white/15 bg-white/[0.04] text-white hover:border-[#F7C600] hover:bg-[#F7C600] hover:text-black hover:scale-105 active:scale-95 cursor-pointer'
+                                          }`}
+                                          title={isScheduled ? `Suất chiếu ${startTime} đang lên lịch (Chưa mở bán vé)` : `Suất chiếu ${startTime} - Phòng: ${st.roomName || 'Tiêu chuẩn'} - Giá từ: ${formatVnd(st.basePrice || st.adultStandardPrice)}`}
                                         >
-                                          {startTime}
+                                          <span>{startTime}</span>
+                                          {isScheduled && <span className="ml-1 text-[9px] text-amber-400 font-normal">(Sắp mở)</span>}
                                         </button>
                                       );
                                     })}

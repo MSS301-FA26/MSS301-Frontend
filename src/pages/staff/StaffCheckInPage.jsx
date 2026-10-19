@@ -33,6 +33,7 @@ import { staffService } from '../../services/staffService';
 import { useAuthStore } from '../../stores/useAuthStore';
 import { useUiStore } from '../../stores/useUiStore';
 import StaffFoodCheckInPanel from './StaffFoodCheckInPanel';
+import TicketPrintModal from './TicketPrintModal';
 
 const FOOD_PAGE_SIZE = 10;
 const BOOKINGS_PAGE_SIZE = 8;
@@ -160,6 +161,7 @@ function ResultCard({
   onOpenCounterSale,
   assignedCinemaId,
   activeCinema,
+  onPrintTickets,
 }) {
   if (!result) {
     return (
@@ -540,9 +542,14 @@ function ResultCard({
         </div>
       )}
 
-      {result.type === 'success' && (
-        <button type="button" className="mt-5 flex w-full items-center justify-center gap-2 border border-emerald-400/40 bg-emerald-400 px-4 py-3 text-[9px] font-black uppercase tracking-widest text-black transition hover:bg-emerald-300">
-          <Printer className="h-3.5 w-3.5" /> In vé vào cửa
+      {booking && (result.type === 'success' || ['PAID', 'USED'].includes(booking.status)) && (
+        <button
+          type="button"
+          onClick={() => onPrintTickets?.(booking)}
+          className="mt-5 flex w-full items-center justify-center gap-2 border border-emerald-400/40 bg-emerald-400 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-black transition hover:bg-emerald-300 active:bg-emerald-500 shadow-[0_4px_20px_rgba(16,185,129,0.3)] cursor-pointer"
+          title="In vé giấy vào cửa phòng chiếu cho khách"
+        >
+          <Printer className="h-4 w-4" /> In vé vào cửa
         </button>
       )}
     </motion.div>
@@ -612,6 +619,7 @@ export default function StaffCheckInPage() {
   const [cashGiven, setCashGiven] = useState(''); // tiền khách đưa (trống = thu đúng số)
   const [counterSaleReceipt, setCounterSaleReceipt] = useState(null); // biên lai sau khi thu
   const [pendingFnbCount, setPendingFnbCount] = useState(0);
+  const [printTicketsBooking, setPrintTicketsBooking] = useState(null);
   const qrVideoRef = useRef(null);
   const qrCanvasRef = useRef(null);
   const qrStreamRef = useRef(null);
@@ -1648,6 +1656,7 @@ export default function StaffCheckInPage() {
                 onOpenCounterSale={openCounterSale}
                 assignedCinemaId={assignedCinemaId}
                 activeCinema={activeCinema}
+                onPrintTickets={(b) => setPrintTicketsBooking(b)}
               />
             </section>
 
@@ -2400,6 +2409,15 @@ export default function StaffCheckInPage() {
             </motion.div>
           </div>
         )}
+
+        {/* Ticket Print Modal */}
+        <TicketPrintModal
+          isOpen={Boolean(printTicketsBooking)}
+          onClose={() => setPrintTicketsBooking(null)}
+          booking={printTicketsBooking}
+          activeCinema={activeCinema}
+          currentUser={currentUser}
+        />
       </main>
     </div>
   );
