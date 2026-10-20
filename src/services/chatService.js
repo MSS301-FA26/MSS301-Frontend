@@ -1,4 +1,4 @@
-import { request } from './authService';
+import { aiRequest } from './aiClient.js';
 
 const CONVERSATION_ID_KEY_PREFIX = 'cinepremier_chat_conversation_id';
 
@@ -23,9 +23,14 @@ const CHAT_TIMEOUT_MS = 120000;
 export const chatService = {
   sendMessage: ({ message, movieId, userId, token, scope = 'default' }) => {
     const conversationId = getStoredConversationId(scope);
-    return request('/api/v1/chat/message', {
+    return aiRequest('/api/v1/chat/message', {
       method: 'POST',
-      body: { message, movieId, userId, conversationId },
+      body: {
+        message,
+        movieId: movieId ? Number(movieId) : null,
+        userId: userId ? Number(userId) : null,
+        conversationId
+      },
       token,
       timeout: CHAT_TIMEOUT_MS
     }).then((res) => {

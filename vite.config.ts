@@ -14,6 +14,9 @@ export default defineConfig(() => {
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',
       watch: { usePolling: true },
+      headers: {
+        'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+      },
     },
   };
 });

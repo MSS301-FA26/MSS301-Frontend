@@ -550,14 +550,16 @@ export default function Header({
               </div>
             )}
 
-            {/* Mobile Hamburger Menu button */}
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="flex lg:hidden h-[42px] w-[42px] items-center justify-center rounded-none border border-white/10 bg-[#09090C] text-neutral-300 hover:text-white ml-0.5"
-              aria-label="Menu"
-            >
-              <Menu className="h-4.5 w-4.5" />
-            </button>
+            {/* Mobile Hamburger Menu button - Hidden for staff role */}
+            {!isStaffRole && (
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="flex lg:hidden h-[42px] w-[42px] items-center justify-center rounded-none border border-white/10 bg-[#09090C] text-neutral-300 hover:text-white ml-0.5"
+                aria-label="Menu"
+              >
+                <Menu className="h-4.5 w-4.5" />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -952,7 +954,7 @@ export default function Header({
       {/* ========================================================
           MOBILE NAVIGATION DRAWER
       ======================================================== */}
-      {typeof document !== 'undefined' && createPortal(
+      {!isStaffRole && typeof document !== 'undefined' && createPortal(
         <AnimatePresence>
           {mobileMenuOpen && (
             <motion.div

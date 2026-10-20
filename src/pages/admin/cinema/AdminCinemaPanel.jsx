@@ -18,8 +18,12 @@ import {
 // =============================================================================
 
 function gisToWorld(lon, lat) {
-  const x = (lon - 106.1) * 14.2;
-  const z = (16.0 - lat) * 14.2;
+  const numLon = Number(lon);
+  const numLat = Number(lat);
+  const safeLon = Number.isFinite(numLon) ? numLon : 106.68;
+  const safeLat = Number.isFinite(numLat) ? numLat : 10.78;
+  const x = (safeLon - 106.1) * 14.2;
+  const z = (16.0 - safeLat) * 14.2;
   return { x, z };
 }
 
@@ -1492,13 +1496,22 @@ export default function AdminCinemaPanel({ ctx = {} }) {
 
     // 3. Project 3D to 2D helper
     const project3DTo2D = (worldVec) => {
+      if (!worldVec || !Number.isFinite(worldVec.x) || !Number.isFinite(worldVec.y) || !Number.isFinite(worldVec.z)) {
+        return { x: 0, y: 0, visible: false };
+      }
       const v = worldVec.clone().project(camera);
-      const w = renderer.domElement.clientWidth;
-      const h = renderer.domElement.clientHeight;
+      if (!Number.isFinite(v.x) || !Number.isFinite(v.y) || !Number.isFinite(v.z)) {
+        return { x: 0, y: 0, visible: false };
+      }
+      const w = renderer?.domElement?.clientWidth || 0;
+      const h = renderer?.domElement?.clientHeight || 0;
+      if (w <= 0 || h <= 0) {
+        return { x: 0, y: 0, visible: false };
+      }
       return {
         x: (v.x * 0.5 + 0.5) * w,
         y: (-v.y * 0.5 + 0.5) * h,
-        visible: v.z < 1.0
+        visible: v.z < 1.0 && v.z > -1.0
       };
     };
 
@@ -1651,6 +1664,10 @@ export default function AdminCinemaPanel({ ctx = {} }) {
           const el = document.getElementById(`callout-card-${c.id}`);
           if (!el) return;
 
+          if (!Number.isFinite(item.boxX) || !Number.isFinite(item.boxY) || !Number.isFinite(item.anchorX) || !Number.isFinite(item.anchorY)) {
+            return;
+          }
+
           el.style.transform = `translate3d(${Math.round(item.boxX)}px, ${Math.round(item.boxY)}px, 0)`;
 
           const cardW = 205;
@@ -1659,19 +1676,23 @@ export default function AdminCinemaPanel({ ctx = {} }) {
           const lineStartY = item.boxY + cardH * 0.5;
           const elbowX = lineStartX + (item.anchorX - lineStartX) * 0.45;
 
-          const isSel = c.id === activeId;
+          if (!Number.isFinite(lineStartX) || !Number.isFinite(lineStartY) || !Number.isFinite(elbowX)) {
+            return;
+          }
+
+          const isSel = String(c.id) === String(activeId);
           const stroke = isSel ? '#f59e0b' : (c.active ? 'rgba(6, 182, 212, 0.65)' : 'rgba(148, 163, 184, 0.4)');
           const strokeW = isSel ? '2.2' : '1.4';
 
           linesSvg += `
             <polyline
-              points="${lineStartX},${lineStartY} ${elbowX},${lineStartY} ${item.anchorX},${item.anchorY}"
+              points="${lineStartX.toFixed(2)},${lineStartY.toFixed(2)} ${elbowX.toFixed(2)},${lineStartY.toFixed(2)} ${item.anchorX.toFixed(2)},${item.anchorY.toFixed(2)}"
               fill="none"
               stroke="${stroke}"
               stroke-width="${strokeW}"
               ${isSel ? 'filter="url(#glow-amber)"' : 'stroke-dasharray="3,3"'}
             />
-            <circle cx="${item.anchorX}" cy="${item.anchorY}" r="${isSel ? 4.5 : 3}" fill="${stroke}" />
+            <circle cx="${item.anchorX.toFixed(2)}" cy="${item.anchorY.toFixed(2)}" r="${isSel ? 4.5 : 3}" fill="${stroke}" />
           `;
         });
 
@@ -1693,20 +1714,31 @@ export default function AdminCinemaPanel({ ctx = {} }) {
 
         const hsEl = document.getElementById('island-badge-HS');
         const tsEl = document.getElementById('island-badge-TS');
-        if (hsEl && hs2D.visible) {
-          hsEl.style.transform = `translate3d(${Math.round(hs2D.x - 75)}px, ${Math.round(hs2D.y - 36)}px, 0)`;
+        if (hsEl) {
+          if (hs2D.visible && Number.isFinite(hs2D.x) && Number.isFinite(hs2D.y)) {
+            hsEl.style.display = 'block';
+            hsEl.style.transform = `translate3d(${Math.round(hs2D.x - 75)}px, ${Math.round(hs2D.y - 36)}px, 0)`;
+          } else {
+            hsEl.style.display = 'none';
+          }
         }
-        if (tsEl && ts2D.visible) {
-          tsEl.style.transform = `translate3d(${Math.round(ts2D.x - 75)}px, ${Math.round(ts2D.y - 36)}px, 0)`;
+        if (tsEl) {
+          if (ts2D.visible && Number.isFinite(ts2D.x) && Number.isFinite(ts2D.y)) {
+            tsEl.style.display = 'block';
+            tsEl.style.transform = `translate3d(${Math.round(ts2D.x - 75)}px, ${Math.round(ts2D.y - 36)}px, 0)`;
+          } else {
+            tsEl.style.display = 'none';
+          }
         }
 
         // Glowing Animated Tether from Skyscraper to Inspector Card
-        const selCinema = cinemasRef.current.find(c => c.id === activeId);
+        const selCinema = cinemasRef.current.find(c => String(c.id) === String(activeId));
         const inspCardEl = document.getElementById('inspector-card');
         if (selCinema && inspCardEl && svgTetherRef.current) {
           const { x, z } = gisToWorld(selCinema.lon, selCinema.lat);
           const nodeInfo = threeRef.current.cinemaMeshMap.get(selCinema.id);
-          const proj = project3DTo2D(new THREE.Vector3(x, nodeInfo ? nodeInfo.topY : 16, z));
+          const topY = (nodeInfo && Number.isFinite(nodeInfo.topY)) ? nodeInfo.topY : 16;
+          const proj = project3DTo2D(new THREE.Vector3(x, topY, z));
           const rect = inspCardEl.getBoundingClientRect();
           const containerRect = renderer.domElement.getBoundingClientRect();
 
@@ -1714,19 +1746,32 @@ export default function AdminCinemaPanel({ ctx = {} }) {
           const targetY = rect.top - containerRect.top + 42;
           const midX = proj.x + (targetX - proj.x) * 0.55;
 
-          svgTetherRef.current.innerHTML = `
-            <polyline
-              class="animated-tether"
-              points="${proj.x},${proj.y} ${midX},${targetY} ${targetX},${targetY}"
-              fill="none"
-              stroke="#f59e0b"
-              stroke-width="2"
-              stroke-dasharray="6,5"
-              filter="url(#glow-amber)"
-            />
-            <circle cx="${proj.x}" cy="${proj.y}" r="5" fill="#f59e0b" />
-            <circle cx="${targetX}" cy="${targetY}" r="4.5" fill="#f59e0b" />
-          `;
+          const isTetherValid = proj.visible &&
+            Number.isFinite(proj.x) &&
+            Number.isFinite(proj.y) &&
+            Number.isFinite(midX) &&
+            Number.isFinite(targetX) &&
+            Number.isFinite(targetY);
+
+          if (isTetherValid) {
+            svgTetherRef.current.innerHTML = `
+              <polyline
+                class="animated-tether"
+                points="${proj.x.toFixed(2)},${proj.y.toFixed(2)} ${midX.toFixed(2)},${targetY.toFixed(2)} ${targetX.toFixed(2)},${targetY.toFixed(2)}"
+                fill="none"
+                stroke="#f59e0b"
+                stroke-width="2"
+                stroke-dasharray="6,5"
+                filter="url(#glow-amber)"
+              />
+              <circle cx="${proj.x.toFixed(2)}" cy="${proj.y.toFixed(2)}" r="5" fill="#f59e0b" />
+              <circle cx="${targetX.toFixed(2)}" cy="${targetY.toFixed(2)}" r="4.5" fill="#f59e0b" />
+            `;
+          } else {
+            svgTetherRef.current.innerHTML = "";
+          }
+        } else if (svgTetherRef.current) {
+          svgTetherRef.current.innerHTML = "";
         }
       } else {
         if (svgTetherRef.current) {
