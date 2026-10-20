@@ -859,6 +859,26 @@ export default function MovieDetailPage() {
         });
         showToast('Đánh giá của bạn đã được xuất bản thành công!');
       }
+
+      // Sync with CinemaAI recommendation service (http://localhost:8032)
+      if (currentUser?.id && detailMovieId) {
+        const scaledRating = Math.max(1, Math.min(5, Number(reviewRating) / 2));
+        recommendationService.submitReview({
+          userId: currentUser.id,
+          movieId: detailMovieId,
+          rating: scaledRating,
+          comment: trimmed
+        }).catch(() => {});
+
+        recommendationService.recordFeedback({
+          userId: currentUser.id,
+          movieId: detailMovieId,
+          interactionType: 'MOVIE_RATED',
+          rating: scaledRating,
+          comment: trimmed
+        }).catch(() => {});
+      }
+
       setShowReviewModal(false);
       setReviewComment('');
       await loadAllReviewData();
@@ -1884,11 +1904,25 @@ export default function MovieDetailPage() {
                       movie={rec}
                       onSelect={(selectedId) => {
                         const targetId = selectedId || recTargetId;
+                        if (currentUser?.id && targetId) {
+                          recommendationService.recordClick({
+                            setId: rec.setId || 1,
+                            movieId: targetId,
+                            userId: currentUser.id
+                          }).catch(() => {});
+                        }
                         window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
                         navigate(`/movies/${targetId}`);
                       }}
                       onBook={(mv) => {
                         const targetId = mv?.backendId || mv?.movieId || mv?.id || recTargetId;
+                        if (currentUser?.id && targetId) {
+                          recommendationService.recordClick({
+                            setId: rec.setId || 1,
+                            movieId: targetId,
+                            userId: currentUser.id
+                          }).catch(() => {});
+                        }
                         navigate(`/movies/${targetId}`, { state: { scrollToShowtimes: true } });
                       }}
                       isWatchlisted={watchlist.some(w => String(w.id || w.backendId || w.movieId) === String(recTargetId))}
