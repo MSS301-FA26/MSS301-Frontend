@@ -254,7 +254,7 @@ export const adminService = {
   updateLoyaltyConfiguration: (token, payload) => request('/api/v1/admin/loyalty/config', { method: 'PUT', token, body: payload }),
   getLoyaltyTransactions: (token, params = {}) => request(`/api/v1/admin/loyalty/transactions${buildQueryString(params)}`, { token }),
   getLoyaltyReport: (token, params = {}) => request(`/api/v1/admin/loyalty/report${buildQueryString(params)}`, { token }),
-  expireLoyaltyPointsNow: (token) => request('/api/v1/admin/loyalty/expire-now', { method: 'POST', token }),
+  expireLoyaltyPointsNow: (token) => request('/api/v1/admin/loyalty/points/expire-all-active', { method: 'POST', token }),
   grantLoyaltyPoints: (token, payload) => request('/api/v1/admin/loyalty/add', { method: 'POST', token, body: payload }),
 
   // Reviews & Moderation
