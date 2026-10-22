@@ -122,6 +122,16 @@ export const normalizeMoviePageResponse = (payload) => {
   };
 };
 
+const getAllMoviePages = async (params = {}) => {
+  const firstPage = await movieService.searchMoviesPage({ ...params, page: 0 });
+  const remainingPages = await Promise.all(
+    Array.from({ length: Math.max(0, firstPage.totalPages - 1) }, (_, index) => (
+      movieService.searchMoviesPage({ ...params, page: index + 1, size: firstPage.size })
+    ))
+  );
+  return [firstPage, ...remainingPages].flatMap((page) => page.items);
+};
+
 const DEAD_IMAGE_URL = '1576107232684';
 const FALLBACK_FOOD_IMAGE = 'https://images.unsplash.com/photo-1585647347384-2593bc35786b?auto=format&fit=crop&w=800&q=80';
 
@@ -151,6 +161,7 @@ export const movieService = {
     .then(normalizeMovieListResponse),
   searchMoviesPage: (params = {}) => request(`/api/v1/movies${buildQueryString(params)}`)
     .then(normalizeMoviePageResponse),
+  getAllMovies: (params = {}) => getAllMoviePages(params),
   getMovieDetail: (movieId) => request(`/api/v1/movies/${encodeURIComponent(movieId)}`)
     .then((movie) => normalizeMovie(movie)),
   getActors: () => request('/api/v1/actors'),

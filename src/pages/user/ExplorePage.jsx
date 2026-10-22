@@ -9,7 +9,9 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import MovieCard from '@/components/common/MovieCard';
+import { movieService } from '@/services/movieService';
 import { useMovies } from '../../stores/useMovieStore';
+import { defaultExploreStatus, deduplicateSearchMovies, matchesMovieSearch } from '../../utils/movieSearch';
 
 const STATUS_TABS = [
   { id: 'now-showing', label: 'ĐANG CHIẾU' },
@@ -25,20 +27,21 @@ export default function ExplorePage() {
   const {
     moviesList = [],
     isMoviesLoading: isStoreLoading = false,
+    searchQuery: storeSearchQuery = '',
+    setSearchQuery,
     watchlist = [],
     handleToggleWatchlist,
   } = useMovies();
 
   // URL query params
   const rawParamStatus = searchParams.get('status');
-  const paramStatus = STATUS_TABS.some((t) => t.id === rawParamStatus) ? rawParamStatus : 'now-showing';
   const paramSearch = searchParams.get('q') || '';
+  const paramStatus = defaultExploreStatus(paramSearch, rawParamStatus);
 
   // State
   const [activeTab, setActiveTab] = useState(paramStatus);
   const [searchInput, setSearchInput] = useState(paramSearch);
   const [debouncedSearch, setDebouncedSearch] = useState(paramSearch);
-  const isTypingRef = React.useRef(false);
 
   // Dedicated catalog state to guarantee all 17+ movies are always present
   const [catalog, setCatalog] = useState([]);
@@ -52,50 +55,41 @@ export default function ExplorePage() {
   useEffect(() => {
     let cancelled = false;
     setIsCatalogLoading(true);
-    import('@/services/movieService').then(({ movieService }) => {
-      movieService.getMovies({ size: 100 })
-        .then((res) => {
-          if (cancelled) return;
-          const raw = Array.isArray(res) ? res : (res?.data?.items ?? res?.items ?? res?.content ?? []);
-          if (raw.length > 0) setCatalog(raw);
-        })
-        .catch((err) => {
-          console.warn('Lỗi tải danh mục phim ExplorePage:', err);
-        })
-        .finally(() => {
-          if (!cancelled) setIsCatalogLoading(false);
-        });
-    });
+    movieService.getAllMovies({ size: 100 })
+      .then((res) => {
+        if (cancelled) return;
+        const raw = Array.isArray(res) ? res : (res?.data?.items ?? res?.items ?? res?.content ?? []);
+        if (raw.length > 0) setCatalog(raw);
+      })
+      .catch((err) => {
+        console.warn('Lỗi tải danh mục phim ExplorePage:', err);
+      })
+      .finally(() => {
+        if (!cancelled) setIsCatalogLoading(false);
+      });
     return () => { cancelled = true; };
   }, []);
 
   // 2. Reactively synchronize from EXTERNAL URL changes (e.g. Header search, browser back/forward)
   useEffect(() => {
-    // If the URL change was triggered by local user typing, ignore to prevent IME stutter
-    if (isTypingRef.current) {
-      isTypingRef.current = false;
-      return;
-    }
-
-    const urlQ = searchParams.get('q') || '';
+    const urlQ = paramSearch;
     if (urlQ !== searchInput) {
       setSearchInput(urlQ);
       setDebouncedSearch(urlQ.trim());
     }
+    if (urlQ !== storeSearchQuery) setSearchQuery(urlQ);
 
-    const urlStatus = searchParams.get('status');
-    const validStatus = STATUS_TABS.some((t) => t.id === urlStatus) ? urlStatus : 'now-showing';
+    const validStatus = paramStatus;
     if (validStatus !== activeTab) {
       setActiveTab(validStatus);
     }
-  }, [searchParams]);
+  }, [paramSearch, paramStatus]);
 
   // 3. Debounce search input and update URL while strictly keeping current tab
   useEffect(() => {
     const handler = setTimeout(() => {
       const trimmed = searchInput.trim();
       setDebouncedSearch(trimmed);
-
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
         if (trimmed) {
@@ -106,7 +100,7 @@ export default function ExplorePage() {
         if (activeTab) {
           next.set('status', activeTab);
         }
-        return next;
+        return next.toString() === prev.toString() ? prev : next;
       }, { replace: true });
     }, 200);
 
@@ -129,32 +123,7 @@ export default function ExplorePage() {
   const deduplicatedCatalog = useMemo(() => {
     // Prefer full catalog if available, fallback to moviesList from store
     const source = catalog.length > 0 ? catalog : (Array.isArray(moviesList) ? moviesList : []);
-    const seenIds = new Set();
-    const seenTitles = new Set();
-    const unique = [];
-
-    for (const movie of source) {
-      if (!movie || movie.status === 'INACTIVE' || movie.isInactive) continue;
-
-      const rawId = movie.backendId ?? movie.id ?? movie.movieId;
-      const strId = rawId !== undefined && rawId !== null ? String(rawId).trim() : '';
-
-      const normTitle = String(movie.title || movie.englishTitle || '')
-        .toLowerCase()
-        .trim()
-        .replace(/[^\w\s\u00C0-\u1EF9]/gi, '')
-        .replace(/\s+/g, ' ');
-
-      if (strId && seenIds.has(strId)) continue;
-      if (normTitle && seenTitles.has(normTitle)) continue;
-
-      if (strId) seenIds.add(strId);
-      if (normTitle) seenTitles.add(normTitle);
-
-      unique.push(movie);
-    }
-
-    return unique;
+    return deduplicateSearchMovies(source);
   }, [catalog, moviesList]);
 
   // ========================================================
@@ -166,44 +135,7 @@ export default function ExplorePage() {
     // Search Query Filter
     const qRaw = debouncedSearch.trim();
     if (qRaw) {
-      const stripAccents = (str) =>
-        String(str || '')
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .toLowerCase();
-
-      const q = stripAccents(qRaw);
-
-      result = result.filter((m) => {
-        const titleMatch = stripAccents(m.title).includes(q);
-        const engTitleMatch = stripAccents(m.englishTitle).includes(q);
-        const directorMatch = stripAccents(m.director).includes(q);
-        
-        // Cast / Actors matching
-        const actorsText = Array.isArray(m.actors)
-          ? m.actors.map((a) => (typeof a === 'object' ? a.name : a)).join(' ')
-          : '';
-        const castMatch = stripAccents(
-          [m.cast, m.castList, m.mainActors, actorsText].filter(Boolean).join(' ')
-        ).includes(q);
-
-        // Safe Genres matching (string, array of objects, array of strings)
-        const genreSource = Array.isArray(m.genre)
-          ? m.genre
-          : Array.isArray(m.genres)
-          ? m.genres
-          : typeof m.genre === 'string'
-          ? m.genre.split(',')
-          : [];
-        const genreMatch = genreSource.some((g) =>
-          stripAccents(typeof g === 'object' ? g?.name : g).includes(q)
-        );
-
-        // Description / Synopsis matching
-        const descMatch = stripAccents(m.synopsis || m.description).includes(q);
-
-        return titleMatch || engTitleMatch || directorMatch || castMatch || genreMatch || descMatch;
-      });
+      result = result.filter((movie) => matchesMovieSearch(movie, qRaw));
     }
 
     // Status Tab Filter
@@ -250,6 +182,7 @@ export default function ExplorePage() {
     setActiveTab('now-showing');
     setSearchInput('');
     setDebouncedSearch('');
+    setSearchQuery('');
     setVisibleCount(PAGE_CHUNK);
     setSearchParams({}, { replace: true });
   };
@@ -319,7 +252,6 @@ export default function ExplorePage() {
                 type="text"
                 value={searchInput}
                 onChange={(e) => {
-                  isTypingRef.current = true;
                   setSearchInput(e.target.value);
                 }}
                 placeholder="Tìm phim..."
@@ -329,7 +261,6 @@ export default function ExplorePage() {
                 <button
                   type="button"
                   onClick={() => {
-                    isTypingRef.current = true;
                     setSearchInput('');
                     setDebouncedSearch('');
                   }}
