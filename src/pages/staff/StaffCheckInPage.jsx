@@ -1337,7 +1337,7 @@ export default function StaffCheckInPage() {
       <div className="staff-orb staff-orb-two" />
       <div className="staff-grid-bg" />
 
-      <main className="relative z-10 mx-auto max-w-[1500px] space-y-5 px-4 py-7 sm:px-6 lg:px-8 lg:py-10">
+      <main className="relative z-10 site-container space-y-5 py-7 lg:py-10">
 
         {/* Top Header: Brand, Cinema Station, Staff Identity & Logout */}
         <header className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-r from-[#0d0f14]/95 via-[#090b0e]/95 to-[#050608]/95 p-4 sm:p-5 shadow-[0_20px_60px_rgba(0,0,0,0.6)] backdrop-blur-xl">

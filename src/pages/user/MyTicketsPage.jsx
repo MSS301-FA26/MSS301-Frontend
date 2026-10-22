@@ -811,7 +811,7 @@ export default function MyTicketsView({ embedded = false }) {
   };
 
   return (
-    <div className={embedded ? 'space-y-12' : 'mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-12'}>
+    <div className={embedded ? 'space-y-12' : 'site-container py-8 space-y-12'}>
 
       {!isLoggedIn && (
         <div className="border border-white/10 bg-[#0E0E0E] p-6 text-center space-y-4 max-w-sm mx-auto my-12" id="guest-tickets-gate">

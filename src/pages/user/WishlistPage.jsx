@@ -66,7 +66,7 @@ export default function WishlistView() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 space-y-12">
+    <div className="site-container py-8 space-y-12">
 
       {/* HEADER ROW WITH LỌC THEO DROPDOWN */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -142,7 +142,7 @@ export default function WishlistView() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6" id="watchlist-deck-grid">
+        <div className="catalog-grid gap-4 sm:gap-6" id="watchlist-deck-grid">
           {filteredItems.map((item, index) => (
             <div
               key={`${item.id}-${index}`}

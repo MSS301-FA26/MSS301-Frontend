@@ -11,29 +11,26 @@ import { movieService } from '../../services/movieService';
 import { useMovies, useMovieStore } from '../../stores/useMovieStore';
 import { useUiStore } from '../../stores/useUiStore';
 
-// Hook xác định số cột responsive: mobile 2, tablet nhỏ 3, tablet 4, desktop 6
-const useColumnCount = () => {
-  const [cols, setCols] = useState(() => {
-    if (typeof window === 'undefined') return 6;
-    const w = window.innerWidth;
-    if (w >= 1024) return 6;
-    if (w >= 768) return 4;
-    if (w >= 640) return 3;
-    return 2;
-  });
+// Match the fluid poster grid so the showtime panel stays below the selected row.
+const useColumnCount = (containerRef) => {
+  const [cols, setCols] = useState(2);
 
   useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
     const handleResize = () => {
-      const w = window.innerWidth;
-      if (w >= 1024) setCols(6);
-      else if (w >= 768) setCols(4);
-      else if (w >= 640) setCols(3);
-      else setCols(2);
+      const style = getComputedStyle(container);
+      const available = container.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      const gap = 20.25;
+      setCols(window.innerWidth < 640 ? 2 : window.innerWidth < 1024 ? 3
+        : Math.max(3, Math.floor((available + gap) / (220 + gap))));
     };
     handleResize();
+    const observer = new ResizeObserver(handleResize);
+    observer.observe(container);
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+    return () => { observer.disconnect(); window.removeEventListener('resize', handleResize); };
+  }, [containerRef]);
 
   return cols;
 };
@@ -128,7 +125,8 @@ const getAgeBadgeStyle = (ageRating) => {
 export default function ShowtimesPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const cols = useColumnCount();
+  const contentRef = useRef(null);
+  const cols = useColumnCount(contentRef);
 
   // Zustand Store sync
   const showToast = useUiStore((state) => state.showToast);
@@ -548,7 +546,7 @@ export default function ShowtimesPage() {
         <div className="absolute -top-32 left-1/2 -translate-x-1/2 w-[700px] h-[350px] bg-gradient-to-b from-[#8A00F5]/10 via-[#F7C600]/5 to-transparent blur-[120px]" />
       </div>
 
-      <div className="relative z-10 mx-auto max-w-[1240px] px-4 sm:px-6 pt-7 sm:pt-9 pb-16">
+      <div ref={contentRef} className="relative z-10 site-container pt-7 sm:pt-9 pb-16">
         
         {/* ========================================================
             1. PAGE HEADER & CINEMA SELECTOR (KHU VỰC & RẠP)
@@ -730,7 +728,7 @@ export default function ShowtimesPage() {
             4. LOADING SKELETON
         ======================================================== */}
         {isLoadingShowtimes && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3.5 sm:gap-4.5">
+          <div className="catalog-grid gap-3.5 sm:gap-4.5">
             {[...Array(6)].map((_, i) => (
               <div key={i} className="animate-pulse space-y-2">
                 <div className="aspect-[2/3] rounded-none bg-white/5" />

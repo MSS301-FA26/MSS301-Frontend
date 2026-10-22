@@ -287,7 +287,7 @@ export default function Header({
           Search input sang trọng gọn gàng, Cinema Selector, Login
       ======================================================== */}
       <div className="relative border-b border-white/[0.06]">
-        <div className="mx-auto flex h-[66px] w-full max-w-[1400px] items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+        <div className="site-container flex h-[66px] items-center justify-between gap-3">
 
           {/* LEFT: LOGO CINEPREMIER STUDIOS + COMPACT ACTION BUTTONS */}
           <div className="flex items-center gap-4 lg:gap-5 min-w-0">
@@ -310,7 +310,7 @@ export default function Header({
               </div>
 
               {/* Brand Typography gọn hơn */}
-              <div className="flex flex-col justify-center">
+              <div className="hidden sm:flex flex-col justify-center">
                 <span className="font-sans font-black tracking-[0.22em] text-xs sm:text-[13px] text-white uppercase leading-none">
                   CINE<span className="text-[#F7C600]">PREMIER</span>
                 </span>
@@ -505,9 +505,10 @@ export default function Header({
                     onClick={onOpenOTP}
                     className="flex h-[44px] items-center gap-1.5 rounded-none border border-white/20 bg-transparent px-3.5 sm:px-4 text-[12.5px] font-bold uppercase tracking-[0.1em] text-white transition-all duration-150 hover:border-white/40 hover:bg-white/5 active:scale-98 whitespace-nowrap shadow-sm"
                     id="signin-button"
+                    aria-label="Đăng nhập"
                   >
                     <User className="h-4 w-4 text-neutral-300 stroke-[2]" />
-                    <span>ĐĂNG NHẬP</span>
+                    <span className="hidden min-[480px]:inline">ĐĂNG NHẬP</span>
                   </button>
                 ) : (
                   <button
@@ -619,9 +620,9 @@ export default function Header({
       ======================================================== */}
       {!isStaffRole && (
         <div className="relative border-b border-white/[0.06] bg-[#050506]">
-          <div className="mx-auto flex h-[46px] w-full max-w-[1400px] items-center justify-center px-4 sm:px-6 lg:px-8">
+          <div className="site-container flex h-[46px] items-center justify-center">
             <nav
-              className="flex min-w-0 max-w-full items-center justify-center gap-6 sm:gap-8 md:gap-9 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              className="flex w-full lg:w-auto min-w-0 max-w-full items-center justify-start lg:justify-center gap-6 sm:gap-8 md:gap-9 overflow-x-auto [&>button]:shrink-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               id="main-nav-bar"
             >
               {/* TRANG CHỦ */}
@@ -1443,7 +1444,7 @@ export default function Header({
                         CINE<span className="text-[#F7C600]">PREMIER</span>
                       </span>
                     </div>
-                    <button onClick={() => setMobileMenuOpen(false)} className="p-1 rounded-none border border-white/10 text-neutral-400 hover:text-white">
+                    <button aria-label="Đóng menu" onClick={() => setMobileMenuOpen(false)} className="p-1 rounded-none border border-white/10 text-neutral-400 hover:text-white">
                       <X className="h-4.5 w-4.5" />
                     </button>
                   </div>

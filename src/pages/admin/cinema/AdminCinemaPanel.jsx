@@ -2260,7 +2260,7 @@ export default function AdminCinemaPanel({ ctx = {} }) {
       {/* TOP COMMAND BAR (MAXIMIZES 3D HOLOGRAM VIEWPORT)                      */}
       {/* ===================================================================== */}
       <header className="shrink-0 bg-[#080b11]/95 backdrop-blur-md border-b border-[#1c2230] px-4 lg:px-6 py-2.5 z-30">
-        <div className="max-w-[1920px] mx-auto flex flex-wrap items-center justify-between gap-3">
+        <div className="w-full min-w-0 flex flex-wrap items-center justify-between gap-3">
 
           {/* Left: Brand Title & Live KPI Badges */}
           <div className="flex items-center gap-4">

@@ -306,12 +306,12 @@ export default function ExplorePage() {
     <div className="min-h-screen bg-[#050507] text-white selection:bg-[#F7C600]/30 selection:text-white relative overflow-hidden">
       
       {/* Subtle Ambient Purple Glow */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-[1360px] h-[280px] pointer-events-none z-0">
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-[280px] pointer-events-none z-0">
         <div className="w-full h-full bg-[radial-gradient(circle_at_50%_0%,rgba(138,0,245,0.07)_0%,transparent_70%)]" />
       </div>
 
       {/* Main Container */}
-      <main className="relative z-10 mx-auto max-w-[1360px] px-4 sm:px-6 lg:px-8 pt-5 sm:pt-6 pb-20 space-y-4">
+      <main className="relative z-10 site-container pt-5 sm:pt-6 pb-20 space-y-4">
 
         {/* Eyebrow */}
         <div className="flex items-center gap-2">
@@ -661,7 +661,7 @@ export default function ExplorePage() {
         ======================================================== */}
         {isStoreLoading || isCatalogLoading ? (
           /* Skeleton Loading */
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 lg:grid-cols-4 xl:grid-cols-5">
+          <div className="catalog-grid gap-4 sm:gap-5">
             {Array.from({ length: 10 }).map((_, i) => (
               <div key={i} className="flex flex-col space-y-2 animate-pulse">
                 <div className="aspect-[2/3] w-full rounded-none bg-white/[0.04]" />
@@ -672,43 +672,17 @@ export default function ExplorePage() {
           </div>
         ) : displayedMovies.length > 0 ? (
           /* Actual Movie Cards Grid */
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 lg:grid-cols-4 xl:grid-cols-5" id="explore-movies-grid">
-            {displayedMovies.map((movie) => {
-              const specialReasons = Array.isArray(movie.matchReasons)
-                ? movie.matchReasons.filter((r) => r.type !== 'title')
-                : [];
-              return (
-                <div key={movie.backendId || movie.id} className="flex flex-col">
-                  <MovieCard
-                    movie={movie}
-                    onSelect={onSelectMovie}
-                    onBook={onBookMovie}
-                    isWatchlisted={isMovieWatchlisted(movie)}
-                    onToggleWatchlist={handleToggleWatchlist}
-                  />
-                  {hasAnySearchOrFilter && specialReasons.length > 0 && (
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      {specialReasons.slice(0, 1).map((r, idx) => (
-                        <span
-                          key={idx}
-                          className={`text-[9.5px] px-1.5 py-0.5 border font-semibold truncate max-w-full ${
-                            r.type === 'director'
-                              ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
-                              : r.type === 'actor'
-                              ? 'border-purple-500/40 bg-purple-500/10 text-purple-300'
-                              : r.type === 'cinema'
-                              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                              : 'border-sky-500/40 bg-sky-500/10 text-sky-300'
-                          }`}
-                        >
-                          {r.label}: {r.value}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+          <div className="catalog-grid gap-4 sm:gap-5" id="explore-movies-grid">
+            {displayedMovies.map((movie) => (
+              <MovieCard
+                key={movie.backendId || movie.id}
+                movie={movie}
+                onSelect={onSelectMovie}
+                onBook={onBookMovie}
+                isWatchlisted={isMovieWatchlisted(movie)}
+                onToggleWatchlist={handleToggleWatchlist}
+              />
+            ))}
           </div>
         ) : (
           /* Empty Search State (Strict 90-degree Square Frame) */

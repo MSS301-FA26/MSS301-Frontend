@@ -1931,7 +1931,7 @@ export default function BookingPage() {
   // SUB-VIEW: PAYMENT METHOD / PROCESSING / FAILED / SUCCESS
   if (paymentState !== 'booking') {
     return (
-      <div className="square-ui mx-auto max-w-5xl px-4 py-12 sm:px-6 lg:px-8 space-y-8 pb-24 text-white">
+      <div className="square-ui site-container py-12 space-y-8 pb-24 text-white">
         {/* Security Header */}
         <div className="flex items-center justify-between border-b border-white/10 pb-5">
           <div className="flex items-center space-x-3">
@@ -2183,7 +2183,7 @@ export default function BookingPage() {
 
   // MAIN BOOKING VIEW
   return (
-    <div className="square-ui mx-auto max-w-6xl px-3.5 sm:px-6 pt-3 sm:pt-4 pb-20 space-y-4 text-white">
+    <div className="square-ui site-container pt-3 sm:pt-4 pb-20 space-y-4 text-white">
       {/* Top Header & Navigation - Compact & Clean */}
       <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-white/10 pb-2.5">
         <div className="flex items-center space-x-2">
@@ -2300,8 +2300,8 @@ export default function BookingPage() {
       </div>
 
       {/* Booking workspace: ticket types | seats | order information */}
-      <div className={`grid grid-cols-1 lg:grid-cols-12 ${bookingStep !== 'combos' ? 'gap-4' : 'gap-6'} items-start`}>
-        <div className={`${bookingStep !== 'combos' ? 'lg:col-span-9' : 'lg:col-span-8'} space-y-4`}>
+      <div className={`grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)] ${bookingStep !== 'combos' ? 'gap-4' : 'gap-6'} items-start`}>
+        <div className="min-w-0 space-y-4">
 
 
 
@@ -3117,7 +3117,7 @@ export default function BookingPage() {
         </div>
 
         {/* RIGHT SIDEBAR: ORDER SUMMARY (Rule 16 & 28) */}
-        <div className={`${bookingStep !== 'combos' ? 'lg:col-span-3' : 'lg:col-span-4'} border border-white/10 bg-neutral-950 p-4 sm:p-5 rounded-2xl space-y-4 shadow-xl sticky top-20`}>
+        <div className={`min-w-0 border border-white/10 bg-neutral-950 p-4 sm:p-5 rounded-2xl space-y-4 shadow-xl sticky top-20`}>
           {/* Movie Overview Header */}
           <div className="flex items-start gap-3 border-b border-white/10 pb-3.5">
             <img src={movie.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80'} alt={movie.title} className="h-20 w-14 object-cover rounded-lg border border-white/10 shrink-0 shadow" onError={(e) => { e.currentTarget.src = 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=780&q=80'; }} />

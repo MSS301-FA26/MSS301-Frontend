@@ -86,8 +86,8 @@ const vipRules = [
 export default function PoliciesPage() {
   return (
     <div className="bg-black text-white">
-      <section className="border-b border-white/10 px-4 py-14 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-6xl">
+      <section className="border-b border-white/10 py-14">
+        <div className="site-container">
           <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
             <div className="max-w-3xl space-y-5">
               <span className="inline-flex items-center gap-2 border border-amber-400/30 bg-amber-400/10 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.24em] text-amber-300">
@@ -115,8 +115,8 @@ export default function PoliciesPage() {
         </div>
       </section>
 
-      <section className="border-b border-white/10 px-4 py-8 sm:px-6 lg:px-8">
-        <div className="mx-auto grid max-w-6xl gap-4 md:grid-cols-3">
+      <section className="border-b border-white/10 py-8">
+        <div className="site-container grid gap-4 md:grid-cols-3">
           {policyHighlights.map((item) => {
             const Icon = item.icon;
             return (
@@ -130,8 +130,8 @@ export default function PoliciesPage() {
         </div>
       </section>
 
-      <section className="px-4 py-12 sm:px-6 lg:px-8">
-        <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-[1fr_340px]">
+      <section className="py-12">
+        <div className="site-container grid gap-8 lg:grid-cols-[minmax(0,1fr)_340px]">
           <div className="space-y-5">
             {policySections.map((section) => {
               const Icon = section.icon;

@@ -68,7 +68,7 @@ export default function ManagerDashboard() {
   };
 
   return (
-    <main className="mx-auto max-w-5xl space-y-6 px-4 py-8 text-white">
+    <main className="workspace-container space-y-6 py-8 text-white">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div><p className="text-xs uppercase tracking-widest text-amber-400">Quản lý vận hành</p><h1 className="mt-1 text-2xl font-bold">Rạp được phân công</h1></div>
         <Link to="/manager/movies" className="border border-amber-400 px-4 py-2 text-sm text-amber-300">Thư viện phim</Link>
