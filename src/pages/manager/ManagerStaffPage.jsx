@@ -1,11 +1,49 @@
 import React, { useState, useEffect } from 'react';
 import {
   Users, UserPlus, ShieldAlert, CheckCircle2,
-  XCircle, RefreshCw, Lock, Mail, Phone, User
+  XCircle, RefreshCw, Lock, Mail, Phone, User,
+  Check, Send, Eye, EyeOff
 } from 'lucide-react';
 import { useManagerCinema } from '../../context/ManagerCinemaContext';
 import { getStoredAuth, request } from '../../services/authService';
+import { adminService } from '../../services/adminService';
 import { useUiStore } from '../../stores/useUiStore';
+import {
+  PASSWORD_VALIDATION_MESSAGE,
+  isStrongPassword,
+  getPasswordValidationState,
+  validateBirthYear18Plus,
+  normalizeAuthErrorMessage
+} from '../../utils/validation';
+
+const PasswordRequirements = ({ password }) => {
+  const state = getPasswordValidationState(password);
+  if (!password) return null;
+  const items = [
+    { label: 'Tối thiểu 8 ký tự', ok: state.hasLength },
+    { label: 'Chữ hoa (A-Z)', ok: state.hasUpper },
+    { label: 'Chữ thường (a-z)', ok: state.hasLower },
+    { label: 'Chữ số (0-9)', ok: state.hasDigit },
+    { label: 'Ký tự đặc biệt (!@#$...)', ok: state.hasSpecial }
+  ];
+  return (
+    <div className="mt-2 flex flex-wrap gap-1 text-[8.5px]">
+      {items.map((item, idx) => (
+        <span
+          key={idx}
+          className={`flex items-center gap-1 rounded px-1.5 py-0.5 font-medium transition-colors ${
+            item.ok
+              ? 'border border-emerald-500/40 bg-emerald-950/60 text-emerald-300'
+              : 'border border-white/5 bg-neutral-900 text-neutral-400'
+          }`}
+        >
+          <span>{item.ok ? '✓' : '•'}</span>
+          {item.label}
+        </span>
+      ))}
+    </div>
+  );
+};
 
 export default function ManagerStaffPage() {
   const { selectedCinemaId, selectedCinema } = useManagerCinema();
@@ -15,20 +53,89 @@ export default function ManagerStaffPage() {
   const [loading, setLoading] = useState(true);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
     phone: '',
+    birthYear: '',
     password: ''
   });
 
+  // OTP verification state
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [verifiedEmail, setVerifiedEmail] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpInput, setOtpInput] = useState('');
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [otpCountdown, setOtpCountdown] = useState(0);
+  const [otpNotice, setOtpNotice] = useState('');
+
+  useEffect(() => {
+    if (otpCountdown <= 0) return undefined;
+    const timer = setInterval(() => setOtpCountdown((prev) => prev - 1), 1000);
+    return () => clearInterval(timer);
+  }, [otpCountdown]);
+
   const token = () => getStoredAuth().accessToken;
+
+  const handleSendOtp = async () => {
+    const email = formData.email.trim();
+    if (!email) {
+      showToast('Vui lòng nhập email trước khi gửi mã OTP', 'error');
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showToast('Email không đúng định dạng', 'error');
+      return;
+    }
+    setOtpLoading(true);
+    setOtpNotice('');
+    try {
+      const res = await adminService.requestProvisionOtp(token(), email);
+      setOtpSent(true);
+      setOtpCountdown(60);
+      const msg = res?.message || `Mã OTP đã được gửi tới email ${email}.`;
+      setOtpNotice(msg);
+      showToast(msg, 'success');
+    } catch (err) {
+      const msg = normalizeAuthErrorMessage(err.message || 'Không thể gửi mã OTP. Vui lòng thử lại.');
+      setOtpNotice(msg);
+      showToast(msg, 'error');
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    const email = formData.email.trim();
+    const otp = otpInput.trim();
+    if (!otp) {
+      setOtpNotice('Vui lòng nhập mã OTP 6 số');
+      return;
+    }
+    setOtpVerifying(true);
+    try {
+      await adminService.verifyProvisionOtp(token(), email, otp);
+      setEmailVerified(true);
+      setVerifiedEmail(email);
+      setOtpNotice('✓ Email đã được xác thực OTP thành công!');
+      showToast('Xác thực email thành công!', 'success');
+    } catch (err) {
+      const msg = err.message || 'Mã OTP không chính xác hoặc đã hết hạn.';
+      setOtpNotice(msg);
+      showToast(msg, 'error');
+    } finally {
+      setOtpVerifying(false);
+    }
+  };
 
   const loadStaff = async () => {
     if (!selectedCinemaId) return;
     setLoading(true);
     try {
-      const data = await request(`/api/v1/manager/cinemas/${selectedCinemaId}/staff`, { token: token() });
+      const data = await request(`/api/v1/admin/users?role=STAFF`, { token: token() });
       setStaffList(Array.isArray(data) ? data : []);
     } catch (err) {
       showToast(err.message || 'Không thể tải danh sách nhân viên rạp', 'error');
@@ -43,24 +150,51 @@ export default function ManagerStaffPage() {
 
   const handleCreateStaff = async (e) => {
     e.preventDefault();
+    const email = formData.email.trim();
+    if (!email) {
+      showToast('Vui lòng nhập email', 'error');
+      return;
+    }
+    if (!emailVerified || verifiedEmail.toLowerCase() !== email.toLowerCase()) {
+      showToast('Vui lòng gửi mã OTP và xác thực email trước khi cấp tài khoản.', 'error');
+      return;
+    }
+
+    const birthValidation = validateBirthYear18Plus(formData.birthYear);
+    if (!birthValidation.isValid) {
+      showToast(birthValidation.message, 'error');
+      return;
+    }
+
+    if (!isStrongPassword(formData.password)) {
+      showToast(PASSWORD_VALIDATION_MESSAGE, 'error');
+      return;
+    }
+
     setSaving(true);
     try {
-      await request(`/api/v1/manager/cinemas/${selectedCinemaId}/staff`, {
+      await request(`/api/v1/admin/users/staff`, {
         method: 'POST',
         token: token(),
         body: {
           fullName: formData.fullName.trim(),
-          email: formData.email.trim(),
-          phone: formData.phone.trim(),
+          email,
+          phone: formData.phone.trim() || null,
+          birthYear: Number(formData.birthYear),
           password: formData.password
         }
       });
       showToast('Đã tạo tài khoản nhân viên thành công', 'success');
       setCreateModalOpen(false);
-      setFormData({ fullName: '', email: '', phone: '', password: '' });
+      setFormData({ fullName: '', email: '', phone: '', birthYear: '', password: '' });
+      setEmailVerified(false);
+      setVerifiedEmail('');
+      setOtpSent(false);
+      setOtpInput('');
+      setOtpNotice('');
       loadStaff();
     } catch (err) {
-      showToast(err.message || 'Không thể tạo nhân viên', 'error');
+      showToast(normalizeAuthErrorMessage(err.message || 'Không thể tạo nhân viên'), 'error');
     } finally {
       setSaving(false);
     }
@@ -74,7 +208,7 @@ export default function ManagerStaffPage() {
     }
 
     try {
-      await request(`/api/v1/manager/cinemas/${selectedCinemaId}/staff/${staff.id}/status`, {
+      await request(`/api/v1/admin/users/${staff.id}/status`, {
         method: 'PATCH',
         token: token(),
         body: { status: nextStatus }
@@ -229,18 +363,75 @@ export default function ManagerStaffPage() {
                 />
               </div>
 
+              {/* Email đăng nhập & OTP */}
               <div>
-                <label className="block text-neutral-300 font-medium mb-1">
-                  Địa chỉ Email đăng nhập *
-                </label>
-                <input
-                  required
-                  type="email"
-                  placeholder="staff@cinema.vn"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full bg-neutral-900 border border-white/[0.12] rounded-lg p-2.5 text-white outline-none focus:border-amber-400"
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-neutral-300 font-medium">
+                    Địa chỉ Email đăng nhập *
+                  </label>
+                  {emailVerified && (
+                    <span className="inline-flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-950/60 px-1.5 py-0.5 text-[8.5px] font-bold text-emerald-300">
+                      <Check className="h-3 w-3 text-emerald-400" /> Đã xác thực
+                    </span>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    required
+                    type="email"
+                    placeholder="staff@cinema.vn"
+                    value={formData.email}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setFormData({ ...formData, email: val });
+                      if (val.trim().toLowerCase() !== verifiedEmail.toLowerCase()) {
+                        setEmailVerified(false);
+                        setOtpNotice('');
+                      }
+                    }}
+                    className={`w-full flex-1 bg-neutral-900 border rounded-lg p-2.5 text-white outline-none focus:border-amber-400 ${emailVerified ? 'border-emerald-500/50' : 'border-white/[0.12]'}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSendOtp}
+                    disabled={otpLoading || otpCountdown > 0}
+                    className="px-3 py-2 bg-amber-500/10 hover:bg-amber-500 hover:text-black border border-amber-500/40 text-amber-300 rounded-lg text-xs font-semibold whitespace-nowrap transition disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 shrink-0"
+                  >
+                    {otpLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    {otpCountdown > 0 ? `${otpCountdown}s` : (emailVerified ? 'Gửi lại' : 'Gửi OTP')}
+                  </button>
+                </div>
+
+                {/* Hộp xác thực OTP */}
+                {otpSent && !emailVerified && (
+                  <div className="mt-2 rounded-lg border border-amber-500/30 bg-amber-950/20 p-2.5 space-y-2">
+                    <div className="flex items-center justify-between text-[10px] text-amber-300">
+                      <span>Mã OTP đã gửi về email:</span>
+                      {otpNotice && <span className="font-mono text-amber-200">{otpNotice}</span>}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        maxLength={6}
+                        placeholder="Nhập 6 số OTP"
+                        value={otpInput}
+                        onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, ''))}
+                        className="w-full flex-1 bg-black border border-amber-500/40 rounded-lg px-2.5 py-1.5 text-center font-mono text-xs font-bold tracking-widest text-amber-300 outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleVerifyOtp}
+                        disabled={otpVerifying || !otpInput.trim()}
+                        className="px-3 py-1.5 bg-amber-400 hover:bg-amber-300 text-black font-bold text-xs rounded-lg transition disabled:opacity-50 whitespace-nowrap"
+                      >
+                        {otpVerifying ? 'Đang kiểm tra...' : 'Xác thực'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {otpNotice && emailVerified && (
+                  <span className="block mt-1 text-[10px] text-emerald-400 font-medium">{otpNotice}</span>
+                )}
               </div>
 
               <div>
@@ -256,19 +447,59 @@ export default function ManagerStaffPage() {
                 />
               </div>
 
+              {/* Năm sinh (>= 18 tuổi) */}
+              <div>
+                <label className="block text-neutral-300 font-medium mb-1">
+                  Năm sinh (từ 18 tuổi trở lên) *
+                </label>
+                <input
+                  required
+                  type="number"
+                  placeholder="VD: 2000"
+                  min={new Date().getFullYear() - 100}
+                  max={new Date().getFullYear() - 18}
+                  value={formData.birthYear}
+                  onChange={(e) => setFormData({ ...formData, birthYear: e.target.value })}
+                  className="w-full bg-neutral-900 border border-white/[0.12] rounded-lg p-2.5 text-white outline-none focus:border-amber-400"
+                />
+                {formData.birthYear && (
+                  <div className="mt-1">
+                    {validateBirthYear18Plus(formData.birthYear).isValid ? (
+                      <span className="text-[10px] text-emerald-400 font-medium">
+                        ✓ {new Date().getFullYear() - Number(formData.birthYear)} tuổi (Hợp lệ)
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-rose-400">
+                        {validateBirthYear18Plus(formData.birthYear).message}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Mật khẩu khởi tạo */}
               <div>
                 <label className="block text-neutral-300 font-medium mb-1">
                   Mật khẩu khởi tạo *
                 </label>
-                <input
-                  required
-                  type="password"
-                  minLength={6}
-                  placeholder="Tối thiểu 6 ký tự"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full bg-neutral-900 border border-white/[0.12] rounded-lg p-2.5 text-white outline-none focus:border-amber-400 font-mono"
-                />
+                <div className="relative">
+                  <input
+                    required
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Hoa, thường, số, đặc biệt (tối thiểu 8 ký tự)"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="w-full bg-neutral-900 border border-white/[0.12] rounded-lg p-2.5 pr-10 text-white outline-none focus:border-amber-400 font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-2.5 text-neutral-400 hover:text-white"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <PasswordRequirements password={formData.password} />
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-white/[0.08]">
@@ -294,3 +525,4 @@ export default function ManagerStaffPage() {
     </div>
   );
 }
+

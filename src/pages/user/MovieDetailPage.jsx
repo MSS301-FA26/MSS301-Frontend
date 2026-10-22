@@ -18,6 +18,7 @@ import { bookingService } from '../../services/bookingService';
 import { reviewService } from '../../services/reviewService';
 import { recommendationService } from '../../services/recommendationService';
 import { chatService } from '../../services/chatService';
+import ReactMarkdown from 'react-markdown';
 import MovieCard from '../../components/common/MovieCard';
 import { toLocalDateKey, getShowtimeDates } from '../../utils/showtimeDates';
 
@@ -198,7 +199,7 @@ export default function MovieDetailPage() {
   const [isLoadingReviews, setIsLoadingReviews] = useState(false);
   const [likedReviews, setLikedReviews] = useState({});
   const [showReviewModal, setShowReviewModal] = useState(false);
-  const [reviewRating, setReviewRating] = useState(10);
+  const [reviewRating, setReviewRating] = useState(5);
   const [reviewComment, setReviewComment] = useState('');
   const [reviewContainsSpoiler, setReviewContainsSpoiler] = useState(false);
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
@@ -288,19 +289,21 @@ export default function MovieDetailPage() {
   const [showtimesError, setShowtimesError] = useState(null);
   const [showtimesRetry, setShowtimesRetry] = useState(0);
   const [cinemas, setCinemas] = useState([]);
-  const [selectedDate, setSelectedDate] = useState(() => toLocalDateKey(new Date()));
+  const [selectedDate, setSelectedDate] = useState(() => searchParams.get('date') || toLocalDateKey(new Date()));
   const [selectedCity, setSelectedCity] = useState('ALL');
-  const [selectedCinemaId, setSelectedCinemaId] = useState('ALL');
+  const [selectedCinemaId, setSelectedCinemaId] = useState(() => searchParams.get('cinemaId') || 'ALL');
 
-  // Sync cinema from publicCinema store (Header context) if available
+  // Sync selected cinema from URL searchParams if provided
   useEffect(() => {
-    if (publicCinema?.id && selectedCinemaId === 'ALL') {
-      setSelectedCinemaId(String(publicCinema.id));
-      if (publicCinema.city) {
-        setSelectedCity(publicCinema.city.trim());
+    const urlCId = searchParams.get('cinemaId');
+    if (urlCId) {
+      setSelectedCinemaId(String(urlCId));
+      if (cinemas.length > 0) {
+        const found = cinemas.find(c => String(c.id) === String(urlCId));
+        if (found?.city) setSelectedCity(found.city.trim());
       }
     }
-  }, [publicCinema]);
+  }, [searchParams, cinemas]);
 
   // Load Cinemas list
   useEffect(() => {
@@ -370,19 +373,22 @@ export default function MovieDetailPage() {
     return () => { cancelled = true; };
   }, [detailMovieId, showtimesRetry]);
 
-  // Cities list from cinemas
+  // Cities list from cinemas and showtimes
   const cities = useMemo(() => {
     const set = new Set();
     cinemas.forEach(c => {
       if (c.city && c.city.trim()) set.add(c.city.trim());
     });
+    allShowtimes.forEach(st => {
+      if (st.cinemaCity && st.cinemaCity.trim()) set.add(st.cinemaCity.trim());
+    });
     return Array.from(set);
-  }, [cinemas]);
+  }, [cinemas, allShowtimes]);
 
   // Calendar follows the same movie/cinema/city filters as the showtime list.
   const upcomingDates = useMemo(() => {
     const matching = allShowtimes.filter(st => {
-      const cinemaId = String(st.cinemaId || st.cinema?.id);
+      const cinemaId = String(st.cinemaId || st.cinema?.id || '');
       if (selectedCinemaId !== 'ALL' && cinemaId !== String(selectedCinemaId)) return false;
       const cinema = cinemas.find(c => String(c.id) === cinemaId);
       const city = cinema?.city || st.cinemaCity || st.cinema?.city;
@@ -396,13 +402,27 @@ export default function MovieDetailPage() {
     return getShowtimeDates(matching).map(({ dateKey, count }) => {
       const [year, month, day] = dateKey.split('-').map(Number);
       const date = new Date(year, month - 1, day);
-      return { dateKey, count, label: dateKey === todayKey ? 'Hôm Nay' : dateKey === tomorrowKey ? 'Ngày Mai' : dayNames[date.getDay()], dateFormatted: `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}` };
+      return {
+        dateKey,
+        count,
+        label: dateKey === todayKey ? 'Hôm Nay' : dateKey === tomorrowKey ? 'Ngày Mai' : dayNames[date.getDay()],
+        dateFormatted: `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}`
+      };
     });
   }, [allShowtimes, selectedCinemaId, selectedCity, cinemas]);
 
+  // Auto-switch to the first date having showtimes if current selectedDate has 0 showtimes
   useEffect(() => {
-    if (!isLoadingShowtimes && !upcomingDates.some(date => date.dateKey === selectedDate)) {
-      setSelectedDate(upcomingDates[0].dateKey);
+    if (isLoadingShowtimes || upcomingDates.length === 0) return;
+
+    const currentItem = upcomingDates.find(d => d.dateKey === selectedDate);
+    if (!currentItem || currentItem.count === 0) {
+      const firstAvailable = upcomingDates.find(d => d.count > 0);
+      if (firstAvailable) {
+        setSelectedDate(firstAvailable.dateKey);
+      } else if (!currentItem) {
+        setSelectedDate(upcomingDates[0].dateKey);
+      }
     }
   }, [upcomingDates, selectedDate, isLoadingShowtimes]);
 
@@ -440,9 +460,16 @@ export default function MovieDetailPage() {
       if (!cinemaData) {
         cinemaData = {
           id: cId,
-          name: st.cinemaName || st.cinema?.name || 'CinePremier Cinema',
-          address: st.cinemaAddress || st.cinema?.address || 'Hệ thống rạp CinePremier',
-          city: st.cinemaCity || ''
+          name: st.cinemaName || st.cinema?.name || `Rạp #${cId}`,
+          address: st.cinemaAddress || st.cinema?.address || '',
+          city: st.cinemaCity || st.cinema?.city || ''
+        };
+      } else {
+        cinemaData = {
+          ...cinemaData,
+          name: cinemaData.name || st.cinemaName || st.cinema?.name || `Rạp #${cId}`,
+          address: cinemaData.address || st.cinemaAddress || st.cinema?.address || '',
+          city: cinemaData.city || st.cinemaCity || ''
         };
       }
 
@@ -455,13 +482,10 @@ export default function MovieDetailPage() {
 
       const cinemaEntry = map.get(cId);
       const fmtKey = String(st.format || '2D').toUpperCase();
-      const roomStr = String(st.roomName || st.room?.name || st.roomType || '').toUpperCase();
-      const prefix = roomStr.includes('VIP') ? 'VIP - ' : (roomStr.includes('IMAX') ? 'IMAX - ' : '');
-      const experienceLabel = prefix + (fmtKey.includes('IMAX')
-        ? 'IMAX LASER 2D Phụ Đề'
-        : fmtKey.includes('3D')
-          ? '3D Digital Phụ Đề'
-          : '2D Phụ Đề');
+      const roomStr = st.roomName || st.room?.name || '';
+      const experienceLabel = roomStr
+        ? `${roomStr} · ${fmtKey.includes('IMAX') ? 'IMAX Laser 2D' : fmtKey.includes('3D') ? '3D' : '2D'} Phụ đề`
+        : (fmtKey.includes('IMAX') ? 'IMAX LASER 2D Phụ Đề' : fmtKey.includes('3D') ? '3D Digital Phụ Đề' : '2D Phụ Đề');
 
       if (!cinemaEntry.formats.has(experienceLabel)) {
         cinemaEntry.formats.set(experienceLabel, []);
@@ -525,7 +549,8 @@ export default function MovieDetailPage() {
   // ─────────────────────────────────────────────────────────────
   // MOVIE DETAIL FETCHING & AUTH CHECKS
   // ─────────────────────────────────────────────────────────────
-  const isBookable = movie?.status === 'NOW_SHOWING' || (!movie?.status && !movie?.isUpcoming);
+  const hasActiveShowtimes = allShowtimes.length > 0;
+  const isBookable = hasActiveShowtimes || movie?.status === 'NOW_SHOWING' || movie?.status === 'SCHEDULED' || (!movie?.status && !movie?.isUpcoming);
 
   useEffect(() => {
     if (!id) return;
@@ -708,7 +733,7 @@ export default function MovieDetailPage() {
       });
       setTrailerChatMessages((prev) => {
         const next = [...prev];
-        next[next.length - 1] = { role: 'bot', text: res?.message || 'Xin lỗi, tôi chưa có câu trả lời phù hợp.' };
+        next[next.length - 1] = { role: 'bot', text: res?.reply || res?.message || 'Xin lỗi, tôi chưa có câu trả lời phù hợp.' };
         return next;
       });
     } catch {
@@ -738,8 +763,21 @@ export default function MovieDetailPage() {
 
       if (accessToken) {
         try {
-          const elig = await reviewService.checkEligibility(accessToken, detailMovieId);
-          if (elig) setReviewEligibility(elig);
+          const res = await reviewService.checkEligibility(accessToken, detailMovieId);
+          const elig = res?.data || res;
+          if (elig) {
+            setReviewEligibility({
+              eligible: Boolean(elig.eligible),
+              hasReviewed: Boolean(elig.canEdit || elig.existingReview || elig.hasReviewed),
+              reason: elig.reason,
+              message: elig.messageVi || elig.message,
+              bookingId: elig.bookingId,
+              bookingCode: elig.bookingCode,
+              existingReviewId: elig.existingReview?.id || elig.existingReviewId,
+              existingRating: elig.existingReview?.rating ?? elig.existingRating,
+              existingContent: elig.existingReview?.comment ?? elig.existingContent
+            });
+          }
         } catch (e) {
           console.warn('Eligibility check failed:', e);
         }
@@ -762,12 +800,13 @@ export default function MovieDetailPage() {
       return;
     }
     if (reviewEligibility.hasReviewed) {
-      setReviewRating(reviewEligibility.existingRating || 10);
+      const existing = Number(reviewEligibility.existingRating || 5);
+      setReviewRating(existing > 5 ? Math.round(existing / 2) : existing);
       setReviewComment(reviewEligibility.existingContent || '');
       setReviewContainsSpoiler(false);
       setShowReviewModal(true);
     } else if (reviewEligibility.eligible) {
-      setReviewRating(10);
+      setReviewRating(5);
       setReviewComment('');
       setReviewContainsSpoiler(false);
       setShowReviewModal(true);
@@ -820,6 +859,26 @@ export default function MovieDetailPage() {
         });
         showToast('Đánh giá của bạn đã được xuất bản thành công!');
       }
+
+      // Sync with CinemaAI recommendation service (http://localhost:8032)
+      if (currentUser?.id && detailMovieId) {
+        const scaledRating = Math.max(1, Math.min(5, Number(reviewRating) / 2));
+        recommendationService.submitReview({
+          userId: currentUser.id,
+          movieId: detailMovieId,
+          rating: scaledRating,
+          comment: trimmed
+        }).catch(() => {});
+
+        recommendationService.recordFeedback({
+          userId: currentUser.id,
+          movieId: detailMovieId,
+          interactionType: 'MOVIE_RATED',
+          rating: scaledRating,
+          comment: trimmed
+        }).catch(() => {});
+      }
+
       setShowReviewModal(false);
       setReviewComment('');
       await loadAllReviewData();
@@ -934,8 +993,10 @@ export default function MovieDetailPage() {
 
     // 1. Dữ liệu thật từ reviewSummary (toàn bộ database của phim)
     if (reviewSummary && Number(reviewSummary.totalReviews) > 0) {
+      const rawAvg = Number(reviewSummary.averageRating || 0);
+      const score = (rawAvg > 5 ? rawAvg / 2 : rawAvg).toFixed(1);
       return {
-        score: Number(reviewSummary.averageRating || 0).toFixed(1),
+        score,
         votes: Number(reviewSummary.totalReviews)
       };
     }
@@ -944,7 +1005,7 @@ export default function MovieDetailPage() {
     if (reviews && reviews.length > 0) {
       const avg = reviews.reduce((acc, r) => {
         const val = Number(r.rating || r.score || 0);
-        return acc + val;
+        return acc + (val > 5 ? val / 2 : val);
       }, 0) / reviews.length;
       return {
         score: avg.toFixed(1),
@@ -954,8 +1015,10 @@ export default function MovieDetailPage() {
 
     // 3. Nếu phim có thông tin rating chính thức từ catalog
     if (movie.voteAverage && Number(movie.voteCount || movie.totalVotes || 0) > 0) {
+      const raw = Number(movie.voteAverage);
+      const score = (raw > 5 ? raw / 2 : raw).toFixed(1);
       return {
-        score: Number(movie.voteAverage).toFixed(1),
+        score,
         votes: Number(movie.voteCount || movie.totalVotes)
       };
     }
@@ -1153,7 +1216,7 @@ export default function MovieDetailPage() {
               className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold uppercase tracking-wider rounded-lg transition border cursor-pointer ${isWatchlisted
                 ? 'border-rose-500/70 bg-rose-500/20 text-rose-300'
                 : 'border-white/[0.08] bg-[#0D0D11] hover:bg-[#15151B] text-[#B5B5BE] hover:text-white hover:border-white/20'
-              }`}
+                }`}
               title={isWatchlisted ? 'Bỏ lưu khỏi danh sách xem' : 'Lưu vào danh sách muốn xem'}
             >
               <Heart className={`h-3.5 w-3.5 ${isWatchlisted ? 'fill-current text-rose-500' : ''}`} />
@@ -1198,104 +1261,104 @@ export default function MovieDetailPage() {
           {/* Right Column: Title + Badge, Quick Specs, Pills Info (stretches to bottom) */}
           <div className="md:col-span-8 lg:col-span-8 flex flex-col justify-between h-full">
             <div className="space-y-4">
-            {/* 1. Title + Age Rating Badge (like reference: "Quyết Cua Anh Này [T13]") */}
-            <div>
-              <div className="flex flex-wrap items-center gap-2.5">
-                <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white tracking-tight">
-                  {movie.title}
-                </h1>
-                {ageInfo && (
-                  <span className={`px-2.5 py-0.5 text-xs font-black rounded uppercase tracking-wider ${ageInfo.badgeClass}`}>
-                    {ageInfo.label}
-                  </span>
+              {/* 1. Title + Age Rating Badge (like reference: "Quyết Cua Anh Này [T13]") */}
+              <div>
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white tracking-tight">
+                    {movie.title}
+                  </h1>
+                  {ageInfo && (
+                    <span className={`px-2.5 py-0.5 text-xs font-black rounded uppercase tracking-wider ${ageInfo.badgeClass}`}>
+                      {ageInfo.label}
+                    </span>
+                  )}
+                </div>
+                {movie.englishTitle && movie.englishTitle !== movie.title && (
+                  <p className="text-sm font-sans font-medium text-[#7F7F89] tracking-wider uppercase mt-1">
+                    {movie.englishTitle}
+                  </p>
                 )}
               </div>
-              {movie.englishTitle && movie.englishTitle !== movie.title && (
-                <p className="text-sm font-sans font-medium text-[#7F7F89] tracking-wider uppercase mt-1">
-                  {movie.englishTitle}
-                </p>
-              )}
-            </div>
 
-            {/* 2. Sub-info row (Duration & Release date) */}
-            <div className="flex items-center gap-4 text-xs sm:text-sm text-[#B5B5BE] pt-0.5">
-              {movie.duration && (
-                <div className="flex items-center gap-1.5 font-medium">
-                  <Clock className="w-4 h-4 text-[#F7C600]" />
-                  <span>{movie.duration} Phút</span>
-                </div>
-              )}
-              {formatDateVi(movie.releaseDate) && !isInvalidData(movie.releaseDate) && (
-                <div className="flex items-center gap-1.5 font-medium">
-                  <Calendar className="w-4 h-4 text-[#F7C600]" />
-                  <span>{formatDateVi(movie.releaseDate)}</span>
-                </div>
-              )}
-            </div>
-
-            {/* 3. Rating row (Star + Score + Votes) */}
-            {displayRating && (
-              <div className="flex items-center gap-1.5 text-xs sm:text-sm pt-0.5">
-                <Star className="w-4 h-4 text-[#F7C600] fill-[#F7C600]" />
-                <span className="text-base font-bold text-white font-mono">{displayRating.score}</span>
-                <span className="text-[#7F7F89]">({displayRating.votes} votes)</span>
+              {/* 2. Sub-info row (Duration & Release date) */}
+              <div className="flex items-center gap-4 text-xs sm:text-sm text-[#B5B5BE] pt-0.5">
+                {movie.duration && (
+                  <div className="flex items-center gap-1.5 font-medium">
+                    <Clock className="w-4 h-4 text-[#F7C600]" />
+                    <span>{movie.duration} Phút</span>
+                  </div>
+                )}
+                {formatDateVi(movie.releaseDate) && !isInvalidData(movie.releaseDate) && (
+                  <div className="flex items-center gap-1.5 font-medium">
+                    <Calendar className="w-4 h-4 text-[#F7C600]" />
+                    <span>{formatDateVi(movie.releaseDate)}</span>
+                  </div>
+                )}
               </div>
-            )}
 
-            {/* 4. Tabular Metadata Specs with Pill Tags (matching Galaxy reference!) */}
-            <div className="space-y-3 pt-2 text-xs sm:text-sm">
-
-              {/* Thể loại (Pill Tags) */}
-              {genresList.length > 0 && (
-                <div className="flex items-start gap-4">
-                  <span className="text-[#7F7F89] w-28 flex-shrink-0 pt-1">Thể loại:</span>
-                  <div className="flex flex-wrap gap-2">
-                    {genresList.map((g, idx) => (
-                      <span
-                        key={idx}
-                        className="px-3.5 py-1 rounded-lg border border-white/15 bg-white/[0.04] text-xs font-medium text-white hover:border-[#F7C600]/40 transition"
-                      >
-                        {g}
-                      </span>
-                    ))}
-                  </div>
+              {/* 3. Rating row (Star + Score + Votes) */}
+              {displayRating && (
+                <div className="flex items-center gap-1.5 text-xs sm:text-sm pt-0.5">
+                  <Star className="w-4 h-4 text-[#F7C600] fill-[#F7C600]" />
+                  <span className="text-base font-bold text-white font-mono">{displayRating.score}</span>
+                  <span className="text-[#7F7F89]">({displayRating.votes} votes)</span>
                 </div>
               )}
 
-              {/* Đạo diễn (Pill Tags) */}
-              {directorNames.length > 0 && (
-                <div className="flex items-start gap-4">
-                  <span className="text-[#7F7F89] w-28 flex-shrink-0 pt-1">Đạo diễn:</span>
-                  <div className="flex flex-wrap gap-2">
-                    {directorNames.map((d, idx) => (
-                      <span
-                        key={idx}
-                        className="px-3.5 py-1 rounded-lg border border-white/15 bg-white/[0.04] text-xs font-medium text-white hover:border-[#F7C600]/40 transition"
-                      >
-                        {d}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {/* 4. Tabular Metadata Specs with Pill Tags (matching Galaxy reference!) */}
+              <div className="space-y-3 pt-2 text-xs sm:text-sm">
 
-              {/* Diễn viên (Pill Tags) */}
-              {actorNamesList.length > 0 && (
-                <div className="flex items-start gap-4">
-                  <span className="text-[#7F7F89] w-28 flex-shrink-0 pt-1">Diễn viên:</span>
-                  <div className="flex flex-wrap gap-2">
-                    {actorNamesList.slice(0, 8).map((a, idx) => (
-                      <span
-                        key={idx}
-                        className="px-3.5 py-1 rounded-lg border border-white/15 bg-white/[0.04] text-xs font-medium text-white hover:border-[#F7C600]/40 transition"
-                      >
-                        {a}
-                      </span>
-                    ))}
+                {/* Thể loại (Pill Tags) */}
+                {genresList.length > 0 && (
+                  <div className="flex items-start gap-4">
+                    <span className="text-[#7F7F89] w-28 flex-shrink-0 pt-1">Thể loại:</span>
+                    <div className="flex flex-wrap gap-2">
+                      {genresList.map((g, idx) => (
+                        <span
+                          key={idx}
+                          className="px-3.5 py-1 rounded-lg border border-white/15 bg-white/[0.04] text-xs font-medium text-white hover:border-[#F7C600]/40 transition"
+                        >
+                          {g}
+                        </span>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+
+                {/* Đạo diễn (Pill Tags) */}
+                {directorNames.length > 0 && (
+                  <div className="flex items-start gap-4">
+                    <span className="text-[#7F7F89] w-28 flex-shrink-0 pt-1">Đạo diễn:</span>
+                    <div className="flex flex-wrap gap-2">
+                      {directorNames.map((d, idx) => (
+                        <span
+                          key={idx}
+                          className="px-3.5 py-1 rounded-lg border border-white/15 bg-white/[0.04] text-xs font-medium text-white hover:border-[#F7C600]/40 transition"
+                        >
+                          {d}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Diễn viên (Pill Tags) */}
+                {actorNamesList.length > 0 && (
+                  <div className="flex items-start gap-4">
+                    <span className="text-[#7F7F89] w-28 flex-shrink-0 pt-1">Diễn viên:</span>
+                    <div className="flex flex-wrap gap-2">
+                      {actorNamesList.slice(0, 8).map((a, idx) => (
+                        <span
+                          key={idx}
+                          className="px-3.5 py-1 rounded-lg border border-white/15 bg-white/[0.04] text-xs font-medium text-white hover:border-[#F7C600]/40 transition"
+                        >
+                          {a}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* 5. CTA Buttons (anchored to bottom, level with bottom edge of poster) */}
@@ -1307,7 +1370,7 @@ export default function MovieDetailPage() {
                   id="hero-book-now-button"
                 >
                   <Ticket className="w-4 h-4 fill-current" />
-                  <span>ĐẶT VÉ NGAY</span>
+                  <span>{(!movie?.status || movie?.status === 'COMING_SOON' || movie?.status === 'UPCOMING' || movie?.isUpcoming) && hasActiveShowtimes ? 'ĐẶT VÉ SỚM' : 'ĐẶT VÉ NGAY'}</span>
                 </button>
               ) : (
                 <button
@@ -1375,43 +1438,58 @@ export default function MovieDetailPage() {
           {/* Header with vertical primary accent bar */}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div className="flex items-center gap-2 border-l-4 border-[#F7C600] pl-3">
-            <h2 className="text-base sm:text-lg font-extrabold uppercase text-white tracking-tight">
-              Lịch Chiếu
-            </h2>
+              <h2 className="text-base sm:text-lg font-extrabold uppercase text-white tracking-tight">
+                Lịch Chiếu
+              </h2>
             </div>
             {/* Right: Dropdown Filters (Toàn quốc, Tất cả rạp) */}
             <div className="grid grid-cols-1 min-[400px]:grid-cols-2 gap-2 w-full md:w-[380px] md:shrink-0 text-xs">
               <label className="min-w-0">
                 <span className="sr-only">Khu vực</span>
-              <select
-                value={selectedCity}
-                onChange={(e) => {
-                  setSelectedCity(e.target.value);
-                  setSelectedCinemaId('ALL');
-                }}
-                className="w-full min-w-0 h-[42px] bg-[#09090D] text-white font-semibold border border-white/10 rounded-none px-3 outline-none focus:border-[#F7C600] cursor-pointer"
-              >
-                <option value="ALL">Toàn quốc</option>
-                {cities.map(city => (
-                  <option key={city} value={city}>{city}</option>
-                ))}
-              </select>
+                <select
+                  value={selectedCity}
+                  onChange={(e) => {
+                    const nextCity = e.target.value;
+                    setSelectedCity(nextCity);
+                    if (nextCity !== 'ALL' && selectedCinemaId !== 'ALL') {
+                      const curC = cinemas.find(c => String(c.id) === String(selectedCinemaId));
+                      if (curC && curC.city?.trim() !== nextCity) {
+                        setSelectedCinemaId('ALL');
+                      }
+                    }
+                  }}
+                  className="w-full min-w-0 h-[42px] bg-[#09090D] text-white font-semibold border border-white/10 rounded-none px-3 outline-none focus:border-[#F7C600] cursor-pointer"
+                >
+                  <option value="ALL">Toàn quốc</option>
+                  {cities.map(city => (
+                    <option key={city} value={city}>{city}</option>
+                  ))}
+                </select>
               </label>
               <label className="min-w-0">
                 <span className="sr-only">Rạp chiếu</span>
-              <select
-                value={selectedCinemaId}
-                onChange={(e) => setSelectedCinemaId(e.target.value)}
-                className="w-full min-w-0 h-[42px] bg-[#09090D] text-white font-semibold border border-white/10 rounded-none px-3 outline-none focus:border-[#F7C600] cursor-pointer"
-              >
-                <option value="ALL">Tất cả rạp</option>
-                {cinemas
-                  .filter(c => selectedCity === 'ALL' || c.city?.trim() === selectedCity)
-                  .map(c => (
-                    <option key={c.id} value={String(c.id)}>{c.name}</option>
-                  ))
-                }
-              </select>
+                <select
+                  value={selectedCinemaId}
+                  onChange={(e) => {
+                    const nextCinemaId = e.target.value;
+                    setSelectedCinemaId(nextCinemaId);
+                    if (nextCinemaId !== 'ALL') {
+                      const curC = cinemas.find(c => String(c.id) === String(nextCinemaId));
+                      if (curC?.city) {
+                        setSelectedCity(curC.city.trim());
+                      }
+                    }
+                  }}
+                  className="w-full min-w-0 h-[42px] bg-[#09090D] text-white font-semibold border border-white/10 rounded-none px-3 outline-none focus:border-[#F7C600] cursor-pointer"
+                >
+                  <option value="ALL">Tất cả rạp ({cinemas.length > 0 ? cinemas.length : 'Hệ thống'})</option>
+                  {cinemas
+                    .filter(c => selectedCity === 'ALL' || c.city?.trim() === selectedCity)
+                    .map(c => (
+                      <option key={c.id} value={String(c.id)}>{c.name}</option>
+                    ))
+                  }
+                </select>
               </label>
             </div>
           </div>
@@ -1442,13 +1520,12 @@ export default function MovieDetailPage() {
                       type="button"
                       onClick={() => setSelectedDate(item.dateKey)}
                       aria-pressed={isSelected}
-                      className={`snap-start flex-shrink-0 flex flex-col items-center justify-center min-w-[82px] sm:flex-1 h-14 rounded-none border px-2 transition-colors cursor-pointer select-none text-center focus-visible:outline-2 focus-visible:outline-[#F7C600] ${
-                        isSelected
+                      className={`snap-start flex-shrink-0 flex flex-col items-center justify-center min-w-[82px] sm:flex-1 h-14 rounded-none border px-2 transition-colors cursor-pointer select-none text-center focus-visible:outline-2 focus-visible:outline-[#F7C600] ${isSelected
                           ? 'bg-[#F7C600] border-[#F7C600] text-black font-semibold'
                           : item.count > 0
                             ? 'bg-[#09090D] border-white/10 hover:border-[#F7C600]/50 text-[#B5B5BE]'
                             : 'bg-[#09090D]/50 border-white/5 text-neutral-500 opacity-70 hover:opacity-100'
-                      }`}
+                        }`}
                     >
                       <span className={`text-[10px] font-extrabold uppercase leading-tight ${isSelected ? 'text-black' : 'text-[#B5B5BE]'}`}>
                         {item.label}
@@ -1523,9 +1600,11 @@ export default function MovieDetailPage() {
                   <h3 className="text-base font-bold text-white">
                     {cinema.name}
                   </h3>
-                  <p className="text-xs text-[#7F7F89] mt-0.5">
-                    {cinema.address || 'Hệ thống rạp CinePremier'}
-                  </p>
+                  {(cinema.address || cinema.city) && (
+                    <p className="text-xs text-[#7F7F89] mt-0.5">
+                      {cinema.address || cinema.city}
+                    </p>
+                  )}
                 </div>
 
                 {/* Format Rows */}
@@ -1545,15 +1624,28 @@ export default function MovieDetailPage() {
                         {group.slots.map(st => {
                           const dateObj = new Date(st.startTime);
                           const timeStr = dateObj.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                          const isScheduled = st.status === 'SCHEDULED';
 
                           return (
                             <button
                               key={st.id}
-                              onClick={() => handleSelectShowtime(st, cinema)}
-                              className="h-8 px-3.5 bg-white/[0.04] hover:bg-[#F7C600] text-white hover:text-black border border-white/[0.07] hover:border-[#F7C600] rounded-none text-xs font-bold transition shadow-sm cursor-pointer"
-                              title={`Chọn suất ${timeStr} tại ${cinema.name}`}
+                              onClick={() => {
+                                if (isScheduled) {
+                                  showToast('Suất chiếu này đang ở trạng thái lên lịch, chưa mở bán vé chính thức.');
+                                  return;
+                                }
+                                handleSelectShowtime(st, cinema);
+                              }}
+                              disabled={isScheduled}
+                              className={`h-8 px-3.5 border rounded-none text-xs font-bold transition shadow-sm ${
+                                isScheduled
+                                  ? 'bg-white/[0.02] text-neutral-500 border-white/[0.05] cursor-not-allowed opacity-60'
+                                  : 'bg-white/[0.04] hover:bg-[#F7C600] text-white hover:text-black border-white/[0.07] hover:border-[#F7C600] cursor-pointer'
+                              }`}
+                              title={isScheduled ? `Suất ${timeStr} đang lên lịch (Chưa mở bán vé)` : `Chọn suất ${timeStr} tại ${cinema.name}`}
                             >
-                              {timeStr}
+                              <span>{timeStr}</span>
+                              {isScheduled && <span className="ml-1 text-[9px] text-amber-400 font-normal">(Sắp mở)</span>}
                             </button>
                           );
                         })}
@@ -1577,26 +1669,36 @@ export default function MovieDetailPage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 border-l-4 border-[#F7C600] pl-3 py-0.5">
               <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
-                Đánh Giá Từ Khán GiẢ
+                Đánh Giá Từ Khán Giả
               </h2>
             </div>
 
-            <button
-              onClick={handleOpenWriteReview}
-              className="px-4 py-2 bg-[#111116] hover:bg-[#F7C600] text-white hover:text-black border border-white/15 hover:border-[#F7C600] text-xs font-bold uppercase rounded-lg transition cursor-pointer self-start sm:self-auto flex items-center gap-1.5"
-            >
-              {reviewEligibility.hasReviewed ? (
-                <>
-                  <Edit3 className="w-3.5 h-3.5" />
-                  <span>Sửa đánh giá của bạn</span>
-                </>
-              ) : (
-                <>
-                  <MessageSquare className="w-3.5 h-3.5" />
-                  <span>Viết đánh giá</span>
-                </>
-              )}
-            </button>
+            {(reviewEligibility.eligible || reviewEligibility.hasReviewed) ? (
+              <button
+                onClick={handleOpenWriteReview}
+                className="px-4 py-2 bg-[#111116] hover:bg-[#F7C600] text-white hover:text-black border border-white/15 hover:border-[#F7C600] text-xs font-bold uppercase rounded-lg transition cursor-pointer self-start sm:self-auto flex items-center gap-1.5"
+              >
+                {reviewEligibility.hasReviewed ? (
+                  <>
+                    <Edit3 className="w-3.5 h-3.5" />
+                    <span>Sửa đánh giá của bạn</span>
+                  </>
+                ) : (
+                  <>
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>Viết đánh giá</span>
+                  </>
+                )}
+              </button>
+            ) : reviewEligibility.reason === 'SHOWTIME_NOT_FINISHED' ? (
+              <div
+                className="px-3 py-1.5 bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold uppercase rounded-lg flex items-center gap-1.5"
+                title="Suất chiếu đang diễn ra. Bạn chỉ có thể đánh giá sau khi suất chiếu kết thúc."
+              >
+                <Clock className="w-3.5 h-3.5 text-amber-400" />
+                <span>Đang chiếu — Đánh giá sau giờ chiếu</span>
+              </div>
+            ) : null}
           </div>
 
           {/* Rating Summary Card */}
@@ -1606,10 +1708,12 @@ export default function MovieDetailPage() {
                 <Star className="w-7 h-7 text-[#F7C600] fill-[#F7C600]" />
                 <span className="text-3xl font-black text-white">
                   {reviewSummary?.averageRating != null
-                    ? Number(reviewSummary.averageRating).toFixed(1)
+                    ? (Number(reviewSummary.averageRating) > 5
+                        ? (Number(reviewSummary.averageRating) / 2).toFixed(1)
+                        : Number(reviewSummary.averageRating).toFixed(1))
                     : (displayRating?.score || '0.0')}
                 </span>
-                <span className="text-xs text-[#7F7F89]">/ 10</span>
+                <span className="text-xs text-[#7F7F89]">/ 5</span>
               </div>
               <p className="text-xs text-[#B5B5BE] mt-1 font-sans">
                 {reviewSummary?.totalReviews ?? reviews.length} lượt đánh giá
@@ -1625,7 +1729,7 @@ export default function MovieDetailPage() {
               {[5, 4, 3, 2, 1].map(stars => (
                 <div key={stars} className="flex items-center gap-3">
                   <span className="w-8 font-mono text-[#7F7F89] flex items-center gap-0.5">
-                    {stars * 2} <Star className="w-3 h-3 text-[#F7C600] fill-[#F7C600]" />
+                    {stars} <Star className="w-3 h-3 text-[#F7C600] fill-[#F7C600]" />
                   </span>
                   <div className="flex-1 h-2 bg-white/5 rounded-full overflow-hidden">
                     <div
@@ -1687,15 +1791,26 @@ export default function MovieDetailPage() {
                           </span>
                         )}
                       </div>
-                      <span className="text-[10px] text-[#7F7F89]">
-                        {rev.createdAt ? new Date(rev.createdAt).toLocaleDateString('vi-VN') : 'Gần đây'}
-                      </span>
+                      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[10px] text-[#7F7F89] mt-0.5">
+                        <span>Đăng lúc: {rev.createdAt ? new Date(rev.createdAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) : 'Gần đây'}</span>
+                        {rev.updatedAt && rev.createdAt && Math.abs(new Date(rev.updatedAt).getTime() - new Date(rev.createdAt).getTime()) > 60000 && (
+                          <span className="text-sky-400 font-semibold">
+                            (Đã sửa lúc: {new Date(rev.updatedAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })})
+                          </span>
+                        )}
+                        {(rev.cinemaName || rev.cinemaAddress) && (
+                          <span className="inline-flex items-center gap-1 text-amber-300 font-medium">
+                            <MapPin className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+                            <span>Xem tại: <strong className="text-white font-semibold">{rev.cinemaName}</strong>{rev.cinemaAddress ? ` • ${rev.cinemaAddress}` : ''}</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-1 bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 rounded text-amber-300 font-mono font-bold text-xs">
                     <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
-                    <span>{rev.rating} / 10</span>
+                    <span>{Number(rev.rating) > 5 ? (Number(rev.rating) / 2).toFixed(1) : rev.rating} / 5</span>
                   </div>
                 </div>
 
@@ -1721,9 +1836,8 @@ export default function MovieDetailPage() {
                 <div className="pl-9 pt-1.5 border-t border-white/[0.05] flex items-center justify-between text-[10px] text-[#7F7F89]">
                   <button
                     onClick={() => handleLikeReview(rev.id)}
-                    className={`flex items-center gap-1.5 transition cursor-pointer ${
-                      likedReviews[rev.id] ? 'text-rose-400 font-bold' : 'hover:text-white'
-                    }`}
+                    className={`flex items-center gap-1.5 transition cursor-pointer ${likedReviews[rev.id] ? 'text-rose-400 font-bold' : 'hover:text-white'
+                      }`}
                   >
                     <Heart className={`h-3 w-3 ${likedReviews[rev.id] ? 'fill-current' : ''}`} />
                     <span>Hữu ích ({rev.likes || 0})</span>
@@ -1790,11 +1904,25 @@ export default function MovieDetailPage() {
                       movie={rec}
                       onSelect={(selectedId) => {
                         const targetId = selectedId || recTargetId;
+                        if (currentUser?.id && targetId) {
+                          recommendationService.recordClick({
+                            setId: rec.setId || 1,
+                            movieId: targetId,
+                            userId: currentUser.id
+                          }).catch(() => {});
+                        }
                         window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
                         navigate(`/movies/${targetId}`);
                       }}
                       onBook={(mv) => {
                         const targetId = mv?.backendId || mv?.movieId || mv?.id || recTargetId;
+                        if (currentUser?.id && targetId) {
+                          recommendationService.recordClick({
+                            setId: rec.setId || 1,
+                            movieId: targetId,
+                            userId: currentUser.id
+                          }).catch(() => {});
+                        }
                         navigate(`/movies/${targetId}`, { state: { scrollToShowtimes: true } });
                       }}
                       isWatchlisted={watchlist.some(w => String(w.id || w.backendId || w.movieId) === String(recTargetId))}
@@ -1834,30 +1962,39 @@ export default function MovieDetailPage() {
             </div>
 
             <form onSubmit={handleSubmitReview} className="space-y-4 text-xs">
-              {/* 10-point Rating Selector */}
+              {/* 5-Star Rating Selector */}
               <div className="space-y-2 text-center bg-black/50 p-4 border border-white/5 rounded-xl">
-                <label className="text-xs text-[#B5B5BE] font-bold block">
-                  CHỌN ĐIỂM SỐ CỦA BẠN (1 — 10):
+                <label className="text-xs text-[#B5B5BE] font-bold block uppercase tracking-wider">
+                  Chọn điểm số đánh giá (1 — 5 Sao):
                 </label>
-                <div className="flex flex-wrap justify-center gap-1.5 py-1">
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((num) => (
+                <div className="flex justify-center items-center gap-2 py-2">
+                  {[1, 2, 3, 4, 5].map((star) => (
                     <button
-                      key={num}
+                      key={star}
                       type="button"
-                      onClick={() => setReviewRating(num)}
-                      className={`w-8 h-8 rounded-lg font-mono font-bold text-xs transition cursor-pointer flex items-center justify-center ${
-                        num <= reviewRating
-                          ? 'bg-[#F7C600] text-black shadow-md shadow-[#F7C600]/20'
-                          : 'bg-white/5 text-neutral-400 hover:bg-white/10 hover:text-white'
-                      }`}
+                      onClick={() => setReviewRating(star)}
+                      className="p-1 transition-transform hover:scale-125 cursor-pointer focus:outline-none"
+                      title={`${star} sao`}
                     >
-                      {num}
+                      <Star
+                        className={`w-8 h-8 transition-colors ${
+                          star <= reviewRating
+                            ? 'fill-[#F7C600] text-[#F7C600] drop-shadow-[0_0_8px_rgba(247,198,0,0.5)]'
+                            : 'text-neutral-600 hover:text-neutral-400'
+                        }`}
+                      />
                     </button>
                   ))}
                 </div>
                 <div className="text-sm font-mono font-bold text-[#F7C600] flex items-center justify-center gap-1">
-                  <Star className="w-4 h-4 fill-[#F7C600]" />
-                  <span>{reviewRating} / 10 Điểm</span>
+                  <span>
+                    {reviewRating} / 5 Sao {
+                      reviewRating === 5 ? '(Tuyệt vời)' :
+                      reviewRating === 4 ? '(Rất hay)' :
+                      reviewRating === 3 ? '(Bình thường)' :
+                      reviewRating === 2 ? '(Không hay)' : '(Rất tệ)'
+                    }
+                  </span>
                 </div>
               </div>
 
@@ -2071,12 +2208,32 @@ export default function MovieDetailPage() {
                         className="w-6 h-6 object-cover flex-shrink-0 mt-0.5 rounded-full border border-[#F7C600]/40"
                       />
                     )}
-                    <div className={`px-4 py-2.5 max-w-md text-xs font-sans leading-relaxed rounded-2xl ${
-                      msg.role === 'user'
+                    <div className={`px-4 py-2.5 max-w-md text-xs font-sans leading-relaxed rounded-2xl ${msg.role === 'user'
                         ? 'bg-[#F7C600] text-black font-medium rounded-tr-sm'
                         : 'bg-[#15151B] border border-white/10 text-neutral-200 rounded-tl-sm'
-                    }`}>
-                      {msg.text}
+                      }`}>
+                      {msg.role === 'user' ? (
+                        msg.text
+                      ) : (
+                        <ReactMarkdown
+                          components={{
+                            p: ({ children }) => <p className="mb-1.5 last:mb-0 leading-relaxed">{children}</p>,
+                            strong: ({ children }) => <strong className="font-semibold text-[#F7C600]">{children}</strong>,
+                            em: ({ children }) => <em className="italic text-amber-200">{children}</em>,
+                            ul: ({ children }) => <ul className="list-disc pl-4 mb-1.5 space-y-0.5">{children}</ul>,
+                            ol: ({ children }) => <ol className="list-decimal pl-4 mb-1.5 space-y-0.5">{children}</ol>,
+                            li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                            a: ({ href, children }) => (
+                              <a href={href} target="_blank" rel="noreferrer" className="text-[#F7C600] underline hover:text-amber-300">
+                                {children}
+                              </a>
+                            ),
+                            code: ({ children }) => <code className="bg-white/10 px-1 py-0.5 rounded text-[11px] font-mono">{children}</code>
+                          }}
+                        >
+                          {msg.text}
+                        </ReactMarkdown>
+                      )}
                     </div>
                   </div>
                 ))}

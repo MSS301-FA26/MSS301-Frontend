@@ -31,16 +31,32 @@ export const staffService = {
     token,
     body: { code }
   }),
-  getStaffFoodItems: (token) => request('/api/v1/staff/foods/items?size=100', { token }).then(unwrapListPayload),
-  getStaffFoodCombos: (token) => request('/api/v1/staff/foods/combos?size=100', { token }).then(unwrapListPayload),
-  updateStaffFoodItemStatus: (token, itemId, status) => request(`/api/v1/staff/foods/items/${encodeURIComponent(itemId)}/status?status=${encodeURIComponent(status)}`, {
+  getRecentFoodOrders: (token, limit = 50) =>
+    request(`/api/v1/staff/check-in/food-orders/recent?limit=${encodeURIComponent(limit)}`, { token }),
+  getStaffFoodItems: (token) => request('/api/v1/foods/all/items?size=100', { token })
+    .catch(() => request('/api/v1/staff/foods/items?size=100', { token }))
+    .then(unwrapListPayload),
+  getStaffFoodCombos: (token) => request('/api/v1/foods/all/combos?size=100', { token })
+    .catch(() => request('/api/v1/staff/foods/combos?size=100', { token }))
+    .then(unwrapListPayload),
+  updateStaffFoodItemStatus: (token, itemId, status) => request(`/api/v1/foods/items/${encodeURIComponent(itemId)}/status?status=${encodeURIComponent(status)}`, {
     method: 'PATCH',
-    token
-  }),
-  updateStaffFoodComboStatus: (token, comboId, status) => request(`/api/v1/staff/foods/combos/${encodeURIComponent(comboId)}/status?status=${encodeURIComponent(status)}`, {
+    token,
+    body: { status }
+  }).catch(() => request(`/api/v1/staff/foods/items/${encodeURIComponent(itemId)}/status?status=${encodeURIComponent(status)}`, {
     method: 'PATCH',
-    token
-  }),
+    token,
+    body: { status }
+  })),
+  updateStaffFoodComboStatus: (token, comboId, status) => request(`/api/v1/foods/combos/${encodeURIComponent(comboId)}/status?status=${encodeURIComponent(status)}`, {
+    method: 'PATCH',
+    token,
+    body: { status }
+  }).catch(() => request(`/api/v1/staff/foods/combos/${encodeURIComponent(comboId)}/status?status=${encodeURIComponent(status)}`, {
+    method: 'PATCH',
+    token,
+    body: { status }
+  })),
   getFailedBulkRefunds: (token, params = {}) => {
     const query = new URLSearchParams(params);
     return request(`/api/v1/staff/bulk-refunds/failed?${query.toString()}`, { token });
@@ -48,23 +64,6 @@ export const staffService = {
   getBulkRefundDetail: (token, bookingId) =>
     request(`/api/v1/staff/bulk-refunds/${encodeURIComponent(bookingId)}/detail`, { token }),
   confirmManualBulkRefund: (token, bookingId, payload) => request(`/api/v1/staff/bulk-refunds/${encodeURIComponent(bookingId)}/confirm`, {
-    method: 'POST',
-    token,
-    body: payload
-  }),
-
-  // ── Wallet Management (Staff can access admin wallet endpoints) ────────────
-  getWalletDashboard: (token) => request('/api/v1/admin/wallet/dashboard', { token }),
-  getWithdrawals: (token, params = {}) => {
-    const query = new URLSearchParams(params);
-    return request(`/api/v1/admin/wallet/withdrawals?${query.toString()}`, { token });
-  },
-  approveWithdrawal: (token, id, payload) => request(`/api/v1/admin/wallet/withdrawals/${encodeURIComponent(id)}/approve`, {
-    method: 'POST',
-    token,
-    body: payload
-  }),
-  rejectWithdrawal: (token, id, payload) => request(`/api/v1/admin/wallet/withdrawals/${encodeURIComponent(id)}/reject`, {
     method: 'POST',
     token,
     body: payload

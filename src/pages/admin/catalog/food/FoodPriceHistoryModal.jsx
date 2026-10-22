@@ -50,7 +50,7 @@ export default function FoodPriceHistoryModal({
         initial={{ opacity: 0, scale: 0.95, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 15 }}
-        className="relative w-full max-w-lg border border-amber-500/30 bg-[#0c0c0c] shadow-2xl p-6 space-y-5 my-8"
+        className="relative w-full max-w-lg border border-amber-500/30 bg-[#0c0c0c] shadow-2xl p-6 space-y-5 my-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

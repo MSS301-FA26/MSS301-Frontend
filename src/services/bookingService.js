@@ -9,6 +9,7 @@ export const bookingService = {
   validateTicketPrice: (token, body) => request('/api/v1/ticket-pricing/validate', { method: 'POST', token, body }),
   getCheckoutQuote: (token, body) => request('/api/v1/catalog/checkout-quote', { method: 'POST', token, body }),
   holdSeats: (token, body) => request('/api/v1/bookings/hold', { method: 'POST', token, body }),
+  checkoutBooking: (token, bookingId, body) => request(`/api/v1/bookings/${bookingId}/checkout`, { method: 'POST', token, body }),
   updateHoldingBooking: (token, bookingId, body) => request(`/api/v1/bookings/${bookingId}/items`, { method: 'PUT', token, body }),
   createBooking: (token, body) => request('/api/v1/bookings', { method: 'POST', token, body }),
   getMyBookings: (token) => request('/api/v1/bookings?size=100', { token }).then(unwrapListPayload),
@@ -16,6 +17,8 @@ export const bookingService = {
   cancelBooking: (token, bookingId) => request(`/api/v1/bookings/${bookingId}`, { method: 'DELETE', token }),
   createStandaloneFoodOrder: (token, body) => request('/api/v1/food-orders', { method: 'POST', token, body }),
   getMyFoodOrders: (token) => request('/api/v1/food-orders/my', { token }).then(unwrapListPayload),
+  getFoodOrderDetail: (token, foodOrderId) => request(`/api/v1/food-orders/${foodOrderId}`, { token }),
+  syncFoodOrderPayment: (token, foodOrderId) => request(`/api/v1/food-orders/${foodOrderId}/sync`, { method: 'POST', token }),
   cancelFoodOrder: (token, foodOrderId) => request(`/api/v1/food-orders/${foodOrderId}`, { method: 'DELETE', token }),
   createFoodOrder: (token, bookingId, body) => request(`/api/v1/bookings/${bookingId}/food-orders`, { method: 'POST', token, body }),
   getFoodOrders: (token, bookingId) => request(`/api/v1/bookings/${bookingId}/food-orders`, { token })

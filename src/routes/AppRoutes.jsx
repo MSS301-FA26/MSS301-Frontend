@@ -48,7 +48,7 @@ function HomeRoute() {
   };
 
   const handleBookMovie = (movie) => {
-    const isBookable = movie?.status === 'NOW_SHOWING' || (!movie?.status && !movie?.isUpcoming);
+    const isBookable = Boolean(movie?.hasShowtimes || Number(movie?.showtimesCount) > 0 || movie?.status === 'NOW_SHOWING' || movie?.status === 'SCHEDULED' || (!movie?.status && !movie?.isUpcoming));
     const targetId = movie?.movieId || movie?.backendId || movie?.id;
     if (!isBookable) {
       showToast('Phim sắp chiếu chưa mở bán vé.');
