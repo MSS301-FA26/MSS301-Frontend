@@ -20,7 +20,9 @@
   color: var(--rp-text);
   font-size: 13px;
   line-height: 1.5;
-  max-width: 1680px;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
   margin: 0 auto;
   padding-bottom: 32px;
   display: flex;

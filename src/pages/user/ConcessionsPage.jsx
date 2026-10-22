@@ -941,8 +941,8 @@ export default function ConcessionsPage() {
   return (
     <div className="min-h-screen bg-[#060606] text-white">
       {/* ── TOP HERO BANNER ─────────────────────────────────────────────────── */}
-      <div className="relative border-b border-white/10 bg-gradient-to-b from-[#12100e] via-[#0a0a0a] to-[#060606] px-4 py-4 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-[1500px]">
+      <div className="relative border-b border-white/10 bg-gradient-to-b from-[#12100e] via-[#0a0a0a] to-[#060606] py-4">
+        <div className="site-container">
           <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
             <div className="space-y-1.5">
               <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[9px] font-black uppercase tracking-[0.2em]">
@@ -1012,7 +1012,7 @@ export default function ConcessionsPage() {
         </div>
       </div>
 
-      <main className="mx-auto max-w-[1500px] px-4 py-8 sm:px-6 lg:px-8 space-y-8">
+      <main className="site-container py-8 space-y-8">
         {/* ── ACTIVE STANDALONE ORDERS BAR ────────────────────────────────────── */}
         {(ordersLoading || activeStandaloneOrder) && (
           <section id="my-food-orders" className="border border-amber-500/30 bg-amber-500/[0.03] p-4 sm:p-5">
@@ -1376,7 +1376,7 @@ export default function ConcessionsPage() {
                       </div>
 
                       {/* Items Grid (3 Columns, Compact) */}
-                      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-3">
+                      <div className="product-grid gap-3">
                         {sec.items.map(renderFoodCard)}
                       </div>
                     </div>
@@ -1394,7 +1394,7 @@ export default function ConcessionsPage() {
                     Sắp xếp: {sortBy === 'price_asc' ? 'Giá tăng dần' : sortBy === 'price_desc' ? 'Giá giảm dần' : 'Phổ biến'}
                   </span>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-3">
+                <div className="product-grid gap-3">
                   {processedFoods.map(renderFoodCard)}
                 </div>
               </div>

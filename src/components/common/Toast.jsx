@@ -50,7 +50,7 @@ export default function Toast({ toast, onClose }) {
 
   return (
     <div
-      className="fixed top-5 right-5 z-[9999] max-w-sm w-auto min-w-[280px] pointer-events-auto transition-all animate-in fade-in slide-in-from-top-2 duration-200"
+      className="fixed bottom-4 left-3 right-3 sm:bottom-auto sm:left-auto sm:top-5 sm:right-5 z-[9999] max-w-[calc(100vw-24px)] sm:max-w-sm w-auto min-w-0 sm:min-w-[280px] pointer-events-auto transition-all animate-in fade-in slide-in-from-top-2 duration-200"
       role="alert"
       aria-live="polite"
     >

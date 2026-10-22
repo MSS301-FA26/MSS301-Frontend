@@ -49,7 +49,7 @@ export default function HeroBannerCarousel({
   const dragStartTimeRef = useRef(0);
   const isDraggingRef = useRef(false);
 
-  // Responsive dimensions strictly locked to 1920x600 (3.2:1 ratio)
+  // Preserve the banner aspect ratio while allowing the main slide to grow.
   const [dimensions, setDimensions] = useState({
     containerWidth: typeof window !== 'undefined' ? window.innerWidth : 1440,
     slideWidth: 1200,
@@ -73,7 +73,7 @@ export default function HeroBannerCarousel({
       sWidth = Math.min(Math.round(width * 0.84), 1200);
       gap = 20;
     } else {
-      sWidth = Math.min(Math.round(width * 0.82), 1400);
+      sWidth = Math.round(width * 0.9);
       gap = 24;
     }
 

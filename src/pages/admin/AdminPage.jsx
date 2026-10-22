@@ -2020,7 +2020,7 @@ export default function AdminDashboard({
 
         {/* Scrollable content */}
         <div className="flex-1 min-w-0 overflow-y-auto bg-[#020202]">
-          <div className={activeTab === 'showtimes' ? "px-0 xl:px-0 py-6 space-y-5" : "px-5 xl:px-7 py-6 space-y-5"}>
+          <div className={activeTab === 'showtimes' ? "px-0 xl:px-0 py-6 space-y-5" : "workspace-container py-6 space-y-5"}>
 
 
             {/* ACTIVE PANEL */}

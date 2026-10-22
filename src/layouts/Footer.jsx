@@ -3,11 +3,11 @@ import { MapPin, Phone, Mail, Shield, Film, Award, ChevronRight } from 'lucide-r
 
 export default function Footer({ onTabChange = () => { }, cinema = null }) {
   return (
-    <footer className="relative border-t border-white/[0.08] bg-[#050507] text-neutral-400 pt-12 pb-8 px-4 sm:px-6 lg:px-8">
+    <footer className="relative border-t border-white/[0.08] bg-[#050507] text-neutral-400 pt-12 pb-8">
       {/* Ambient subtle glow at top border */}
       <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2 h-[1px] w-3/4 bg-gradient-to-r from-transparent via-[#F7C600]/25 to-transparent" />
 
-      <div className="mx-auto max-w-[1240px]">
+      <div className="site-container">
         {/* Main Footer Grid (4 Columns) - Compact padding */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-10 pb-10 border-b border-white/[0.08]">
 

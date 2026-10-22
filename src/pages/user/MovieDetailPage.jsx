@@ -1033,7 +1033,7 @@ export default function MovieDetailPage() {
   if (isLoadingDetail && !movie) {
     return (
       <div className="min-h-screen bg-[#050507] text-[#B5B5BE] pt-8 pb-20">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8 animate-pulse">
+        <div className="site-container space-y-8 animate-pulse">
           <div className="h-4 w-48 bg-white/5 rounded" />
           <div className="h-[460px] rounded-2xl bg-white/[0.03] border border-white/[0.05] p-8 flex flex-col md:flex-row gap-8 items-center">
             <div className="w-60 aspect-[2/3] bg-white/5 rounded-xl flex-shrink-0" />
@@ -1134,9 +1134,9 @@ export default function MovieDetailPage() {
       {isNonPublic && (
         <aside
           aria-label="Chế độ xem trước nội bộ"
-          className="bg-amber-950/70 border-b border-amber-500/30 px-4 py-2.5 sticky top-0 z-40 backdrop-blur-md"
+          className="bg-amber-950/70 border-b border-amber-500/30 py-2.5 sticky top-0 z-40 backdrop-blur-md"
         >
-          <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="site-container flex flex-wrap items-center justify-between gap-3 text-xs">
             <div className="flex items-center gap-2">
               <span className="p-1 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
                 <Shield className="w-3.5 h-3.5" />
@@ -1170,7 +1170,7 @@ export default function MovieDetailPage() {
       )}
 
       {/* BREADCRUMB & CONTROLS BAR */}
-      <nav aria-label="Điều hướng trang chi tiết" className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 pb-3">
+      <nav aria-label="Điều hướng trang chi tiết" className="site-container pt-5 pb-3">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-2 text-xs text-[#7F7F89]">
             <button
@@ -1229,7 +1229,7 @@ export default function MovieDetailPage() {
       {/* ─────────────────────────────────────────────────────────────
           SECTION 1: MOVIE HEADER / POSTER & DETAILS (Reference Layout)
          ───────────────────────────────────────────────────────────── */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-8">
+      <section className="site-container pt-4 pb-8">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-8 lg:gap-10 items-stretch">
           {/* Left Column: Poster Card */}
           <div className="md:col-span-4 lg:col-span-4 flex justify-center md:justify-start">
@@ -1401,7 +1401,7 @@ export default function MovieDetailPage() {
           SECTION 2: NỘI DUNG PHIM (With Vertical Gold Bar)
          ───────────────────────────────────────────────────────────── */}
       {fullSynopsis && (
-        <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <section className="site-container py-6">
           <div className="space-y-3">
             {/* Header with vertical primary accent bar */}
             <div className="flex items-center gap-2.5 border-l-4 border-[#F7C600] pl-3 py-0.5">
@@ -1433,7 +1433,7 @@ export default function MovieDetailPage() {
       {/* ─────────────────────────────────────────────────────────────
           SECTION 3: LỊCH CHIẾU
          ───────────────────────────────────────────────────────────── */}
-      <section id="showtimes-section" className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-5 scroll-mt-20 sm:scroll-mt-24 text-white">
+      <section id="showtimes-section" className="site-container py-5 scroll-mt-20 sm:scroll-mt-24 text-white">
         <div className="space-y-4">
           {/* Header with vertical primary accent bar */}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -1664,7 +1664,7 @@ export default function MovieDetailPage() {
       {/* ─────────────────────────────────────────────────────────────
           SECTION 5: ĐÁNH GIÁ TỪ KHÁN GIẢ (Reviews)
          ───────────────────────────────────────────────────────────── */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 border-t border-white/[0.06]">
+      <section className="site-container py-8 border-t border-white/[0.06]">
         <div className="space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 border-l-4 border-[#F7C600] pl-3 py-0.5">
@@ -1863,7 +1863,7 @@ export default function MovieDetailPage() {
           SECTION 6: PHIM BẠN CÓ THỂ THÍCH (Recommendations)
          ───────────────────────────────────────────────────────────── */}
       {similarMovies.length > 0 && (
-        <section className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 border-t border-white/[0.06]">
+        <section className="site-container py-8 border-t border-white/[0.06]">
           <div className="space-y-5">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5 border-l-4 border-[#F7C600] pl-3 py-0.5">

@@ -903,12 +903,12 @@ export default function HomePage({
           - Flow: 1.Phim -> 2.Rạp -> 3.Ngày -> 4.Suất -> 5.MUA VÉ NHANH
           - Spacing: 56px-64px trước "Phim đang chiếu"
       ======================================================== */}
-      <div className="-mt-7 sm:-mt-8 relative z-30 mx-auto max-w-[1040px] px-3 sm:px-4 mb-14 sm:mb-16">
+      <div className="-mt-7 sm:-mt-8 relative z-30 site-container mb-14 sm:mb-16">
         <QuickBookingBar movies={moviesList} />
       </div>
 
-      {/* Main Content Layout Container (Max-width: 1240px, Spacing: 72–84px) */}
-      <div className="mx-auto max-w-[1240px] px-4 sm:px-6 lg:px-8 space-y-16 sm:space-y-20 pb-20">
+      {/* Shared fluid page container */}
+      <div className="site-container space-y-16 sm:space-y-20 pb-20">
 
         {/* ========================================================
             3. PHIM ĐANG CHIẾU (NOW SHOWING)
@@ -966,7 +966,7 @@ export default function HomePage({
             {/* Danh sách 5 thẻ phim với padding px-2 sm:px-2.5 để không bao giờ bị cắt/che viền hover */}
             <div
               ref={nowPlayingRef}
-              className="flex-1 min-w-0 flex gap-2.5 sm:gap-3 md:gap-3.5 lg:gap-4 overflow-x-auto scroll-smooth snap-x snap-mandatory py-3 px-2 sm:px-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden select-none"
+              className="movie-carousel flex-1 min-w-0 flex overflow-x-auto scroll-smooth snap-x snap-mandatory py-3 px-2 sm:px-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden select-none"
             >
               {nowShowingMovies.map((movie) => (
                 <div
@@ -1177,7 +1177,7 @@ export default function HomePage({
 
             <div
               ref={comingSoonRef}
-              className="flex-1 min-w-0 flex gap-2.5 sm:gap-3 md:gap-3.5 lg:gap-4 overflow-x-auto scroll-smooth snap-x snap-mandatory py-3 px-2 sm:px-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden select-none"
+              className="movie-carousel flex-1 min-w-0 flex overflow-x-auto scroll-smooth snap-x snap-mandatory py-3 px-2 sm:px-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden select-none"
             >
               {comingSoonMovies.map((movie) => (
                 <div
@@ -1520,7 +1520,7 @@ export default function HomePage({
               {effectiveFoods.map((food) => (
                 <div
                   key={food.id}
-                  className="snap-start shrink-0 w-[265px] sm:w-[285px] lg:w-[305px] group flex flex-col justify-between rounded-xl overflow-hidden border border-white/10 bg-[#0d0e15] hover:border-[#F7C600]/50 transition-all duration-300 hover:-translate-y-1 shadow-[0_10px_25px_rgba(0,0,0,0.7)] hover:shadow-[0_12px_30px_rgba(247,198,0,0.15)]"
+                  className="food-card-column snap-start shrink-0 group flex flex-col justify-between rounded-xl overflow-hidden border border-white/10 bg-[#0d0e15] hover:border-[#F7C600]/50 transition-all duration-300 hover:-translate-y-1 shadow-[0_10px_25px_rgba(0,0,0,0.7)] hover:shadow-[0_12px_30px_rgba(247,198,0,0.15)]"
                 >
                   <div className="relative aspect-[16/10] w-full overflow-hidden bg-neutral-900">
                     <img
@@ -1598,7 +1598,7 @@ export default function HomePage({
       <div className="fixed bottom-5 right-5 z-[95] flex flex-col items-end gap-2.5">
         {chatOpen && (
           <div
-            className="w-[310px] sm:w-[340px] bg-[#09090D] border border-purple-500/40 rounded-none overflow-hidden shadow-[0_16px_50px_rgba(0,0,0,0.9)] flex flex-col"
+            className="w-[310px] sm:w-[340px] max-w-[calc(100vw-40px)] bg-[#09090D] border border-purple-500/40 rounded-none overflow-hidden shadow-[0_16px_50px_rgba(0,0,0,0.9)] flex flex-col"
             style={{ height: 420 }}
           >
             <div className="flex items-center justify-between px-3.5 py-2.5 bg-gradient-to-r from-purple-950/80 to-[#09090D] border-b border-purple-500/30">
