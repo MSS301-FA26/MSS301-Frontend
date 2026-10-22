@@ -7,12 +7,9 @@ export const normalizeSearchText = (value) => String(value ?? '')
   .replace(/\s+/g, ' ')
   .trim();
 
-const valueText = (value) => {
-  if (Array.isArray(value)) return value.map(valueText).join(' ');
-  if (value && typeof value === 'object') {
-    return value.name || value.actorName || value.genreName || value.title || '';
-  }
-  return value ?? '';
+export const getMovieSearchPath = (query) => {
+  const trimmedQuery = String(query ?? '').trim();
+  return trimmedQuery ? `/movies?q=${encodeURIComponent(trimmedQuery)}` : '/movies?status=all';
 };
 
 export const matchesMovieSearch = (movie, query) => {
@@ -22,16 +19,7 @@ export const matchesMovieSearch = (movie, query) => {
   const searchable = [
     movie?.title,
     movie?.englishTitle,
-    movie?.director,
-    movie?.actors,
-    movie?.cast,
-    movie?.castList,
-    movie?.mainActors,
-    movie?.genre,
-    movie?.genres,
-    movie?.synopsis,
-    movie?.description,
-  ].map(valueText).join(' ');
+  ].join(' ');
 
   return normalizeSearchText(searchable).includes(normalizedQuery);
 };
@@ -52,6 +40,31 @@ export const deduplicateSearchMovies = (movies = []) => {
     if (title) seenTitles.add(title);
     return true;
   });
+};
+
+export const getMovieSearchView = ({ status, catalog = [], fallbackMovies = [], query = '' }) => {
+  if (status === 'idle' || status === 'loading') {
+    return { kind: status, results: [], suggestions: [], resultCount: 0, showResultCount: false };
+  }
+
+  const fallback = deduplicateSearchMovies(fallbackMovies);
+  const hasFallback = status === 'error' && fallback.length > 0;
+  const source = hasFallback ? fallback : deduplicateSearchMovies(catalog);
+  const results = source.filter((movie) => matchesMovieSearch(movie, query));
+  const normalizedQuery = normalizeSearchText(query);
+  let kind = status;
+
+  if (hasFallback) kind = 'fallback';
+  else if (status === 'success' && results.length === 0 && normalizedQuery) kind = 'no-results';
+
+  return {
+    kind,
+    results,
+    suggestions: normalizedQuery ? [] : source.slice(0, 5).map((movie) => movie.title).filter(Boolean),
+    resultCount: results.length,
+    showResultCount: status === 'success' || status === 'empty' || hasFallback,
+    noResults: Boolean(normalizedQuery) && results.length === 0 && (status === 'success' || hasFallback),
+  };
 };
 
 export const defaultExploreStatus = (query, requestedStatus) => {
