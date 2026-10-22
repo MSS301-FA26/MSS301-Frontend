@@ -977,11 +977,10 @@ export default function ProfileView() {
                             .catch(() => { });
                         }
                       }}
-                      className={`flex items-center gap-1.5 border px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider transition rounded-lg ${
-                        showWithdrawForm
+                      className={`flex items-center gap-1.5 border px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider transition rounded-lg ${showWithdrawForm
                           ? 'border-amber-500 bg-amber-500 text-black shadow-md shadow-amber-500/20'
                           : 'border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20'
-                      }`}
+                        }`}
                     >
                       {showWithdrawForm ? <X className="h-3 w-3" /> : <ArrowUpRight className="h-3 w-3" />}
                       {showWithdrawForm ? 'Đóng' : 'Rút tiền'}
@@ -1149,11 +1148,10 @@ export default function ProfileView() {
                       <button
                         type="button"
                         onClick={() => setWalletSubTab('WITHDRAWALS')}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider rounded transition ${
-                          walletSubTab === 'WITHDRAWALS'
+                        className={`flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider rounded transition ${walletSubTab === 'WITHDRAWALS'
                             ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
                             : 'text-neutral-400 hover:text-white hover:bg-white/5'
-                        }`}
+                          }`}
                       >
                         <CreditCard className="h-3 w-3" />
                         <span>Lịch sử rút tiền ({withdrawals.length})</span>
@@ -1161,11 +1159,10 @@ export default function ProfileView() {
                       <button
                         type="button"
                         onClick={() => setWalletSubTab('TRANSACTIONS')}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider rounded transition ${
-                          walletSubTab === 'TRANSACTIONS'
+                        className={`flex items-center gap-1.5 px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider rounded transition ${walletSubTab === 'TRANSACTIONS'
                             ? 'bg-amber-500 text-black shadow-md shadow-amber-500/20'
                             : 'text-neutral-400 hover:text-white hover:bg-white/5'
-                        }`}
+                          }`}
                       >
                         <Filter className="h-3 w-3" />
                         <span>Biến động số dư ({walletTxs.length})</span>
@@ -1198,13 +1195,12 @@ export default function ProfileView() {
                               <div
                                 key={w.id || i}
                                 onClick={() => setSelectedWdDetail(w)}
-                                className={`p-2.5 sm:p-3 rounded-lg border transition cursor-pointer relative overflow-hidden group ${
-                                  isPaid
+                                className={`p-2.5 sm:p-3 rounded-lg border transition cursor-pointer relative overflow-hidden group ${isPaid
                                     ? 'bg-gradient-to-r from-emerald-950/20 to-black/60 border-emerald-500/30 hover:border-emerald-500/60 shadow-md shadow-emerald-950/10'
                                     : isRejected
                                       ? 'bg-gradient-to-r from-rose-950/20 to-black/60 border-rose-500/30 hover:border-rose-500/60 shadow-md shadow-rose-950/10'
                                       : 'bg-gradient-to-r from-amber-950/20 to-black/60 border-amber-500/30 hover:border-amber-500/60 shadow-md shadow-amber-950/10'
-                                }`}
+                                  }`}
                               >
                                 {/* Dòng 1: Ngân hàng + Số tiền + Trạng thái */}
                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
@@ -1226,13 +1222,12 @@ export default function ProfileView() {
                                   </div>
 
                                   <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-0.5">
-                                    <span className={`text-sm sm:text-[15px] font-mono font-black ${
-                                      isRejected
+                                    <span className={`text-sm sm:text-[15px] font-mono font-black ${isRejected
                                         ? 'text-emerald-400'
                                         : isPaid
                                           ? 'text-white'
                                           : 'text-amber-400'
-                                    }`}>
+                                      }`}>
                                       {isRejected ? '+' : '-'}{Number(w.amount).toLocaleString('vi-VN')}đ
                                     </span>
                                     {isPending && (
@@ -1326,11 +1321,10 @@ export default function ProfileView() {
                             key={tab.key}
                             type="button"
                             onClick={() => setTxFilter(tab.key)}
-                            className={`px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider rounded-md transition shrink-0 ${
-                              txFilter === tab.key
+                            className={`px-2.5 py-1 text-[10.5px] font-bold uppercase tracking-wider rounded-md transition shrink-0 ${txFilter === tab.key
                                 ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50'
                                 : 'text-neutral-400 hover:text-white border border-white/5 bg-black/40'
-                            }`}
+                              }`}
                           >
                             {tab.label}
                           </button>
@@ -1894,9 +1888,7 @@ export default function ProfileView() {
                                   </button>
                                 )}
                               </div>
-                              <p className="text-[9px] text-neutral-500 leading-relaxed italic">
-                                * Thông tin tài khoản ngân hàng sẽ được lưu trữ an toàn và dùng để nhận tiền khi thực hiện lệnh rút từ ví CineWallet.
-                              </p>
+
                             </div>
                           </div>
                         </motion.div>
@@ -2121,13 +2113,12 @@ export default function ProfileView() {
             {/* Header */}
             <div className="flex items-start justify-between border-b border-white/10 pb-2.5">
               <div className="flex items-center gap-2.5">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                  selectedWdDetail.status === 'PAID'
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${selectedWdDetail.status === 'PAID'
                     ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
                     : selectedWdDetail.status === 'REJECTED'
                       ? 'bg-rose-500/20 border border-rose-500/40 text-rose-400'
                       : 'bg-amber-500/20 border border-amber-500/40 text-amber-400'
-                }`}>
+                  }`}>
                   {selectedWdDetail.status === 'PAID' ? (
                     <CheckCircle2 className="h-4 w-4" />
                   ) : selectedWdDetail.status === 'REJECTED' ? (
@@ -2163,23 +2154,21 @@ export default function ProfileView() {
               <p className="text-[11px] font-black uppercase tracking-wider text-neutral-400">
                 {selectedWdDetail.status === 'REJECTED' ? 'Số tiền cộng vào ví' : 'Số tiền rút'}
               </p>
-              <p className={`text-xl font-mono font-black ${
-                selectedWdDetail.status === 'REJECTED'
+              <p className={`text-xl font-mono font-black ${selectedWdDetail.status === 'REJECTED'
                   ? 'text-emerald-400'
                   : selectedWdDetail.status === 'PAID'
                     ? 'text-white'
                     : 'text-amber-400'
-              }`}>
+                }`}>
                 {selectedWdDetail.status === 'REJECTED' ? '+' : '-'}{Number(selectedWdDetail.amount || 0).toLocaleString('vi-VN')}đ
               </p>
               <div className="inline-block mt-0.5">
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                  selectedWdDetail.status === 'PAID'
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${selectedWdDetail.status === 'PAID'
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                     : selectedWdDetail.status === 'REJECTED'
                       ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
                       : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                }`}>
+                  }`}>
                   {selectedWdDetail.status === 'PAID'
                     ? '✓ Đã chuyển tiền thành công'
                     : selectedWdDetail.status === 'REJECTED'
@@ -2318,11 +2307,10 @@ export default function ProfileView() {
             {/* Header */}
             <div className="flex items-start justify-between border-b border-white/10 pb-2.5">
               <div className="flex items-center gap-2.5">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                  (selectedTxDetail.type === 'REFUND_CREDIT' || selectedTxDetail.type === 'WITHDRAWAL_REFUND' || selectedTxDetail.type === 'WITHDRAWAL_REJECTED')
+                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${(selectedTxDetail.type === 'REFUND_CREDIT' || selectedTxDetail.type === 'WITHDRAWAL_REFUND' || selectedTxDetail.type === 'WITHDRAWAL_REJECTED')
                     ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-400'
                     : 'bg-amber-500/20 border border-amber-500/40 text-amber-400'
-                }`}>
+                  }`}>
                   {(selectedTxDetail.type === 'REFUND_CREDIT' || selectedTxDetail.type === 'WITHDRAWAL_REFUND' || selectedTxDetail.type === 'WITHDRAWAL_REJECTED') ? (
                     <CheckCircle2 className="h-4 w-4" />
                   ) : (
@@ -2364,20 +2352,18 @@ export default function ProfileView() {
                   ? 'Số tiền cộng vào ví'
                   : 'Số tiền giao dịch'}
               </p>
-              <p className={`text-xl font-mono font-black ${
-                (selectedTxDetail.type === 'REFUND_CREDIT' || selectedTxDetail.type === 'WITHDRAWAL_REFUND' || selectedTxDetail.type === 'WITHDRAWAL_REJECTED' || Number(selectedTxDetail.amount) > 0)
+              <p className={`text-xl font-mono font-black ${(selectedTxDetail.type === 'REFUND_CREDIT' || selectedTxDetail.type === 'WITHDRAWAL_REFUND' || selectedTxDetail.type === 'WITHDRAWAL_REJECTED' || Number(selectedTxDetail.amount) > 0)
                   ? 'text-emerald-400'
                   : 'text-amber-400'
-              }`}>
+                }`}>
                 {(selectedTxDetail.type === 'REFUND_CREDIT' || selectedTxDetail.type === 'WITHDRAWAL_REFUND' || selectedTxDetail.type === 'WITHDRAWAL_REJECTED' || Number(selectedTxDetail.amount) > 0) ? '+' : '-'}
                 {Math.abs(Number(selectedTxDetail.amount || 0)).toLocaleString('vi-VN')}đ
               </p>
               <div className="inline-block mt-0.5">
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${
-                  (selectedTxDetail.type === 'REFUND_CREDIT' || selectedTxDetail.type === 'WITHDRAWAL_REFUND' || selectedTxDetail.type === 'WITHDRAWAL_REJECTED')
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${(selectedTxDetail.type === 'REFUND_CREDIT' || selectedTxDetail.type === 'WITHDRAWAL_REFUND' || selectedTxDetail.type === 'WITHDRAWAL_REJECTED')
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                     : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                }`}>
+                  }`}>
                   {selectedTxDetail.type === 'REFUND_CREDIT'
                     ? 'Đã hoàn tiền vé vào ví thành công (100%)'
                     : (selectedTxDetail.type === 'WITHDRAWAL_REFUND' || selectedTxDetail.type === 'WITHDRAWAL_REJECTED')

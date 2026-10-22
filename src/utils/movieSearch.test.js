@@ -35,20 +35,32 @@ test('movie search is case-insensitive', () => {
   assert.equal(matchesMovieSearch(movie, 'PEACH BLOSSOM'), true);
 });
 
-test('movie search does not match the director', () => {
-  assert.equal(matchesMovieSearch(movie, 'phi tien son'), false);
+test('movie search matches the director', () => {
+  assert.equal(matchesMovieSearch(movie, 'phi tien son'), true);
 });
 
-test('movie search does not match actors', () => {
-  assert.equal(matchesMovieSearch(movie, 'doan quoc dam'), false);
+test('movie search matches actors', () => {
+  assert.equal(matchesMovieSearch(movie, 'doan quoc dam'), true);
 });
 
-test('movie search does not match genres', () => {
-  assert.equal(matchesMovieSearch(movie, 'chinh kich'), false);
+test('movie search matches genres', () => {
+  assert.equal(matchesMovieSearch(movie, 'chinh kich'), true);
 });
 
-test('movie search does not match the synopsis', () => {
-  assert.equal(matchesMovieSearch({ ...movie, synopsis: 'Một chuyện tình thời chiến' }, 'thoi chien'), false);
+test('movie search matches showtime dates and cinema addresses', () => {
+  const movieWithShowtimes = {
+    ...movie,
+    showtimes: [
+      {
+        startTime: '2026-10-25T14:30:00',
+        cinemaName: 'CinePremier Landmark 81',
+        cinemaAddress: '720A Điện Biên Phủ, Bình Thạnh'
+      }
+    ]
+  };
+  assert.equal(matchesMovieSearch(movieWithShowtimes, '25/10'), true);
+  assert.equal(matchesMovieSearch(movieWithShowtimes, 'Landmark 81'), true);
+  assert.equal(matchesMovieSearch(movieWithShowtimes, 'Bình Thạnh'), true);
 });
 
 test('movie search returns no match for an unrelated title', () => {
@@ -137,4 +149,36 @@ test('movie search path opens all movies for an empty query', () => {
 
 test('movie search path preserves and encodes a non-empty query', () => {
   assert.equal(getMovieSearchPath(' Đào Phở '), '/movies?q=%C4%90%C3%A0o%20Ph%E1%BB%9F');
+});
+
+test('movie search matches Russo Brothers when movie has director Russo Brothers', () => {
+  const avengers = {
+    id: 99,
+    title: 'Avengers: Hồi Kết',
+    englishTitle: 'Avengers: Endgame',
+    director: 'Anthony Russo, Joe Russo (Russo Brothers)',
+    actors: ['Robert Downey Jr.', 'Chris Evans'],
+    status: 'NOW_SHOWING'
+  };
+  assert.equal(matchesMovieSearch(avengers, 'Russo Brothers'), true);
+  assert.equal(matchesMovieSearch(avengers, 'Robert Downey'), true);
+});
+
+test('dedicated fields: directorQuery and actorQuery match specifically', () => {
+  const avengers = {
+    id: 99,
+    title: 'Avengers: Hồi Kết',
+    englishTitle: 'Avengers: Endgame',
+    director: 'Anthony Russo, Joe Russo (Russo Brothers)',
+    actors: ['Robert Downey Jr.', 'Chris Evans'],
+    status: 'NOW_SHOWING'
+  };
+  // Matching directorQuery
+  assert.equal(matchesMovieSearch(avengers, '', { directorQuery: 'Russo Brothers' }), true);
+  // Non-matching directorQuery
+  assert.equal(matchesMovieSearch(avengers, '', { directorQuery: 'Christopher Nolan' }), false);
+  // Matching actorQuery
+  assert.equal(matchesMovieSearch(avengers, '', { actorQuery: 'Downey' }), true);
+  // Non-matching actorQuery
+  assert.equal(matchesMovieSearch(avengers, '', { actorQuery: 'Tom Cruise' }), false);
 });
