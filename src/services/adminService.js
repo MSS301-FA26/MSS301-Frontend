@@ -309,16 +309,17 @@ export const adminService = {
   getAdminFoodInventoryTransactions: (token, params = {}) => request(`/api/v1/admin/foods/inventory/transactions${buildQueryString(params)}`, { token }).then(normalizePageResponse),
 
   // ── Reports ────────────────────────────────────────────────────────────────
+  getAdminAnalytics: (token, params = {}) => request(`/api/v1/admin/reports/analytics${buildQueryString(params)}`, { token }),
   getRevenueReport: (token, params = {}) => request(`/api/v1/admin/reports/revenue${buildQueryString(params)}`, { token }),
   getTopMovies: (token, params = {}) => request(`/api/v1/admin/reports/top-movies${buildQueryString(params)}`, { token }),
   getRoomOccupancy: (token, params = {}) => request(`/api/v1/admin/reports/occupancy${buildQueryString(params)}`, { token }),
-  getDailyOccupancy: async () => [],
+  getDailyOccupancy: (token, params = {}) => request(`/api/v1/admin/reports/daily-occupancy${buildQueryString(params)}`, { token }),
   getShowtimeFill: (token, params = {}) => request(`/api/v1/admin/reports/showtime-fill${buildQueryString(params)}`, { token }),
   getNoShowReport: (token, params = {}) => request(`/api/v1/admin/reports/no-shows${buildQueryString(params)}`, { token }),
   getPeakHours: (token, params = {}) => request(`/api/v1/admin/reports/peak-hours${buildQueryString(params)}`, { token }),
   getTopSeats: (token, params = {}) => request(`/api/v1/admin/reports/top-seats${buildQueryString(params)}`, { token }),
   getAbandonedRate: (token, params = {}) => request(`/api/v1/admin/reports/abandoned${buildQueryString(params)}`, { token }),
-  getConcessionSales: async () => ({ totalItemsSold: 0, totalRevenue: 0, totalOrders: 0, averageOrderValue: 0, lines: [], daily: [], sources: [] }),
+  getConcessionSales: (token, params = {}) => request(`/api/v1/admin/reports/concessions${buildQueryString(params)}`, { token }),
   getExpiredUsers: (token, params = {}) => request(`/api/v1/admin/reports/expired-users${buildQueryString(params)}`, { token }),
   getShowtimeIncidentsReport: (token, params = {}) => request(`/api/v1/admin/reports/showtime-incidents${buildQueryString(params)}`, { token }),
 

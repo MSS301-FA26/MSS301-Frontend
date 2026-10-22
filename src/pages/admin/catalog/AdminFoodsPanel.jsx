@@ -703,9 +703,9 @@ export default function AdminFoodsPanel({ ctx }) {
                     Sắp hết hàng
                   </p>
                   <p className="mt-1 font-mono text-lg font-black text-amber-300">
-                    {isSalesSummaryLoading ? '—' : salesSummary?.lowStockCount ?? 0}
+                    {isSalesSummaryLoading ? '—' : salesSummary?.lowStockCount ?? '—'}
                   </p>
-                  <p className="text-[9px] text-neutral-400 mt-0.5">≤ ngưỡng an toàn</p>
+                  <p className="text-[9px] text-neutral-400 mt-0.5">{salesSummary?.lowStockCount == null ? 'Chưa có dữ liệu tồn kho' : '≤ ngưỡng an toàn'}</p>
                 </div>
 
                 {/* Out of Stock */}
@@ -715,19 +715,19 @@ export default function AdminFoodsPanel({ ctx }) {
                     Hết hàng
                   </p>
                   <p className="mt-1 font-mono text-lg font-black text-rose-400">
-                    {isSalesSummaryLoading ? '—' : salesSummary?.outOfStockCount ?? 0}
+                    {isSalesSummaryLoading ? '—' : salesSummary?.outOfStockCount ?? '—'}
                   </p>
-                  <p className="text-[9px] text-neutral-400 mt-0.5">Cần nhập kho ngay</p>
+                  <p className="text-[9px] text-neutral-400 mt-0.5">{salesSummary?.outOfStockCount == null ? 'Chưa có dữ liệu tồn kho' : 'Cần nhập kho ngay'}</p>
                 </div>
 
                 {/* Gross Profit */}
                 <div className="px-4 py-3.5">
-                  <p className="text-[9px] font-black uppercase tracking-wider text-neutral-400">Lợi nhuận gộp ước tính</p>
+                  <p className="text-[9px] font-black uppercase tracking-wider text-neutral-400">Lợi nhuận gộp</p>
                   <p className="mt-1 font-mono text-lg font-black text-cyan-400 truncate">
-                    {isSalesSummaryLoading ? '—' : formatVnd(salesSummary?.grossProfit)}
+                    {isSalesSummaryLoading || salesSummary?.grossProfit == null ? '—' : formatVnd(salesSummary.grossProfit)}
                   </p>
                   <p className="text-[9px] text-neutral-400 mt-0.5">
-                    Biên lợi nhuận ~{salesSummary?.profitMargin || 55}%
+                    {salesSummary?.profitMargin == null ? 'Chưa có dữ liệu giá vốn' : `Biên lợi nhuận ${salesSummary.profitMargin}%`}
                   </p>
                 </div>
               </div>
