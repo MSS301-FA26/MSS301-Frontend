@@ -11,6 +11,7 @@ import { movieService } from '../services/movieService';
 import { loyaltyService } from '../services/loyaltyService';
 import { getStoredAuth } from '../services/authService';
 import { useMovieStore } from '../stores/useMovieStore';
+import { deduplicateSearchMovies, matchesMovieSearch } from '../utils/movieSearch';
 
 const CINEMA_IMAGES_MAP = {
   1: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=800&q=80',
@@ -126,34 +127,36 @@ export default function Header({
 
   // Catalog for search suggestions
   const [suggestionCatalog, setSuggestionCatalog] = useState(null);
+  const [suggestionError, setSuggestionError] = useState(false);
+  const [isSuggestionLoading, setIsSuggestionLoading] = useState(false);
   useEffect(() => {
     if (!searchOverlayOpen || suggestionCatalog !== null) return;
     let cancelled = false;
-    movieService.searchMovies({ size: 100 })
+    setSuggestionError(false);
+    setIsSuggestionLoading(true);
+    movieService.getAllMovies({ size: 100 })
       .then((list) => {
         if (!cancelled) setSuggestionCatalog(Array.isArray(list) ? list : []);
       })
       .catch(() => {
-        if (!cancelled) setSuggestionCatalog([]);
+        if (!cancelled) {
+          setSuggestionCatalog([]);
+          setSuggestionError(true);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setIsSuggestionLoading(false);
       });
     return () => { cancelled = true; };
   }, [searchOverlayOpen, suggestionCatalog]);
 
   // Combined movie suggestions
   const filteredMovies = useMemo(() => {
-    const q = headerQuery.trim().toLowerCase();
-    const source = suggestionCatalog?.length ? suggestionCatalog : (moviesList || []);
-    if (!q) return source.slice(0, 4);
-    return source
-      .filter((m) => m && m.status !== 'INACTIVE' && !m.isInactive)
-      .filter((m) => (
-        (m.title || '').toLowerCase().includes(q)
-        || (m.englishTitle || '').toLowerCase().includes(q)
-        || (m.director || '').toLowerCase().includes(q)
-        || (m.genre || []).some((g) => String(g || '').toLowerCase().includes(q))
-      ))
+    const source = suggestionCatalog === null || suggestionError ? moviesList : suggestionCatalog;
+    return deduplicateSearchMovies(source)
+      .filter((movie) => matchesMovieSearch(movie, headerQuery))
       .slice(0, 5);
-  }, [headerQuery, moviesList, suggestionCatalog]);
+  }, [headerQuery, moviesList, suggestionCatalog, suggestionError]);
 
   const filteredCinemas = useMemo(() => {
     const q = headerQuery.trim().toLowerCase();
@@ -165,7 +168,10 @@ export default function Header({
     );
   }, [headerQuery, cinemasList]);
 
-  const recentSearches = ['Dune 2', 'Mai', 'Oppenheimer', 'IMAX Laser', 'Suất chiếu tối'];
+  const suggestedQueries = useMemo(
+    () => deduplicateSearchMovies(suggestionCatalog ?? moviesList).slice(0, 5).map((movie) => movie.title),
+    [moviesList, suggestionCatalog]
+  );
 
   const handleSelectCinema = (c) => {
     setSelectedCinema(c);
@@ -746,7 +752,7 @@ export default function Header({
                 <div className="border-b border-white/5 bg-black/40 px-5 py-2.5">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Gợi ý:</span>
-                    {recentSearches.map((tag) => (
+                    {suggestedQueries.map((tag) => (
                       <button
                         key={tag}
                         onClick={() => { setHeaderQuery(tag); commitSearch(tag); }}
@@ -771,6 +777,15 @@ export default function Header({
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {isSuggestionLoading && (
+                        <p className="col-span-full text-xs text-neutral-400" role="status">Đang tải danh mục phim...</p>
+                      )}
+                      {suggestionError && (
+                        <p className="col-span-full text-xs text-amber-300" role="status">Không thể tải toàn bộ danh mục. Đang hiển thị dữ liệu sẵn có.</p>
+                      )}
+                      {!isSuggestionLoading && filteredMovies.length === 0 && (
+                        <p className="col-span-full text-xs text-neutral-400" role="status">Không tìm thấy phim phù hợp.</p>
+                      )}
                       {filteredMovies.map((movie) => (
                         <div
                           key={movie.backendId || movie.id}
