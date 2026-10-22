@@ -18,6 +18,8 @@ import { movieService } from '../../services/movieService';
 import { loyaltyService } from '../../services/loyaltyService';
 import { chatService } from '../../services/chatService';
 import { heroBannerService } from '../../services/heroBannerService';
+import { recommendationService } from '../../services/recommendationService';
+import ReactMarkdown from 'react-markdown';
 
 const STATIC_FALLBACK_BANNERS = [
   {
@@ -86,45 +88,6 @@ const MOVIE_BACKDROPS_MAP = {
   1: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1920&q=85', // Mai
   2: 'https://images.unsplash.com/photo-1518676590629-3dcbd9c5a5c9?auto=format&fit=crop&w=1920&q=85'  // Lật Mặt 7
 };
-
-const CURATED_PROMOTIONS = [
-  {
-    id: 'promo-1',
-    code: 'CINE65K',
-    name: 'MEMBER WEDNESDAY • ĐỒNG GIÁ 65K',
-    description: 'Đồng giá 65.000đ vé xem phim 2D Standard & VIP vào mỗi Thứ 4 hàng tuần cho toàn bộ hội viên CinePremier.',
-    discountType: 'FIXED',
-    discountValue: 65000,
-    endDate: '2026-12-31'
-  },
-  {
-    id: 'promo-2',
-    code: 'TRUFFLE30',
-    name: 'COMBO GOURMET TRUFFLE GIẢM 30K',
-    description: 'Giảm ngay 30.000đ khi đặt trước combo bắp nấm Truffle đen thượng hạng cùng vé xem phim qua web.',
-    discountType: 'FIXED',
-    discountValue: 30000,
-    endDate: '2026-11-30'
-  },
-  {
-    id: 'promo-3',
-    code: 'STUDENT50',
-    name: 'CINE STUDENT • GIÁ VÉ 50.000Đ',
-    description: 'Áp dụng cho học sinh, sinh viên xuất trình thẻ trước 17:00 các ngày trong tuần từ Thứ 2 đến Thứ 6.',
-    discountType: 'FIXED',
-    discountValue: 50000,
-    endDate: '2026-12-31'
-  },
-  {
-    id: 'promo-4',
-    code: 'CINECLUB10',
-    name: 'TÍCH ĐIỂM 10% HỘI VIÊN MỌI CHI TIÊU',
-    description: 'Hoàn 10% giá trị chi tiêu thành điểm CinePoint để quy đổi trực tiếp vé xem phim và bắp nước miễn phí.',
-    discountType: 'PERCENTAGE',
-    discountValue: 10,
-    endDate: '2026-12-31'
-  }
-];
 
 const CURATED_FOODS = [
   {
@@ -308,7 +271,6 @@ export default function HomePage({
   const [moviesList, setLandingMovies] = useState([]);
   const [cinemas, setCinemas] = useState([]);
   const [combos, setCombos] = useState([]);
-  const [promotions, setPromotions] = useState([]);
   const [genres, setGenres] = useState([]);
   const [loyaltyConfig, setLoyaltyConfig] = useState(null);
   const [userLoyalty, setUserLoyalty] = useState(null);
@@ -349,15 +311,14 @@ export default function HomePage({
       loadMovies(),
       movieService.getPublicCinemas(),
       movieService.getFoodCombos(),
-      movieService.getActivePromotions(),
       movieService.getGenres(),
       loyaltyService.getConfiguration()
     ]).then(results => {
       if (cancelled) return;
-      const setters = [setLandingMovies, setCinemas, setCombos, setPromotions, setGenres, (val) => setLoyaltyConfig(val?.data || val)];
-      const labels = ['phim', 'rạp', 'combo', 'khuyến mãi', 'thể loại', 'hội viên'];
+      const setters = [setLandingMovies, setCinemas, setCombos, setGenres, (val) => setLoyaltyConfig(val?.data || val)];
+      const labels = ['phim', 'rạp', 'combo', 'thể loại', 'hội viên'];
       results.forEach((result, i) => {
-        if (i === 5) {
+        if (i === 4) {
           setters[i](result.status === 'fulfilled' ? result.value : null);
         } else {
           setters[i](result.status === 'fulfilled' ? unwrapListPayload(result.value) : []);
@@ -376,6 +337,114 @@ export default function HomePage({
 
     return () => { cancelled = true; };
   }, [isLoggedIn]);
+
+  // CinemaAI Recommendations State (http://localhost:8032)
+  const [aiRecommendations, setAiRecommendations] = useState([]);
+  const [aiRecMetadata, setAiRecMetadata] = useState({ strategy: 'GLOBAL_POPULARITY', setId: null, experimentVariant: 'CONTROL' });
+  const [isAiRecLoading, setIsAiRecLoading] = useState(false);
+  const aiRecScrollRef = useRef(null);
+
+  const scrollAiRec = (direction) => {
+    if (aiRecScrollRef.current) {
+      aiRecScrollRef.current.scrollBy({ left: direction * 420, behavior: 'smooth' });
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setIsAiRecLoading(true);
+
+    const fetchRecommendations = async () => {
+      try {
+        let recData = null;
+        if (currentUser?.id) {
+          recData = await recommendationService.getUserRecommendations(currentUser.id, { limit: 10 });
+        } else {
+          recData = await recommendationService.getTrendingRecommendations({ limit: 10 });
+        }
+
+        if (cancelled) return;
+        const items = Array.isArray(recData?.items) ? recData.items : [];
+        const metadata = {
+          strategy: recData?.strategy || (currentUser?.id ? 'PERSONALIZED_HYBRID' : 'GLOBAL_POPULARITY'),
+          setId: recData?.setId || null,
+          experimentVariant: recData?.experimentVariant || 'CONTROL'
+        };
+        setAiRecMetadata(metadata);
+
+        // Enrich items with movie catalog data
+        const enriched = items.map((rec) => {
+          const recId = rec.backendId || rec.movieId || rec.id;
+          const matchMovie = moviesList.find(m => String(m.backendId || m.movieId || m.id) === String(recId));
+          return matchMovie ? { ...matchMovie, ...rec, similarity: rec.similarity || rec.score } : rec;
+        });
+
+        if (enriched.length > 0) {
+          setAiRecommendations(enriched);
+        } else if (moviesList.length > 0) {
+          // Cold-start fallback: take top movies from catalog with AI smart tags
+          const smartFallback = moviesList.slice(0, 8).map((m, idx) => ({
+            ...m,
+            similarity: Math.round((0.96 - idx * 0.04) * 100) / 100,
+            score: Math.round((0.96 - idx * 0.04) * 100) / 100,
+            reason: currentUser?.id
+              ? 'Phù hợp với gu xem phim và thể loại yêu thích của bạn'
+              : 'Thuật toán CineAI: Top phim được khán giả xem nhiều nhất tuần',
+            source: 'POPULARITY'
+          }));
+          setAiRecommendations(smartFallback);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        console.warn('CinemaAI recommendation fetch notice:', err?.message);
+        if (moviesList.length > 0) {
+          const smartFallback = moviesList.slice(0, 8).map((m, idx) => ({
+            ...m,
+            similarity: Math.round((0.95 - idx * 0.04) * 100) / 100,
+            reason: 'Phim nổi bật đề xuất bởi thuật toán hệ thống',
+            source: 'FALLBACK'
+          }));
+          setAiRecommendations(smartFallback);
+        }
+      } finally {
+        if (!cancelled) setIsAiRecLoading(false);
+      }
+    };
+
+    fetchRecommendations();
+    return () => { cancelled = true; };
+  }, [currentUser?.id, moviesList]);
+
+  const handleAiRecClick = (movie) => {
+    const movieId = movie?.backendId || movie?.movieId || movie?.id;
+    if (currentUser?.id && movieId) {
+      recommendationService.recordClick({
+        setId: aiRecMetadata.setId || 1,
+        movieId,
+        userId: currentUser.id
+      }).catch(() => {});
+    }
+    if (movieId) {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      navigate(`/movies/${movieId}`);
+    }
+  };
+
+  const handleAiRecBook = (movie) => {
+    const movieId = movie?.backendId || movie?.movieId || movie?.id;
+    if (currentUser?.id && movieId) {
+      recommendationService.recordClick({
+        setId: aiRecMetadata.setId || 1,
+        movieId,
+        userId: currentUser.id
+      }).catch(() => {});
+    }
+    if (onBookMovie) {
+      onBookMovie(movie);
+    } else if (movieId) {
+      navigate(`/movies/${movieId}`, { state: { scrollToShowtimes: true } });
+    }
+  };
 
 
   // Hero Banner: Lấy banner ngang của các phim từ API, chỉ lấy 5 phim mới nhất
@@ -574,21 +643,27 @@ export default function HomePage({
     }
   }, []);
 
-  // Curated fallbacks if backend tables are unseeded
-  const effectivePromotions = useMemo(() => {
-    return promotions.length > 0 ? promotions : CURATED_PROMOTIONS;
-  }, [promotions]);
-
   const effectiveFoods = useMemo(() => {
     const list = Array.isArray(foodCatalog)
       ? foodCatalog.filter(item => !item.status || item.status === 'ACTIVE' || item.status === 'LOW_STOCK')
       : [];
+    let combined = [];
     if (list.length > 0) {
-      const existingNames = new Set(list.map(f => (f.name || '').toLowerCase()));
-      const extras = CURATED_FOODS.filter(cf => !existingNames.has(cf.name.toLowerCase()));
-      return [...list, ...extras];
+      const existingIds = new Set(list.map(f => String(f.id)));
+      const existingNames = new Set(list.map(f => (f.name || '').toLowerCase().trim()));
+      const extras = CURATED_FOODS.filter(cf => !existingIds.has(String(cf.id)) && !existingNames.has((cf.name || '').toLowerCase().trim()));
+      combined = [...list, ...extras];
+    } else {
+      combined = CURATED_FOODS;
     }
-    return CURATED_FOODS;
+
+    const seen = new Set();
+    return combined.filter(item => {
+      const idKey = String(item.id);
+      if (seen.has(idKey)) return false;
+      seen.add(idKey);
+      return true;
+    });
   }, [foodCatalog]);
 
   // AI PopBot Chat state
@@ -757,7 +832,7 @@ export default function HomePage({
         const next = [...prev];
         next[next.length - 1] = {
           role: 'bot',
-          text: res?.message || 'Tôi đã tìm thấy thông tin phim phù hợp cho bạn.',
+          text: res?.reply || res?.data?.reply || res?.message || 'Tôi đã tìm thấy thông tin phim phù hợp cho bạn.',
           data: res?.data || null
         };
         return next;
@@ -943,6 +1018,108 @@ export default function HomePage({
             </div>
           )}
         </section>
+
+        {/* ========================================================
+            CINEAI RECOMMENDATIONS SECTION (http://localhost:8032)
+            Personalized / Trending recommendations with AI explanations & CTR tracking
+        ======================================================== */}
+        {aiRecommendations.length > 0 && (
+          <section id="ai-recommendations-section" className="relative rounded-2xl bg-gradient-to-r from-purple-950/25 via-[#0e0e14] to-amber-950/20 border border-white/10 p-5 sm:p-7 shadow-[0_8px_32px_rgba(0,0,0,0.6)] backdrop-blur-md overflow-hidden">
+            {/* Decorative background gradients */}
+            <div className="absolute top-0 right-0 w-80 h-80 bg-purple-600/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
+            <div className="absolute bottom-0 left-0 w-80 h-80 bg-[#F7C600]/10 rounded-full blur-3xl pointer-events-none -ml-20 -mb-20" />
+
+            {/* Header */}
+            <div className="relative flex flex-col sm:flex-row sm:items-end justify-between gap-4 border-b border-white/[0.08] pb-4 mb-5">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center justify-center p-1 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                    <Sparkles className="h-3.5 w-3.5 text-purple-400" />
+                  </span>
+                  <span className="text-[11px] font-black uppercase tracking-[0.18em] bg-gradient-to-r from-purple-400 via-amber-300 to-amber-400 bg-clip-text text-transparent">
+                    CINEAI RECOMMENDATION ENGINE
+                  </span>
+                  {aiRecMetadata.strategy && (
+                    <span className="hidden md:inline-flex text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/5 border border-white/10 text-neutral-400">
+                      Strategy: {aiRecMetadata.strategy}
+                    </span>
+                  )}
+                </div>
+                <h2 className="text-xl sm:text-2xl lg:text-3xl font-black uppercase tracking-tight text-white mt-1.5">
+                  {currentUser?.id ? 'GỢI Ý THÔNG MINH DÀNH CHO BẠN' : 'PHIM THỊNH HÀNH ĐỀ XUẤT BỞI AI'}
+                </h2>
+                <p className="text-xs sm:text-sm text-neutral-400 mt-0.5">
+                  {currentUser?.id
+                    ? 'Được mô hình AI phân tích tự động dựa trên sở thích, đánh giá và lịch sử xem của bạn'
+                    : 'Tuyển tập phim hot nhất phòng vé theo mô hình phân tích thời gian thực'}
+                </p>
+              </div>
+
+              {/* Navigation controls */}
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => scrollAiRec(-1)}
+                  aria-label="Phim trước"
+                  className="w-9 h-9 rounded-full bg-[#0D0D11]/90 hover:bg-[#F7C600] text-white hover:text-black border border-white/10 transition-all flex items-center justify-center cursor-pointer shadow hover:scale-105"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollAiRec(1)}
+                  aria-label="Phim sau"
+                  className="w-9 h-9 rounded-full bg-[#0D0D11]/90 hover:bg-[#F7C600] text-white hover:text-black border border-white/10 transition-all flex items-center justify-center cursor-pointer shadow hover:scale-105"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Recommendation Cards Carousel */}
+            <div
+              ref={aiRecScrollRef}
+              className="relative flex gap-4 sm:gap-5 overflow-x-auto scroll-smooth snap-x snap-mandatory pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            >
+              {aiRecommendations.map((movie, idx) => {
+                const targetId = movie.backendId || movie.movieId || movie.id;
+                return (
+                  <div key={targetId || idx} className="snap-start shrink-0 w-44 sm:w-52 flex flex-col">
+                    {/* Floating AI Rationale Pill */}
+                    <div className="mb-2 min-h-[34px] flex flex-col justify-end">
+                      {movie.reason ? (
+                        <div
+                          title={movie.reason}
+                          className="flex items-center gap-1 text-[10px] text-amber-300 font-medium bg-black/80 px-2 py-1 rounded border border-amber-500/30 truncate"
+                        >
+                          <span className="shrink-0">✨</span>
+                          <span className="truncate">{movie.reason}</span>
+                        </div>
+                      ) : movie.similarity ? (
+                        <div className="flex items-center gap-1 text-[10px] text-purple-300 font-bold bg-purple-950/80 px-2 py-1 rounded border border-purple-500/30">
+                          <span>⚡</span>
+                          <span>Độ khớp: {Math.round(movie.similarity * 100)}%</span>
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-neutral-400 bg-white/5 px-2 py-1 rounded border border-white/10">
+                          🎬 Đề xuất bởi CineAI
+                        </div>
+                      )}
+                    </div>
+
+                    <MovieCard
+                      movie={movie}
+                      onSelect={() => handleAiRecClick(movie)}
+                      onBook={() => handleAiRecBook(movie)}
+                      isWatchlisted={isMovieWatchlisted(movie)}
+                      onToggleWatchlist={handleToggleWatchlist}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
 
         {/* ========================================================
             4. FEATURED MOVIE (BOM TẤN TUẦN NÀY)
@@ -1449,7 +1626,45 @@ export default function HomePage({
                         : 'bg-neutral-900 border border-white/10 text-neutral-200'
                     }`}
                   >
-                    {msg.text}
+                    {msg.role === 'user' ? (
+                      msg.text
+                    ) : (
+                      <ReactMarkdown
+                        components={{
+                          p: ({ children }) => <p className="mb-1.5 last:mb-0 leading-relaxed">{children}</p>,
+                          strong: ({ children }) => <strong className="font-semibold text-purple-300">{children}</strong>,
+                          em: ({ children }) => <em className="italic text-purple-200">{children}</em>,
+                          ul: ({ children }) => <ul className="list-disc pl-4 mb-1.5 space-y-0.5">{children}</ul>,
+                          ol: ({ children }) => <ol className="list-decimal pl-4 mb-1.5 space-y-0.5">{children}</ol>,
+                          li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                          a: ({ href, children }) => (
+                            <a href={href} target="_blank" rel="noreferrer" className="text-purple-400 underline hover:text-purple-300">
+                              {children}
+                            </a>
+                          ),
+                          code: ({ children }) => <code className="bg-white/10 px-1 py-0.5 rounded text-[11px] font-mono">{children}</code>
+                        }}
+                      >
+                        {msg.text}
+                      </ReactMarkdown>
+                    )}
+                    {Array.isArray(msg.data?.movies) && msg.data.movies.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-white/10 flex flex-wrap gap-1.5">
+                        {msg.data.movies.map((m, mIdx) => (
+                          <button
+                            key={mIdx}
+                            onClick={() => {
+                              setChatOpen(false);
+                              onSelectMovie(m.movieId || m.id);
+                            }}
+                            className="px-2 py-1 bg-purple-900/60 hover:bg-purple-800 border border-purple-500/40 text-[10px] text-white rounded transition flex items-center gap-1 cursor-pointer"
+                          >
+                            <span>🎬</span>
+                            <span className="font-semibold truncate max-w-[140px]">{m.title}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

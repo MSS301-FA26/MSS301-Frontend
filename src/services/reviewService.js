@@ -35,5 +35,11 @@ export const reviewService = {
       method: 'POST',
       token,
       body: payload
+    }),
+
+  deleteReview: (token, reviewId) =>
+    request(`/api/v1/reviews/${encodeURIComponent(reviewId)}`, {
+      method: 'DELETE',
+      token
     })
 };

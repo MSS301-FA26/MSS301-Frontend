@@ -1,9 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search, MapPin, Ticket, User, Heart, Compass, Home,
   Building2, ChevronDown, Phone, Settings2, X, ExternalLink, LogOut, Popcorn,
   CalendarDays, Coins, ShieldCheck, Menu, Star, Clock, Check, ArrowRight,
-  Wallet, Sparkles, Film
+  Wallet, Sparkles, Film, AlertCircle, LoaderCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { createPortal } from 'react-dom';
@@ -11,6 +11,7 @@ import { movieService } from '../services/movieService';
 import { loyaltyService } from '../services/loyaltyService';
 import { getStoredAuth } from '../services/authService';
 import { useMovieStore } from '../stores/useMovieStore';
+import { getMovieSearchView } from '../utils/movieSearch';
 
 const CINEMA_IMAGES_MAP = {
   1: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=800&q=80',
@@ -125,47 +126,53 @@ export default function Header({
   }, []);
 
   // Catalog for search suggestions
-  const [suggestionCatalog, setSuggestionCatalog] = useState(null);
+  const [suggestionCatalog, setSuggestionCatalog] = useState([]);
+  const [catalogStatus, setCatalogStatus] = useState('idle');
+  const catalogRequestRef = useRef({ inFlight: false, requestId: 0, mounted: true });
+
+  const loadSuggestionCatalog = useCallback(async () => {
+    if (catalogRequestRef.current.inFlight) return;
+    const requestId = catalogRequestRef.current.requestId + 1;
+    catalogRequestRef.current = { ...catalogRequestRef.current, inFlight: true, requestId };
+    setCatalogStatus('loading');
+
+    try {
+      const list = await movieService.getAllMovies({ size: 100 });
+      if (!catalogRequestRef.current.mounted || catalogRequestRef.current.requestId !== requestId) return;
+      const catalog = Array.isArray(list) ? list : [];
+      setSuggestionCatalog(catalog);
+      setCatalogStatus(catalog.length > 0 ? 'success' : 'empty');
+    } catch {
+      if (!catalogRequestRef.current.mounted || catalogRequestRef.current.requestId !== requestId) return;
+      setCatalogStatus('error');
+    } finally {
+      if (catalogRequestRef.current.requestId === requestId) {
+        catalogRequestRef.current.inFlight = false;
+      }
+    }
+  }, []);
+
   useEffect(() => {
-    if (!searchOverlayOpen || suggestionCatalog !== null) return;
-    let cancelled = false;
-    movieService.searchMovies({ size: 100 })
-      .then((list) => {
-        if (!cancelled) setSuggestionCatalog(Array.isArray(list) ? list : []);
-      })
-      .catch(() => {
-        if (!cancelled) setSuggestionCatalog([]);
-      });
-    return () => { cancelled = true; };
-  }, [searchOverlayOpen, suggestionCatalog]);
+    catalogRequestRef.current.mounted = true;
+    return () => {
+      catalogRequestRef.current.mounted = false;
+      catalogRequestRef.current.requestId += 1;
+      catalogRequestRef.current.inFlight = false;
+    };
+  }, []);
 
-  // Combined movie suggestions
-  const filteredMovies = useMemo(() => {
-    const q = headerQuery.trim().toLowerCase();
-    const source = suggestionCatalog?.length ? suggestionCatalog : (moviesList || []);
-    if (!q) return source.slice(0, 4);
-    return source
-      .filter((m) => m && m.status !== 'INACTIVE' && !m.isInactive)
-      .filter((m) => (
-        (m.title || '').toLowerCase().includes(q)
-        || (m.englishTitle || '').toLowerCase().includes(q)
-        || (m.director || '').toLowerCase().includes(q)
-        || (m.genre || []).some((g) => String(g || '').toLowerCase().includes(q))
-      ))
-      .slice(0, 5);
-  }, [headerQuery, moviesList, suggestionCatalog]);
+  useEffect(() => {
+    const interruptedLoad = catalogStatus === 'loading' && !catalogRequestRef.current.inFlight;
+    if (searchOverlayOpen && (catalogStatus === 'idle' || interruptedLoad)) loadSuggestionCatalog();
+  }, [catalogStatus, loadSuggestionCatalog, searchOverlayOpen]);
 
-  const filteredCinemas = useMemo(() => {
-    const q = headerQuery.trim().toLowerCase();
-    if (!q) return cinemasList.slice(0, 3);
-    return cinemasList.filter(c =>
-      (c.name || '').toLowerCase().includes(q) ||
-      (c.district || '').toLowerCase().includes(q) ||
-      (c.city || '').toLowerCase().includes(q)
-    );
-  }, [headerQuery, cinemasList]);
-
-  const recentSearches = ['Dune 2', 'Mai', 'Oppenheimer', 'IMAX Laser', 'Suất chiếu tối'];
+  const searchView = useMemo(() => getMovieSearchView({
+    status: catalogStatus,
+    catalog: suggestionCatalog,
+    fallbackMovies: moviesList,
+    query: headerQuery,
+  }), [catalogStatus, headerQuery, moviesList, suggestionCatalog]);
+  const visibleMovies = searchView.results.slice(0, 5);
 
   const handleSelectCinema = (c) => {
     setSelectedCinema(c);
@@ -191,6 +198,11 @@ export default function Header({
     if (!q) return;
     setSearchOverlayOpen(false);
     onSearchCommit(q);
+  };
+
+  const viewAllMovies = () => {
+    setSearchOverlayOpen(false);
+    onSearchCommit(headerQuery.trim());
   };
 
   const handleSuggestionClick = (movie) => {
@@ -429,11 +441,11 @@ export default function Header({
                 onClick={() => setSearchOverlayOpen(true)}
                 className="hidden md:flex h-[44px] w-[210px] xl:w-[245px] items-center gap-2 rounded-none border border-white/10 bg-[#09090C] px-3 text-neutral-400 cursor-pointer transition-all duration-150 hover:border-white/20 hover:text-white"
                 id="search-box-trigger"
-                title="Bấm để tìm phim, diễn viên..."
+                title="Tìm kiếm phim theo tên"
               >
                 <Search className="h-3.5 w-3.5 text-neutral-400 shrink-0" />
                 <span className="text-[12.5px] text-neutral-400 font-medium truncate select-none">
-                  {headerQuery ? headerQuery : 'Tìm phim, diễn viên...'}
+                  {headerQuery ? headerQuery : 'Tìm kiếm phim theo tên...'}
                 </span>
               </div>
             )}
@@ -550,14 +562,16 @@ export default function Header({
               </div>
             )}
 
-            {/* Mobile Hamburger Menu button */}
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="flex lg:hidden h-[42px] w-[42px] items-center justify-center rounded-none border border-white/10 bg-[#09090C] text-neutral-300 hover:text-white ml-0.5"
-              aria-label="Menu"
-            >
-              <Menu className="h-4.5 w-4.5" />
-            </button>
+            {/* Mobile Hamburger Menu button - Hidden for staff role */}
+            {!isStaffRole && (
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="flex lg:hidden h-[42px] w-[42px] items-center justify-center rounded-none border border-white/10 bg-[#09090C] text-neutral-300 hover:text-white ml-0.5"
+                aria-label="Menu"
+              >
+                <Menu className="h-4.5 w-4.5" />
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -722,7 +736,7 @@ export default function Header({
                   <input
                     type="text"
                     autoFocus
-                    placeholder="Tìm phim, diễn viên, đạo diễn, rạp chiếu..."
+                    placeholder="Tìm kiếm phim theo tên..."
                     value={headerQuery}
                     onChange={(e) => setHeaderQuery(e.target.value)}
                     onKeyDown={(e) => {
@@ -741,10 +755,11 @@ export default function Header({
                   </button>
                 </div>
 
+                {searchView.suggestions.length > 0 && (
                 <div className="border-b border-white/5 bg-black/40 px-5 py-2.5">
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Gợi ý:</span>
-                    {recentSearches.map((tag) => (
+                    {searchView.suggestions.map((tag) => (
                       <button
                         key={tag}
                         onClick={() => { setHeaderQuery(tag); commitSearch(tag); }}
@@ -755,21 +770,60 @@ export default function Header({
                     ))}
                   </div>
                 </div>
+                )}
 
                 <div className="max-h-[55vh] overflow-y-auto p-5 space-y-5 [scrollbar-width:thin]">
                   <div>
+                    {searchView.showResultCount && (
                     <div className="flex items-center justify-between mb-2.5">
                       <h4 className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-widest text-[#F7C600]">
                         <Film className="h-3 w-3" />
-                        <span>PHIM ({filteredMovies.length})</span>
+                        <span>PHIM ({searchView.resultCount})</span>
                       </h4>
-                      <button onClick={() => commitSearch()} className="text-[11px] text-neutral-400 hover:text-[#F7C600]">
+                      <button onClick={viewAllMovies} className="text-[11px] text-neutral-400 hover:text-[#F7C600]">
                         Xem tất cả →
                       </button>
                     </div>
+                    )}
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {filteredMovies.map((movie) => (
+                      {searchView.kind === 'loading' && (
+                        <div className="col-span-full flex min-h-24 items-center justify-center gap-2 text-xs text-neutral-300" role="status">
+                          <LoaderCircle className="h-4 w-4 animate-spin text-[#F7C600]" aria-hidden="true" />
+                          <span>Đang tải danh sách phim...</span>
+                        </div>
+                      )}
+                      {searchView.kind === 'error' && (
+                        <div className="col-span-full flex min-h-32 flex-col items-center justify-center text-center" role="alert">
+                          <AlertCircle className="mb-2 h-5 w-5 text-[#F7C600]" aria-hidden="true" />
+                          <p className="text-sm font-bold text-white">Chưa thể tải danh sách phim</p>
+                          <p className="mt-1 text-xs text-neutral-400">Vui lòng thử lại sau ít phút.</p>
+                          <button
+                            type="button"
+                            onClick={loadSuggestionCatalog}
+                            disabled={catalogStatus === 'loading'}
+                            className="mt-3 border border-[#F7C600]/50 px-3 py-1.5 text-xs font-bold text-[#F7C600] transition-colors hover:bg-[#F7C600]/10 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Thử lại
+                          </button>
+                        </div>
+                      )}
+                      {searchView.kind === 'fallback' && (
+                        <div className="col-span-full flex items-center justify-between gap-3 text-xs text-amber-300" role="status">
+                          <span className="flex items-center gap-1.5">
+                            <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                            Danh sách phim có thể chưa đầy đủ.
+                          </span>
+                          <button type="button" onClick={loadSuggestionCatalog} className="shrink-0 font-bold text-[#F7C600] hover:underline">Thử lại</button>
+                        </div>
+                      )}
+                      {searchView.kind === 'empty' && (
+                        <p className="col-span-full min-h-24 content-center text-center text-xs text-neutral-400" role="status">Hiện chưa có phim để hiển thị.</p>
+                      )}
+                      {searchView.noResults && (
+                        <p className="col-span-full min-h-24 content-center text-center text-xs text-neutral-400" role="status">Không tìm thấy phim phù hợp với từ khóa của bạn.</p>
+                      )}
+                      {visibleMovies.map((movie) => (
                         <div
                           key={movie.backendId || movie.id}
                           onClick={() => handleSuggestionClick(movie)}
@@ -788,36 +842,17 @@ export default function Header({
                           </div>
                         </div>
                       ))}
+                      {searchView.resultCount > visibleMovies.length && (
+                        <p className="col-span-full text-right text-[10px] text-neutral-500">Đang hiển thị 5 kết quả đầu tiên.</p>
+                      )}
                     </div>
                   </div>
 
-                  <div>
-                    <h4 className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-widest text-purple-400 mb-2.5">
-                      <Building2 className="h-3 w-3" />
-                      <span>RẠP CINEPREMIER</span>
-                    </h4>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {filteredCinemas.map((c) => (
-                        <div
-                          key={c.id}
-                          onClick={() => { handleSelectCinema(c); setSearchOverlayOpen(false); }}
-                          className="flex items-center justify-between rounded-none border border-white/5 bg-white/[0.02] p-2.5 hover:border-purple-400/40 hover:bg-white/[0.06] cursor-pointer"
-                        >
-                          <div className="min-w-0">
-                            <p className="text-xs font-bold text-white truncate">{c.name}</p>
-                            <p className="text-[9.5px] text-neutral-400 truncate">{c.address}</p>
-                          </div>
-                          <span className="text-[9px] font-bold text-emerald-400 shrink-0 ml-2">Mở cửa</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
                 </div>
 
                 <div className="border-t border-white/10 bg-black/60 px-5 py-2.5 flex items-center justify-between text-[11px] text-neutral-400">
                   <span>Nhấn <span className="font-mono text-white">Enter ↵</span> để tìm kiếm</span>
-                  <button onClick={() => commitSearch()} className="font-bold text-[#F7C600] hover:underline flex items-center gap-1">
+                  <button onClick={viewAllMovies} className="font-bold text-[#F7C600] hover:underline flex items-center gap-1">
                     <span>Xem toàn bộ kết quả</span>
                     <ArrowRight className="h-3 w-3" />
                   </button>
@@ -952,7 +987,7 @@ export default function Header({
       {/* ========================================================
           MOBILE NAVIGATION DRAWER
       ======================================================== */}
-      {typeof document !== 'undefined' && createPortal(
+      {!isStaffRole && typeof document !== 'undefined' && createPortal(
         <AnimatePresence>
           {mobileMenuOpen && (
             <motion.div

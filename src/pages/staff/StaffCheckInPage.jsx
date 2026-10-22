@@ -14,15 +14,26 @@ import {
   Search,
   ShieldCheck,
   Ticket,
-  Wallet,
   XCircle,
+  LogOut,
+  MapPin,
+  ChevronDown,
+  User,
+  Building2,
+  Sparkles,
+  Popcorn,
+  X,
 } from 'lucide-react';
 import jsQR from 'jsqr';
 import { motion } from 'motion/react';
-import { getStoredAuth } from '../../services/authService';
+import { useNavigate } from 'react-router-dom';
+import { clearAuthSession, getStoredAuth, authService, request } from '../../services/authService';
+import { movieService } from '../../services/movieService';
 import { staffService } from '../../services/staffService';
 import { useAuthStore } from '../../stores/useAuthStore';
-import StaffWalletPanel from './StaffWalletPanel';
+import { useUiStore } from '../../stores/useUiStore';
+import StaffFoodCheckInPanel from './StaffFoodCheckInPanel';
+import TicketPrintModal from './TicketPrintModal';
 
 const FOOD_PAGE_SIZE = 10;
 const BOOKINGS_PAGE_SIZE = 8;
@@ -69,8 +80,9 @@ const getCheckInOpenAt = (booking) => {
 };
 
 const isShowtimeOver = (booking) => {
-  if (!booking?.showtimeEnd) return false;
-  const endTime = new Date(booking.showtimeEnd);
+  const effectiveEnd = booking?.showtimeEnd || (booking?.showtimeStart ? new Date(new Date(booking.showtimeStart).getTime() + 135 * 60000).toISOString() : null);
+  if (!effectiveEnd) return false;
+  const endTime = new Date(effectiveEnd);
   if (Number.isNaN(endTime.getTime())) return false;
   return Date.now() > endTime.getTime();
 };
@@ -139,7 +151,18 @@ const TICKET_TYPE_BADGES = {
 
 const getTicketTypeBadge = (ticketType) => TICKET_TYPE_BADGES[String(ticketType || 'ADULT').toUpperCase()] || TICKET_TYPE_BADGES.ADULT;
 
-function ResultCard({ result, selectedTicketCodes = [], onToggleSeat, onConfirmSeats, onConfirmFood, isCheckingIn, onOpenCounterSale }) {
+function ResultCard({
+  result,
+  selectedTicketCodes = [],
+  onToggleSeat,
+  onConfirmSeats,
+  onConfirmFood,
+  isCheckingIn,
+  onOpenCounterSale,
+  assignedCinemaId,
+  activeCinema,
+  onPrintTickets,
+}) {
   if (!result) {
     return (
       <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-gradient-to-b from-[#0c0e12] to-[#050608] p-6 text-center shadow-xl">
@@ -158,12 +181,15 @@ function ResultCard({ result, selectedTicketCodes = [], onToggleSeat, onConfirmS
   const color = result.type === 'success' ? 'text-emerald-300' : result.type === 'warning' ? 'text-purple-300' : 'text-rose-300';
   const booking = result.booking;
   const foodOrder = result.foodOrder;
+  const bookingCinemaMismatch = Boolean(booking?.cinemaId && assignedCinemaId && Number(booking.cinemaId) !== Number(assignedCinemaId));
+  const foodCinemaMismatch = Boolean(foodOrder?.cinemaId && assignedCinemaId && Number(foodOrder.cinemaId) !== Number(assignedCinemaId));
   const seats = Array.isArray(booking?.seats) ? booking.seats : [];
   const hasSeatTickets = seats.some((seat) => seat.ticketCode);
   const showtimeOver = isShowtimeOver(booking);
-  const canPartialCheckIn = booking && booking.status === 'PAID' && isBookingCheckInOpen(booking) && hasSeatTickets;
+  const canPartialCheckIn = booking && booking.status === 'PAID' && isBookingCheckInOpen(booking) && hasSeatTickets && !bookingCinemaMismatch;
   const canSellFood = booking && ['PAID', 'USED'].includes(booking.status)
-    && (!booking.showtimeEnd || new Date(booking.showtimeEnd).getTime() > Date.now());
+    && (!booking.showtimeEnd || new Date(booking.showtimeEnd).getTime() > Date.now())
+    && !bookingCinemaMismatch;
 
   return (
     <motion.div
@@ -202,15 +228,23 @@ function ResultCard({ result, selectedTicketCodes = [], onToggleSeat, onConfirmS
             ))}
           </div>
           <div className="flex items-center justify-between border-t border-white/10 pt-3">
-            <span className="text-[9px] font-black uppercase tracking-widest text-neutral-500">Tổng thanh toán</span>
+            <span className="text-[9px] font-black uppercase tracking-widest text-neutral-500">Tổng tiền</span>
             <strong className="font-mono text-lg text-white">{formatCurrency(foodOrder.totalAmount)}</strong>
           </div>
           {foodOrder.pickedUpAt && <p className="mt-3 text-[10px] text-neutral-500">Đã giao lúc {formatDateTime(foodOrder.pickedUpAt)}</p>}
+          {foodCinemaMismatch && (
+            <div className="mt-3 rounded-xl border border-rose-500/40 bg-rose-500/15 p-3 text-rose-300">
+              <p className="text-xs font-black uppercase">⚠️ Đơn bắp nước không thuộc rạp này</p>
+              <p className="mt-1 text-[11px] text-rose-200">
+                Đơn được đặt tại rạp {foodOrder.cinemaName || `#${foodOrder.cinemaId}`}, không thuộc rạp {activeCinema?.name}.
+              </p>
+            </div>
+          )}
           {foodOrder.status === 'PAID' && (
             <button
               type="button"
               onClick={() => onConfirmFood?.(foodOrder.orderCode)}
-              disabled={isCheckingIn}
+              disabled={isCheckingIn || foodCinemaMismatch}
               className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 whitespace-nowrap bg-emerald-400 px-5 text-[10px] font-black uppercase tracking-[0.16em] text-black transition-colors hover:bg-emerald-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white active:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isCheckingIn ? <RefreshCw className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />} Xác nhận giao món
@@ -229,19 +263,45 @@ function ResultCard({ result, selectedTicketCodes = [], onToggleSeat, onConfirmS
             <StatusBadge status={booking.status} />
           </div>
           <div className="grid gap-3 text-xs text-neutral-400 sm:grid-cols-2">
-            <div><span className="font-black text-white">Khách:</span> {booking.customerName || '—'}</div>
-            <div><span className="font-black text-white">SĐT:</span> {booking.customerPhone || '—'}</div>
+            <div><span className="font-black text-white">Khách:</span> {booking.customerName || booking.userFullName || booking.customerEmail || booking.userEmail || '—'}</div>
+            <div><span className="font-black text-white">SĐT:</span> {booking.customerPhone || booking.userPhone || (booking.userEmail && booking.userEmail !== booking.customerName ? booking.userEmail : '—')}</div>
             <div><span className="font-black text-white">Phim:</span> {booking.movieTitle}</div>
             <div><span className="font-black text-white">Phòng:</span> {booking.roomName}</div>
+            <div>
+              <span className="font-black text-white">Rạp mua vé:</span>{' '}
+              <span className={bookingCinemaMismatch ? 'font-bold text-rose-400' : 'text-emerald-300 font-bold'}>
+                {booking.cinemaName || (booking.cinemaId ? `Rạp #${booking.cinemaId}` : (activeCinema?.name || '—'))}
+              </span>
+            </div>
             <div><span className="font-black text-white">Giờ chiếu:</span> {formatDateTime(booking.showtimeStart)}</div>
-            <div><span className="font-black text-white">Kết thúc:</span> {booking.showtimeEnd ? formatDateTime(booking.showtimeEnd) : '—'}</div>
+            <div><span className="font-black text-white">Kết thúc:</span> {formatDateTime(booking.showtimeEnd || (booking.showtimeStart ? new Date(new Date(booking.showtimeStart).getTime() + 135 * 60000) : null))}</div>
             <div><span className="font-black text-white">Tổng tiền:</span> {Number(booking.totalAmount || 0).toLocaleString('vi-VN')}đ</div>
           </div>
 
+          {bookingCinemaMismatch && (
+            <div className="rounded-xl border border-rose-500/40 bg-rose-500/15 p-3.5 text-rose-300">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="h-5 w-5 shrink-0 text-rose-400 mt-0.5" />
+                <div>
+                  <p className="text-xs font-black uppercase tracking-wider text-rose-300">
+                    Vé không thuộc rạp được phân công
+                  </p>
+                  <p className="mt-1 text-[11px] leading-5 text-rose-200">
+                    Khách mua vé tại: <strong>{booking.cinemaName || `Rạp #${booking.cinemaId}`}</strong>.
+                    <br />
+                    Ca trực của bạn: <strong>{activeCinema?.name}</strong>.
+                    <br />
+                    Nhân viên chỉ được phép check-in cho khách mua vé tại rạp bạn đang trực. Vui lòng hướng dẫn khách đến đúng rạp đã đặt vé.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Showtime timeline bar */}
-          {booking.showtimeStart && booking.showtimeEnd && (() => {
+          {(booking.showtimeStart && (booking.showtimeEnd || booking.showtimeStart)) && (() => {
             const start = new Date(booking.showtimeStart);
-            const end = new Date(booking.showtimeEnd);
+            const end = new Date(booking.showtimeEnd || (start.getTime() + 135 * 60000));
             const now = Date.now();
             const totalMs = end.getTime() - start.getTime();
             const elapsedMs = Math.min(Math.max(now - start.getTime(), 0), totalMs);
@@ -323,11 +383,10 @@ function ResultCard({ result, selectedTicketCodes = [], onToggleSeat, onConfirmS
                       <div key={i} className="grid grid-cols-[1fr_auto_auto_auto] gap-x-3 items-center py-1.5 border border-neutral-900 bg-[#0a0a0a] px-2">
                         <div className="min-w-0">
                           <span className="text-[11px] font-black text-white font-mono">{row.label}</span>
-                          <span className={`ml-1.5 text-[8px] font-bold uppercase px-1 py-0.5 border ${
-                            row.type === 'STUDENT' ? 'border-sky-500/30 text-sky-400 bg-sky-500/10'
-                            : row.type === 'CHILD' ? 'border-amber-500/30 text-amber-400 bg-amber-500/10'
-                            : 'border-neutral-700 text-neutral-400 bg-neutral-900'
-                          }`}>
+                          <span className={`ml-1.5 text-[8px] font-bold uppercase px-1 py-0.5 border ${row.type === 'STUDENT' ? 'border-sky-500/30 text-sky-400 bg-sky-500/10'
+                              : row.type === 'CHILD' ? 'border-amber-500/30 text-amber-400 bg-amber-500/10'
+                                : 'border-neutral-700 text-neutral-400 bg-neutral-900'
+                            }`}>
                             {TICKET_TYPE_LABELS[row.type?.toUpperCase()] || 'Người lớn'}
                           </span>
                         </div>
@@ -421,15 +480,14 @@ function ResultCard({ result, selectedTicketCodes = [], onToggleSeat, onConfirmS
                   return (
                     <label
                       key={seat.ticketCode || seat.seatId}
-                      className={`flex items-center gap-3 border bg-[#070707] px-3 py-2 ${
-                        isCheckedIn
+                      className={`flex items-center gap-3 border bg-[#070707] px-3 py-2 ${isCheckedIn
                           ? 'border-emerald-800/40 opacity-70'
                           : showtimeOver
                             ? 'border-rose-900/40 opacity-60 cursor-not-allowed'
                             : selectable
                               ? 'border-neutral-800 cursor-pointer hover:border-emerald-400/50'
                               : 'border-neutral-800 opacity-80'
-                      }`}
+                        }`}
                     >
                       <input
                         type="checkbox"
@@ -484,9 +542,14 @@ function ResultCard({ result, selectedTicketCodes = [], onToggleSeat, onConfirmS
         </div>
       )}
 
-      {result.type === 'success' && (
-        <button type="button" className="mt-5 flex w-full items-center justify-center gap-2 border border-emerald-400/40 bg-emerald-400 px-4 py-3 text-[9px] font-black uppercase tracking-widest text-black transition hover:bg-emerald-300">
-          <Printer className="h-3.5 w-3.5" /> In vé vào cửa
+      {booking && (result.type === 'success' || ['PAID', 'USED'].includes(booking.status)) && (
+        <button
+          type="button"
+          onClick={() => onPrintTickets?.(booking)}
+          className="mt-5 flex w-full items-center justify-center gap-2 border border-emerald-400/40 bg-emerald-400 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-black transition hover:bg-emerald-300 active:bg-emerald-500 shadow-[0_4px_20px_rgba(16,185,129,0.3)] cursor-pointer"
+          title="In vé giấy vào cửa phòng chiếu cho khách"
+        >
+          <Printer className="h-4 w-4" /> In vé vào cửa
         </button>
       )}
     </motion.div>
@@ -494,8 +557,30 @@ function ResultCard({ result, selectedTicketCodes = [], onToggleSeat, onConfirmS
 }
 
 export default function StaffCheckInPage() {
+  const navigate = useNavigate();
+  const showToast = useUiStore((state) => state.showToast);
   const currentUser = useAuthStore((state) => state.currentUser);
-  const [activeSection, setActiveSection] = useState('checkin'); // 'checkin' | 'wallet'
+  const [cinemas, setCinemas] = useState([]);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  useEffect(() => {
+    if (!showLogoutModal) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && !isLoggingOut) {
+        setShowLogoutModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showLogoutModal, isLoggingOut]);
+
+  // Staff chỉ được làm việc ở 1 rạp duy nhất theo phân công của hệ thống
+  const assignedCinemaId = useMemo(() => {
+    return currentUser?.cinemaId ? Number(currentUser.cinemaId) : 5;
+  }, [currentUser?.cinemaId]);
+
+  const [activeSection, setActiveSection] = useState('checkin'); // 'checkin' | 'fnb'
   const [qrCode, setQrCode] = useState('');
   const [bookingCode, setBookingCode] = useState('');
   const [result, setResult] = useState(null);
@@ -533,31 +618,70 @@ export default function StaffCheckInPage() {
   const [counterSaleMessage, setCounterSaleMessage] = useState('');
   const [cashGiven, setCashGiven] = useState(''); // tiền khách đưa (trống = thu đúng số)
   const [counterSaleReceipt, setCounterSaleReceipt] = useState(null); // biên lai sau khi thu
-  const [pendingWalletCount, setPendingWalletCount] = useState(0);
+  const [pendingFnbCount, setPendingFnbCount] = useState(0);
+  const [printTicketsBooking, setPrintTicketsBooking] = useState(null);
   const qrVideoRef = useRef(null);
   const qrCanvasRef = useRef(null);
   const qrStreamRef = useRef(null);
   const qrScanTimerRef = useRef(null);
   const lastScannedQrRef = useRef('');
 
-  const checkPendingWallet = useCallback(async () => {
-    const { accessToken } = getStoredAuth();
-    if (!accessToken) return;
-    try {
-      const data = await staffService.getWalletDashboard(accessToken);
-      if (data && typeof data.pendingWithdrawalsCount === 'number') {
-        setPendingWalletCount(data.pendingWithdrawalsCount);
-      }
-    } catch (e) {
-      // ignore silently
-    }
+  // Tải danh sách rạp để hiển thị thông tin rạp trực
+  useEffect(() => {
+    movieService.getPublicCinemas?.()
+      .then((res) => {
+        const list = Array.isArray(res) ? res : (res?.data || []);
+        const active = list.filter((c) => !c.status || c.status === 'ACTIVE');
+        setCinemas(active);
+      })
+      .catch((err) => {
+        console.warn('Lỗi tải danh sách rạp:', err);
+      });
   }, []);
+
+  const activeCinema = useMemo(() => {
+    if (cinemas.length === 0) {
+      return {
+        id: assignedCinemaId,
+        name: 'CinemaAI Dragon City',
+        address: 'Tầng 5, Vincom Plaza Ngô Quyền, 910A Ngô Quyền, Q. Sơn Trà, Đà Nẵng',
+      };
+    }
+    const found = cinemas.find((c) => Number(c.id) === Number(assignedCinemaId));
+    return found || cinemas.find((c) => Number(c.id) === 5) || cinemas[0];
+  }, [cinemas, assignedCinemaId]);
+
+  const handleStaffLogout = async () => {
+    setIsLoggingOut(true);
+    const { refreshToken } = getStoredAuth();
+    if (refreshToken) {
+      try {
+        await authService.logout(refreshToken);
+      } catch (error) {
+        console.warn('Backend staff logout warning:', error);
+      }
+    }
+    clearAuthSession();
+    useAuthStore.getState().clearAuth();
+    useAuthStore.getState().setIsAuthReady(true);
+    showToast('Đã kết thúc ca trực và đăng xuất khỏi hệ thống Staff.');
+    setShowLogoutModal(false);
+    setIsLoggingOut(false);
+    navigate('/');
+  };
 
   const pendingCheckinCount = useMemo(() => {
     return (failedRefunds || []).filter((r) => r.status === 'PENDING' || !r.status).length;
   }, [failedRefunds]);
 
-  const visibleBookings = showtimeBookings.length > 0 ? showtimeBookings : recentBookings;
+  const allRawBookings = showtimeBookings.length > 0 ? showtimeBookings : recentBookings;
+  // Booking vừa tra cứu/check-in chỉ lấy bên trong rạp mà staff làm việc, được phân công
+  const visibleBookings = useMemo(() => {
+    return allRawBookings.filter((booking) => {
+      if (!booking.cinemaId) return true;
+      return Number(booking.cinemaId) === Number(assignedCinemaId);
+    });
+  }, [allRawBookings, assignedCinemaId]);
   const isShowingShowtimeBookings = showtimeBookings.length > 0;
 
   // Phân trang client-side cho bảng booking (cùng pattern với danh sách bắp nước)
@@ -704,6 +828,10 @@ export default function StaffCheckInPage() {
 
   const rememberBooking = (booking) => {
     if (!booking?.id) return;
+    // Chỉ ghi nhớ booking thuộc đúng rạp được phân công
+    if (booking.cinemaId && Number(booking.cinemaId) !== Number(assignedCinemaId)) {
+      return;
+    }
     setShowtimeBookings((current) => current.map((item) => (
       String(item.id) === String(booking.id) ? booking : item
     )));
@@ -724,13 +852,19 @@ export default function StaffCheckInPage() {
     setRecentBookingsError('');
     try {
       const bookings = await staffService.getRecentStaffCheckInBookings(token, RECENT_BOOKINGS_LIMIT);
-      const source = Array.isArray(bookings) ? bookings : [];
-      const merged = seedBooking
-        ? [seedBooking, ...source.filter((item) => String(item.id) !== String(seedBooking.id))]
+      // Chỉ lấy booking bên trong rạp mà staff làm việc, được phân công
+      const source = (Array.isArray(bookings) ? bookings : []).filter((item) => (
+        !item.cinemaId || Number(item.cinemaId) === Number(assignedCinemaId)
+      ));
+      const validSeed = seedBooking && (!seedBooking.cinemaId || Number(seedBooking.cinemaId) === Number(assignedCinemaId)) ? seedBooking : null;
+      const merged = validSeed
+        ? [validSeed, ...source.filter((item) => String(item.id) !== String(validSeed.id))]
         : source;
       setRecentBookings(merged.slice(0, RECENT_BOOKINGS_LIMIT));
     } catch (error) {
-      if (seedBooking) rememberBooking(seedBooking);
+      if (seedBooking && (!seedBooking.cinemaId || Number(seedBooking.cinemaId) === Number(assignedCinemaId))) {
+        rememberBooking(seedBooking);
+      }
       setRecentBookingsError(error.message || 'Không thể tải booking vừa tra cứu/check-in từ API.');
     } finally {
       setIsLoadingRecentBookings(false);
@@ -738,23 +872,31 @@ export default function StaffCheckInPage() {
   };
 
   const loadStaffFoods = async () => {
-    const token = getToken();
-    if (!token) {
-      setStaffFoodError('Vui lòng đăng nhập bằng tài khoản STAFF.');
-      return;
-    }
-
     setIsLoadingStaffFoods(true);
     setStaffFoodError('');
     try {
+      const token = getToken();
       const [items, combos] = await Promise.all([
-        staffService.getStaffFoodItems(token),
-        staffService.getStaffFoodCombos(token),
+        staffService.getStaffFoodItems(token).catch(() => movieService.getFoodItems()),
+        staffService.getStaffFoodCombos(token).catch(() => movieService.getFoodCombos()),
       ]);
-      setStaffFoodItems(Array.isArray(items) ? items : []);
-      setStaffFoodCombos(Array.isArray(combos) ? combos : []);
+      const rawItems = Array.isArray(items) ? items : (items?.items || items?.content || []);
+      const rawCombos = Array.isArray(combos) ? combos : (combos?.combos || combos?.content || []);
+
+      const itemsWithStatus = rawItems.map((item) => ({
+        ...item,
+        status: item.status || 'ACTIVE',
+      }));
+
+      const combosWithStatus = rawCombos.map((combo) => ({
+        ...combo,
+        status: combo.status || 'ACTIVE',
+      }));
+
+      setStaffFoodItems(itemsWithStatus);
+      setStaffFoodCombos(combosWithStatus);
     } catch (error) {
-      setStaffFoodError(error.message || 'Không thể tải danh sách bắp nước.');
+      setStaffFoodError(error.message || 'Không thể tải danh sách bắp nước của rạp.');
     } finally {
       setIsLoadingStaffFoods(false);
     }
@@ -812,27 +954,22 @@ export default function StaffCheckInPage() {
   };
 
   const updateStaffFoodStatus = async (food, nextStatus) => {
-    const token = getToken();
-    if (!token) {
-      setStaffFoodError('Vui lòng đăng nhập bằng tài khoản STAFF.');
-      return;
-    }
-
     const foodKey = `${food.kind}-${food.id}`;
     setSavingStaffFoodKey(foodKey);
     setStaffFoodError('');
     try {
-      const saved = food.kind === 'combo'
-        ? await staffService.updateStaffFoodComboStatus(token, food.id, nextStatus)
-        : await staffService.updateStaffFoodItemStatus(token, food.id, nextStatus);
-
+      const token = getToken();
       if (food.kind === 'combo') {
-        setStaffFoodCombos((current) => current.map((item) => (item.id === food.id ? saved : item)));
+        await staffService.updateStaffFoodComboStatus(token, food.id, nextStatus);
+        setStaffFoodCombos((current) => current.map((item) => (item.id === food.id ? { ...item, status: nextStatus } : item)));
       } else {
-        setStaffFoodItems((current) => current.map((item) => (item.id === food.id ? saved : item)));
+        await staffService.updateStaffFoodItemStatus(token, food.id, nextStatus);
+        setStaffFoodItems((current) => current.map((item) => (item.id === food.id ? { ...item, status: nextStatus } : item)));
       }
+      showToast(`Đã đổi trạng thái ${food.name} tại rạp ${activeCinema?.name || ''} thành "${getFoodStatusMeta(nextStatus).label}".`);
     } catch (error) {
       setStaffFoodError(error.message || 'Không thể đổi trạng thái món.');
+      showToast(`Lỗi cập nhật món: ${error.message || 'Không thể lưu vào hệ thống'}`, 'error');
     } finally {
       setSavingStaffFoodKey('');
     }
@@ -842,14 +979,7 @@ export default function StaffCheckInPage() {
     loadRecentBookings();
     loadStaffFoods();
     loadFailedRefunds();
-    checkPendingWallet();
-
-    const interval = setInterval(() => {
-      checkPendingWallet();
-    }, 15000);
-
-    return () => clearInterval(interval);
-  }, [checkPendingWallet]);
+  }, []);
 
   useEffect(() => () => stopQrScanner(), []);
 
@@ -874,13 +1004,18 @@ export default function StaffCheckInPage() {
       if (isFoodLookup) {
         const foodOrder = await staffService.lookupFoodOrder(token, lookupValue);
         const pickedUp = foodOrder.status === 'PICKED_UP';
+        const isWrongCinema = foodOrder.cinemaId && Number(foodOrder.cinemaId) !== Number(assignedCinemaId);
         setSelectedTicketCodes([]);
         setResult({
-          type: pickedUp ? 'success' : 'warning',
-          title: pickedUp ? 'Đơn đã được giao trước đó.' : 'Đơn đã thanh toán, sẵn sàng giao.',
-          message: pickedUp
-            ? 'Không giao lại đơn này. Kiểm tra thời gian nhận món bên dưới.'
-            : 'Đối chiếu món với khách, sau đó chọn “Xác nhận giao món”.',
+          type: isWrongCinema ? 'error' : pickedUp ? 'success' : 'warning',
+          title: isWrongCinema
+            ? 'Đơn bắp nước thuộc rạp khác'
+            : pickedUp ? 'Đơn đã được giao trước đó.' : 'Đơn đã thanh toán, sẵn sàng giao.',
+          message: isWrongCinema
+            ? `Đơn này được đặt tại rạp ${foodOrder.cinemaName || `#${foodOrder.cinemaId}`}. Bạn đang làm việc tại rạp ${activeCinema.name}. Không thể giao món.`
+            : pickedUp
+              ? 'Không giao lại đơn này. Kiểm tra thời gian nhận món bên dưới.'
+              : 'Đối chiếu món với khách, sau đó chọn “Xác nhận giao món”.',
           foodOrder,
         });
         return foodOrder;
@@ -890,6 +1025,18 @@ export default function StaffCheckInPage() {
         qrCode: preferQr ? parsedQrInput.qrCode : '',
         bookingCode: preferQr ? parsedQrInput.bookingCode : trimmedCode,
       });
+
+      // Kiểm tra rạp phân công: nếu vé thuộc rạp khác thì thông báo lỗi ngay
+      if (booking?.cinemaId && Number(booking.cinemaId) !== Number(assignedCinemaId)) {
+        setResult({
+          type: 'error',
+          title: 'Vé thuộc rạp khác — Không thể check-in',
+          message: `Khách mua vé tại rạp ${booking.cinemaName || `#${booking.cinemaId}`}. Bạn đang làm việc tại rạp ${activeCinema.name}. Nhân viên chỉ được soát vé cho khách mua tại đúng rạp được phân công.`,
+          booking,
+        });
+        return booking;
+      }
+
       rememberBooking(booking);
       // Quét QR của một ghế cụ thể → tự tick ghế đó để staff xác nhận nhanh
       const seatQrMatch = String(parsedQrInput.qrCode || '').match(/^CINEAI:SEAT:([^:]+):/i);
@@ -923,10 +1070,17 @@ export default function StaffCheckInPage() {
       void loadRecentBookings(booking);
       return booking;
     } catch (error) {
+      const isCinemaDenied = String(error.message).includes('Rạp được phân công') ||
+        String(error.message).includes('quyền thao tác trên dữ liệu của rạp khác') ||
+        error?.status === 403;
       setResult({
         type: 'error',
-        title: isFoodLookup ? 'Không tìm thấy đơn bắp nước.' : 'Không tìm thấy booking.',
-        message: error.message || (isFoodLookup ? 'Không thể tra cứu đơn bắp nước từ hệ thống.' : 'Không thể tra cứu booking từ hệ thống.'),
+        title: isCinemaDenied
+          ? 'Không có quyền thao tác trên rạp khác'
+          : isFoodLookup ? 'Không tìm thấy đơn bắp nước.' : 'Không thể check-in vé này.',
+        message: isCinemaDenied
+          ? `Vé/Đơn này thuộc rạp khác! Bạn chỉ có quyền soát vé tại rạp được phân công (${activeCinema.name}). Vui lòng hướng dẫn khách đến đúng rạp.`
+          : error.message || (isFoodLookup ? 'Không thể tra cứu đơn bắp nước từ hệ thống.' : 'Không thể tra cứu booking từ hệ thống.'),
       });
       return null;
     } finally {
@@ -948,6 +1102,16 @@ export default function StaffCheckInPage() {
     const booking = result?.booking;
     if (!token || !booking?.bookingCode || selectedTicketCodes.length === 0) return;
 
+    if (booking?.cinemaId && Number(booking.cinemaId) !== Number(assignedCinemaId)) {
+      setResult((current) => ({
+        type: 'error',
+        title: 'Không thể check-in vé rạp khác.',
+        message: `Vé này thuộc rạp ${booking.cinemaName || `#${booking.cinemaId}`}, bạn chỉ được soát vé tại ${activeCinema.name}.`,
+        booking: current?.booking || null,
+      }));
+      return;
+    }
+
     setIsCheckingIn(true);
     try {
       const updated = await staffService.checkInStaffSeats(token, {
@@ -967,10 +1131,15 @@ export default function StaffCheckInPage() {
       });
       void loadRecentBookings(updated);
     } catch (error) {
+      const isCinemaDenied = String(error.message).includes('Rạp được phân công') ||
+        String(error.message).includes('quyền thao tác trên dữ liệu của rạp khác') ||
+        error?.status === 403;
       setResult((current) => ({
         type: 'error',
-        title: 'Không thể check-in ghế.',
-        message: error.message || 'Ghế không đủ điều kiện check-in.',
+        title: isCinemaDenied ? 'Không được phép check-in vé rạp khác' : 'Không thể check-in ghế.',
+        message: isCinemaDenied
+          ? `Vé này thuộc rạp khác! Bạn chỉ có quyền soát vé tại rạp được phân công (${activeCinema.name}).`
+          : error.message || 'Ghế không đủ điều kiện check-in.',
         booking: current?.booking || null,
       }));
     } finally {
@@ -1098,6 +1267,9 @@ export default function StaffCheckInPage() {
           bookingCode: parsedInput.bookingCode,
           qrCode: '',
         });
+        if (foundBooking?.cinemaId && Number(foundBooking.cinemaId) !== Number(assignedCinemaId)) {
+          throw new Error(`Vé này được mua tại rạp ${foundBooking.cinemaName || `#${foundBooking.cinemaId}`}. Bạn đang làm việc tại rạp ${activeCinema.name}. Không thể soát vé rạp khác.`);
+        }
         qrForCheckIn = foundBooking?.qrCode || '';
         if (!qrForCheckIn) {
           throw new Error('Booking này chưa có QR check-in. Vui lòng kiểm tra trạng thái thanh toán.');
@@ -1115,12 +1287,19 @@ export default function StaffCheckInPage() {
       void loadRecentBookings(booking);
     } catch (error) {
       const isFoodPickup = isFoodPickupCode(trimmedQr);
+      const isCinemaDenied = String(error.message).includes('Rạp được phân công') ||
+        String(error.message).includes('quyền thao tác trên dữ liệu của rạp khác') ||
+        error?.status === 403;
       setResult({
         type: 'error',
-        title: isFoodPickup ? 'Không thể xác nhận giao món.' : 'Không thể check-in.',
-        message: isFoodPickup && /already been picked up/i.test(error.message || '')
-          ? 'Đơn này đã được giao trước đó. Không giao món lần hai.'
-          : error.message || (isFoodPickup ? 'Đơn không đủ điều kiện nhận món.' : 'Booking không đủ điều kiện check-in.'),
+        title: isCinemaDenied
+          ? 'Không có quyền thao tác trên rạp khác'
+          : isFoodPickup ? 'Không thể xác nhận giao món.' : 'Không thể check-in.',
+        message: isCinemaDenied
+          ? `Vé/Đơn này thuộc rạp khác! Bạn chỉ có quyền soát vé tại rạp được phân công (${activeCinema.name}). Vui lòng hướng dẫn khách đến đúng rạp.`
+          : isFoodPickup && /already been picked up/i.test(error.message || '')
+            ? 'Đơn này đã được giao trước đó. Không giao món lần hai.'
+            : error.message || (isFoodPickup ? 'Đơn không đủ điều kiện nhận món.' : 'Booking không đủ điều kiện check-in.'),
       });
     } finally {
       setIsCheckingIn(false);
@@ -1160,40 +1339,175 @@ export default function StaffCheckInPage() {
 
       <main className="relative z-10 mx-auto max-w-[1500px] space-y-5 px-4 py-7 sm:px-6 lg:px-8 lg:py-10">
 
-        {/* Tab Navigation */}
-        <div style={{ display: 'flex', gap: 6, padding: 4, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 12, width: 'fit-content' }}>
-          <button
-            onClick={() => setActiveSection('checkin')}
-            style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 800, fontFamily: 'Inter, sans-serif', background: activeSection === 'checkin' ? 'linear-gradient(135deg, #10b981, #059669)' : 'transparent', color: activeSection === 'checkin' ? '#fff' : 'rgba(255,255,255,0.4)', boxShadow: activeSection === 'checkin' ? '0 2px 12px rgba(16,185,129,0.35)' : 'none', transition: 'all 0.2s' }}
-          >
-            <ScanLine size={14} /> Check-in & Vận hành
-            {pendingCheckinCount > 0 && (
-              <span style={{ position: 'absolute', top: -3, right: -3, display: 'flex', height: 10, width: 10 }}>
-                <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: '#ef4444', opacity: 0.75, animation: 'ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite' }} />
-                <span style={{ position: 'relative', borderRadius: '50%', height: 10, width: 10, background: '#f43f5e', border: '1.5px solid #000', boxShadow: '0 0 6px #f43f5e' }} />
-              </span>
+        {/* Top Header: Brand, Cinema Station, Staff Identity & Logout */}
+        <header className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-r from-[#0d0f14]/95 via-[#090b0e]/95 to-[#050608]/95 p-4 sm:p-5 shadow-[0_20px_60px_rgba(0,0,0,0.6)] backdrop-blur-xl">
+          <div className="absolute right-0 top-0 h-full w-1/3 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.12),transparent_70%)] pointer-events-none" />
+          <div className="absolute left-0 bottom-0 h-full w-1/3 bg-[radial-gradient(circle_at_bottom_left,rgba(245,158,11,0.08),transparent_70%)] pointer-events-none" />
+
+          <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            {/* Left: Portal Identity */}
+            <div className="flex items-center gap-3.5">
+              <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-emerald-500/30 bg-emerald-500/10 shadow-[0_0_25px_rgba(16,185,129,0.2)]">
+                <ShieldCheck className="h-6 w-6 text-emerald-400" />
+                <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5">
+                  <span className="absolute inset-0 rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                  <span className="relative h-3.5 w-3.5 rounded-full border-2 border-black bg-emerald-400" />
+                </span>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.2em] text-emerald-400">
+                    CinePremier Staff Portal
+                  </span>
+                  <span className="hidden sm:inline-block text-[9px] font-mono text-neutral-500">
+                    v2.6 · Trực ca
+                  </span>
+                </div>
+                <h1 className="mt-1 text-base sm:text-lg font-black uppercase tracking-wide text-white">
+                  Quầy Soát Vé & Vận Hành Rạp
+                </h1>
+              </div>
+            </div>
+
+            {/* Middle: Cinema Workstation Info (Cố định 1 rạp duy nhất) */}
+            <div className="flex items-center gap-3 rounded-xl border border-amber-500/35 bg-gradient-to-r from-amber-500/10 to-amber-600/5 p-3 sm:px-4 sm:py-2.5 shadow-sm">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400 shadow-inner">
+                <Building2 className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[9px] font-black uppercase tracking-wider text-amber-400">
+                    Rạp được phân công:
+                  </span>
+                  <span className="font-extrabold text-white text-xs truncate">
+                    {activeCinema?.name}
+                  </span>
+
+                </div>
+                {activeCinema?.address && (
+                  <p className="mt-0.5 text-[10px] text-neutral-300 truncate max-w-[280px] sm:max-w-[360px]" title={activeCinema.address}>
+                    <MapPin className="inline h-3 w-3 mr-1 text-amber-400/80 -mt-0.5" />
+                    {activeCinema.address}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Right: Staff Identity & Logout Button */}
+            <div className="flex items-center justify-between sm:justify-end gap-3 border-t border-white/5 pt-3 lg:border-t-0 lg:pt-0">
+              <div className="flex items-center gap-2.5 text-right">
+                <div className="hidden sm:block">
+                  <p className="text-xs font-bold text-white leading-tight">
+                    {currentUser?.fullName || currentUser?.name || 'CinemaAI Staff'}
+                  </p>
+                  <p className="text-[10px] font-mono text-neutral-400 truncate max-w-[160px]">
+                    {currentUser?.email || 'staff@cinemaai.com'}
+                  </p>
+                </div>
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-amber-300">
+                  <User className="h-4 w-4" />
+                </div>
+              </div>
+
+              {/* NÚT ĐĂNG XUẤT */}
+              <button
+                type="button"
+                onClick={() => setShowLogoutModal(true)}
+                className="flex items-center gap-2 rounded-xl border border-rose-500/35 bg-gradient-to-r from-rose-500/15 to-rose-600/10 px-3.5 py-2 text-xs font-black uppercase tracking-wider text-rose-300 transition-all hover:border-rose-500 hover:from-rose-500/25 hover:to-rose-600/20 hover:text-white hover:shadow-[0_0_25px_rgba(244,63,94,0.35)] active:scale-95 cursor-pointer"
+                title="Đăng xuất khỏi ca trực Staff"
+              >
+                <LogOut className="h-4 w-4 text-rose-400" />
+                <span>Đăng xuất</span>
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Tab Navigation (Glassmorphic Segmented Bar) */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
+          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-1.5 shadow-inner">
+            <button
+              onClick={() => setActiveSection('checkin')}
+              className={`relative flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeSection === 'checkin'
+                  ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-[0_4px_16px_rgba(16,185,129,0.35)]'
+                  : 'text-neutral-400 hover:text-white hover:bg-white/5'
+                }`}
+            >
+              <ScanLine className="h-4 w-4" />
+              <span>Soát vé & Vào rạp</span>
+              {pendingCheckinCount > 0 && (
+                <span className="flex h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
+              )}
+            </button>
+
+            <button
+              onClick={() => setActiveSection('fnb')}
+              className={`relative flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeSection === 'fnb'
+                  ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow-[0_4px_16px_rgba(168,85,247,0.35)] font-black'
+                  : 'text-neutral-400 hover:text-white hover:bg-white/5'
+                }`}
+            >
+              <Popcorn className="h-4 w-4 text-purple-300" />
+              <span>Quầy bắp nước & F&B</span>
+              {pendingFnbCount > 0 && (
+                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-400 px-1.5 text-[9px] font-black text-black">
+                  {pendingFnbCount}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Quick Stats Pill */}
+          <div className="hidden md:flex items-center gap-3 text-xs font-mono">
+            {activeSection === 'fnb' ? (
+              <>
+                <div className="flex items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-1.5 text-amber-300">
+                  <Clock3 className="h-3.5 w-3.5" />
+                  <span>F&B chờ giao: <strong>{pendingFnbCount}</strong></span>
+                </div>
+                <div className="flex items-center gap-1.5 rounded-lg border border-purple-500/20 bg-purple-500/5 px-3 py-1.5 text-purple-300">
+                  <Popcorn className="h-3.5 w-3.5" />
+                  <span>Món mở bán: <strong>{foodStats.active}</strong></span>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-1.5 text-emerald-400">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  <span>Đã soát: <strong>{stats.checked}</strong></span>
+                </div>
+                <div className="flex items-center gap-1.5 rounded-lg border border-purple-500/20 bg-purple-500/5 px-3 py-1.5 text-purple-300">
+                  <Ticket className="h-3.5 w-3.5" />
+                  <span>Chờ check-in: <strong>{stats.paid}</strong></span>
+                </div>
+                {pendingFnbCount > 0 && (
+                  <div
+                    onClick={() => setActiveSection('fnb')}
+                    className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-amber-300 cursor-pointer hover:bg-amber-500/20"
+                  >
+                    <Popcorn className="h-3.5 w-3.5 animate-pulse" />
+                    <span>F&B chờ: <strong>{pendingFnbCount}</strong></span>
+                  </div>
+                )}
+              </>
             )}
-          </button>
-          <button
-            onClick={() => setActiveSection('wallet')}
-            style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 11, fontWeight: 800, fontFamily: 'Inter, sans-serif', background: activeSection === 'wallet' ? 'linear-gradient(135deg, #f59e0b, #d97706)' : 'transparent', color: activeSection === 'wallet' ? '#fff' : 'rgba(255,255,255,0.4)', boxShadow: activeSection === 'wallet' ? '0 2px 12px rgba(245,158,11,0.35)' : 'none', transition: 'all 0.2s' }}
-          >
-            <Wallet size={14} /> Quản lý ví
-            {pendingWalletCount > 0 && (
-              <span style={{ position: 'absolute', top: -3, right: -3, display: 'flex', height: 10, width: 10 }} title={`${pendingWalletCount} đơn/yêu cầu chờ xử lý`}>
-                <span style={{ position: 'absolute', inset: 0, borderRadius: '50%', background: '#ef4444', opacity: 0.75, animation: 'ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite' }} />
-                <span style={{ position: 'relative', borderRadius: '50%', height: 10, width: 10, background: '#f43f5e', border: '1.5px solid #000', boxShadow: '0 0 6px #f43f5e' }} />
-              </span>
-            )}
-          </button>
+          </div>
         </div>
 
-        {/* Wallet Panel */}
-        {activeSection === 'wallet' && (
-          <StaffWalletPanel
+        {/* F&B Concessions Panel */}
+        {activeSection === 'fnb' && (
+          <StaffFoodCheckInPanel
             token={getToken()}
-            showToast={(msg) => console.log('[Wallet]', msg)}
-            onPendingCountChange={setPendingWalletCount}
+            assignedCinemaId={assignedCinemaId}
+            activeCinema={activeCinema}
+            currentUser={currentUser}
+            showToast={showToast}
+            onPendingFnbCountChange={setPendingFnbCount}
+            staffFoodItems={staffFoodItems}
+            staffFoodCombos={staffFoodCombos}
+            onUpdateFoodStatus={updateStaffFoodStatus}
+            savingStaffFoodKey={savingStaffFoodKey}
+            onReloadFoods={loadStaffFoods}
           />
         )}
 
@@ -1318,7 +1632,7 @@ export default function StaffCheckInPage() {
                     >
                       {isLookingUp ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />} {isFoodPickupCode(bookingCode) ? 'Tra cứu đơn bắp nước' : 'Tra cứu booking'}
                     </button>
-                    {result?.booking?.qrCode && result.booking.status === 'PAID' && isBookingCheckInOpen(result.booking) && (
+                    {result?.booking?.qrCode && result.booking.status === 'PAID' && isBookingCheckInOpen(result.booking) && (!result.booking.cinemaId || Number(result.booking.cinemaId) === Number(assignedCinemaId)) && (
                       <button
                         type="button"
                         onClick={() => checkInByQr(result.booking.qrCode)}
@@ -1340,6 +1654,9 @@ export default function StaffCheckInPage() {
                 onConfirmFood={checkInByQr}
                 isCheckingIn={isCheckingIn}
                 onOpenCounterSale={openCounterSale}
+                assignedCinemaId={assignedCinemaId}
+                activeCinema={activeCinema}
+                onPrintTickets={(b) => setPrintTicketsBooking(b)}
               />
             </section>
 
@@ -1486,10 +1803,17 @@ export default function StaffCheckInPage() {
             <section className="rounded-2xl border border-white/10 bg-gradient-to-b from-[#0c0e12] to-[#050608] p-5 shadow-2xl">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div>
-                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-purple-400">Quầy bắp nước</p>
-                  <h3 className="mt-1 text-lg font-black uppercase text-white">Trạng thái món/combo</h3>
+                  <div className="flex items-center gap-2">
+                    <p className="text-[9px] font-black uppercase tracking-[0.2em] text-purple-400">Quầy bắp nước</p>
+                    <span className="rounded-full border border-purple-400/30 bg-purple-500/10 px-2.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-purple-300">
+                      {activeCinema?.name}
+                    </span>
+                  </div>
+                  <h3 className="mt-1 text-lg font-black uppercase text-white">
+                    Trạng thái món/combo tại {activeCinema?.name}
+                  </h3>
                   <p className="mt-2 text-xs leading-6 text-neutral-400">
-                    STAFF có thể đổi nhanh trạng thái bắp nước theo quầy: mở bán, sắp hết hoặc hết.
+                    STAFF quản lý tình trạng mở bán / sắp hết / hết theo đúng rạp được phân công ({activeCinema?.name}).
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -1593,12 +1917,24 @@ export default function StaffCheckInPage() {
 
             <section className="overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-[#0c0e12] to-[#050608] shadow-2xl">
               <div className="border-b border-neutral-800 p-5">
-                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400">
-                  {isShowingShowtimeBookings ? 'Dữ liệu showtime từ API' : 'Dữ liệu recent từ API'}
-                </p>
-                <h3 className="mt-1 text-lg font-black uppercase text-white">
-                  {isShowingShowtimeBookings ? `Booking của showtime #${showtimeId}` : 'Booking vừa tra cứu/check-in'}
-                </h3>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400">
+                        {isShowingShowtimeBookings ? 'Dữ liệu showtime từ API' : 'Booking tại rạp phân công'}
+                      </p>
+                      <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-0.5 text-[8px] font-black uppercase text-emerald-300">
+                        {activeCinema?.name}
+                      </span>
+                    </div>
+                    <h3 className="mt-1 text-lg font-black uppercase text-white">
+                      {isShowingShowtimeBookings ? `Booking của showtime #${showtimeId}` : `Booking vừa tra cứu/check-in tại ${activeCinema?.name}`}
+                    </h3>
+                  </div>
+                  <span className="rounded-xl border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-mono text-neutral-400">
+                    Tổng: <strong className="text-white">{visibleBookings.length}</strong> booking
+                  </span>
+                </div>
                 {!isShowingShowtimeBookings && recentBookingsError && (
                   <p className="mt-2 text-xs font-bold text-rose-400">{recentBookingsError}</p>
                 )}
@@ -1939,7 +2275,7 @@ export default function StaffCheckInPage() {
                       onClick={() => setManualRefundModal(null)}
                       className="flex-1 border border-neutral-700 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-neutral-300 transition hover:border-white hover:text-white"
                     >
-                      Quay lai
+                      Quay lại
                     </button>
                     <button
                       type="button"
@@ -1955,6 +2291,133 @@ export default function StaffCheckInPage() {
             )}
           </>
         )}
+
+        {/* MODAL XÁC NHẬN ĐĂNG XUẤT ROLE STAFF */}
+        {showLogoutModal && (
+          <div
+            className="fixed inset-0 z-[300] flex items-center justify-center bg-black/85 p-4 backdrop-blur-md animate-in fade-in duration-200"
+            onClick={(e) => {
+              if (e.target === e.currentTarget && !isLoggingOut) setShowLogoutModal(false);
+            }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ duration: 0.2 }}
+              className="relative w-full max-w-md overflow-hidden rounded-2xl border border-rose-500/30 bg-gradient-to-b from-[#151921] via-[#0d1017] to-[#08090d] p-6 sm:p-7 shadow-[0_25px_70px_rgba(244,63,94,0.3)] text-left"
+            >
+              {/* Background ambient radial glow */}
+              <div className="absolute -right-16 -top-16 h-44 w-44 rounded-full bg-rose-500/15 blur-3xl pointer-events-none" />
+              <div className="absolute -left-16 -bottom-16 h-44 w-44 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
+
+              {/* Close (X) button */}
+              <button
+                type="button"
+                onClick={() => !isLoggingOut && setShowLogoutModal(false)}
+                disabled={isLoggingOut}
+                className="absolute right-4 top-4 rounded-lg p-1.5 text-neutral-400 transition hover:bg-white/10 hover:text-white disabled:opacity-30 cursor-pointer"
+                title="Đóng"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              {/* Header: Icon + Title */}
+              <div className="flex items-start gap-4">
+                <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-rose-500/40 bg-gradient-to-br from-rose-500/20 to-rose-600/10 text-rose-400 shadow-[0_0_25px_rgba(244,63,94,0.3)]">
+                  <LogOut className="h-6 w-6" />
+                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                    <span className="absolute inset-0 rounded-full bg-rose-400 opacity-75 animate-ping" />
+                    <span className="relative h-3 w-3 rounded-full bg-rose-500" />
+                  </span>
+                </div>
+                <div className="min-w-0 pr-6">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-rose-500/30 bg-rose-500/10 px-2.5 py-0.5 text-[9px] font-black uppercase tracking-wider text-rose-300">
+                    <ShieldCheck className="h-3 w-3" /> Xác nhận đăng xuất
+                  </span>
+                  <h3 className="mt-1.5 text-base sm:text-lg font-black uppercase tracking-wide text-white">
+                    Kết thúc ca trực Staff?
+                  </h3>
+                </div>
+              </div>
+
+              {/* Staff Workstation Card */}
+              <div className="mt-5 space-y-2.5 rounded-xl border border-white/10 bg-white/[0.03] p-3.5 backdrop-blur-sm text-xs">
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Tài khoản</span>
+                  <span className="font-bold text-white truncate max-w-[200px]">
+                    {currentUser?.fullName || currentUser?.name || 'CinemaAI Staff'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Email</span>
+                  <span className="font-mono text-neutral-300 truncate max-w-[200px]">
+                    {currentUser?.email || 'staff@cinemaai.com'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Vai trò</span>
+                  <span className="rounded bg-rose-500/15 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-rose-300 border border-rose-500/30">
+                    Staff (Nhân viên)
+                  </span>
+                </div>
+                <div className="flex items-center justify-between pt-0.5">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">Rạp phân công</span>
+                  <span className="font-extrabold text-amber-300 truncate max-w-[200px]">
+                    {activeCinema?.name}
+                  </span>
+                </div>
+              </div>
+
+              {/* Notice text */}
+              <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-[11px] leading-relaxed text-amber-200/90">
+                <AlertCircle className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
+                <p>
+                  Khi đăng xuất, phiên làm việc ca trực của bạn sẽ kết thúc và hệ thống sẽ quay về trang chủ. Vui lòng đảm bảo các thao tác soát vé và bàn giao đơn bắp nước đã hoàn tất.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="mt-6 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowLogoutModal(false)}
+                  disabled={isLoggingOut}
+                  className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2.5 px-4 text-xs font-bold uppercase tracking-wider text-neutral-300 transition hover:bg-white/10 hover:text-white disabled:opacity-40 cursor-pointer"
+                >
+                  Ở lại ca trực
+                </button>
+                <button
+                  type="button"
+                  onClick={handleStaffLogout}
+                  disabled={isLoggingOut}
+                  className="flex-1 flex items-center justify-center gap-2 rounded-xl border border-rose-500/40 bg-gradient-to-r from-rose-600 to-rose-700 py-2.5 px-4 text-xs font-black uppercase tracking-wider text-white shadow-[0_0_25px_rgba(244,63,94,0.4)] transition hover:from-rose-500 hover:to-rose-600 active:scale-95 disabled:opacity-50 cursor-pointer"
+                >
+                  {isLoggingOut ? (
+                    <>
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      <span>Đang đăng xuất...</span>
+                    </>
+                  ) : (
+                    <>
+                      <LogOut className="h-4 w-4" />
+                      <span>Đăng xuất</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+
+        {/* Ticket Print Modal */}
+        <TicketPrintModal
+          isOpen={Boolean(printTicketsBooking)}
+          onClose={() => setPrintTicketsBooking(null)}
+          booking={printTicketsBooking}
+          activeCinema={activeCinema}
+          currentUser={currentUser}
+        />
       </main>
     </div>
   );

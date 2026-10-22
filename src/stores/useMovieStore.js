@@ -20,28 +20,44 @@ const getFreshCache = (entry) => {
 
 const toCacheEntry = (data) => ({ data, updatedAt: Date.now() });
 
-const normalizeFoodCatalog = (items = [], combos = []) => (
-  [
-    ...items.map(item => ({
-      ...item,
-      id: `item-${item.id}`,
-      backendId: item.id,
-      foodItemId: item.id,
-      foodComboId: null,
-      category: 'item',
-      isCombo: false
-    })),
-    ...combos.map(item => ({
-      ...item,
-      id: `combo-${item.id}`,
-      backendId: item.id,
-      foodItemId: null,
-      foodComboId: item.id,
-      category: 'combo',
-      isCombo: true
-    })),
-  ]
-);
+const normalizeFoodCatalog = (items = [], combos = []) => {
+  const seenIds = new Set();
+  const result = [];
+
+  for (const item of (Array.isArray(items) ? items : [])) {
+    const id = `item-${item.id}`;
+    if (!seenIds.has(id)) {
+      seenIds.add(id);
+      result.push({
+        ...item,
+        id,
+        backendId: item.id,
+        foodItemId: item.id,
+        foodComboId: null,
+        category: 'item',
+        isCombo: false
+      });
+    }
+  }
+
+  for (const item of (Array.isArray(combos) ? combos : [])) {
+    const id = `combo-${item.id}`;
+    if (!seenIds.has(id)) {
+      seenIds.add(id);
+      result.push({
+        ...item,
+        id,
+        backendId: item.id,
+        foodItemId: null,
+        foodComboId: item.id,
+        category: 'combo',
+        isCombo: true
+      });
+    }
+  }
+
+  return result;
+};
 
 export const useMovieStore = create((set, get) => ({
   moviesList: [],

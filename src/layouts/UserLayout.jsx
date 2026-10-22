@@ -8,6 +8,7 @@ import { Toast } from '../components/common';
 import { useMovies } from '../stores/useMovieStore';
 import { useAuthStore } from '../stores/useAuthStore';
 import { useUiStore } from '../stores/useUiStore';
+import { getMovieSearchPath } from '../utils/movieSearch';
 
 export default function UserLayout({ children }) {
   const navigate = useNavigate();
@@ -82,11 +83,12 @@ export default function UserLayout({ children }) {
             searchQuery={searchQuery}
             moviesList={moviesList}
             onSearchCommit={(q) => {
-              setSearchQuery(q);
+              const normalizedQuery = String(q ?? '').trim();
+              setSearchQuery(normalizedQuery);
               setMovieDateFilter('');
               setSelectedGenreId('');
               setMoviePagination(prev => ({ ...prev, page: 0 }));
-              navigate(`/movies?q=${encodeURIComponent(q)}`);
+              navigate(getMovieSearchPath(normalizedQuery));
             }}
             cinema={publicCinema}
             onManageCinema={() => navigate('/admin/cinema')}
