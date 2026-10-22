@@ -1804,9 +1804,10 @@ export default function BookingPage() {
 
     setPaymentState('payment_processing');
     try {
-      // Đồng bộ vé, bắp nước và điểm thưởng mới nhất vào đơn giữ chỗ trước khi tạo URL VNPay
+      // Finalize checkout so Booking transitions from HOLDING to PENDING_PAYMENT
+      // before Payment Service validates and creates the VNPay URL.
       try {
-        await bookingService.updateHoldingBooking(accessToken, holdBookingId, {
+        await bookingService.checkoutBooking(accessToken, holdBookingId, {
           tickets: buildTicketRequests(),
           foods: buildFoodRequests(),
           loyaltyPointsToRedeem: pointsToUseNumber > 0 ? pointsToUseNumber : null
