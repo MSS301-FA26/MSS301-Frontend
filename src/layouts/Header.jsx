@@ -3,15 +3,16 @@ import {
   Search, MapPin, Ticket, User, Heart, Compass, Home,
   Building2, ChevronDown, Phone, Settings2, X, ExternalLink, LogOut, Popcorn,
   CalendarDays, Coins, ShieldCheck, Menu, Star, Clock, Check, ArrowRight,
-  Wallet, Sparkles, Film, AlertCircle, LoaderCircle
+  Wallet, Sparkles, Film, AlertCircle, LoaderCircle, Clapperboard, RotateCcw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { createPortal } from 'react-dom';
 import { movieService } from '../services/movieService';
+import { bookingService } from '../services/bookingService';
 import { loyaltyService } from '../services/loyaltyService';
 import { getStoredAuth } from '../services/authService';
 import { useMovieStore } from '../stores/useMovieStore';
-import { getMovieSearchView } from '../utils/movieSearch';
+import { getMovieSearchView, extractMovieGenres } from '../utils/movieSearch';
 
 const CINEMA_IMAGES_MAP = {
   1: 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=800&q=80',
@@ -125,9 +126,15 @@ export default function Header({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Catalog for search suggestions
+  // Catalog and showtimes for enhanced multi-field search
   const [suggestionCatalog, setSuggestionCatalog] = useState([]);
+  const [showtimesCatalog, setShowtimesCatalog] = useState([]);
   const [catalogStatus, setCatalogStatus] = useState('idle');
+  const [searchCategory, setSearchCategory] = useState('all'); // 'all' | 'movie' | 'people' | 'cinema' | 'date'
+  const [directorQuery, setDirectorQuery] = useState('');
+  const [actorQuery, setActorQuery] = useState('');
+  const [searchDateFilter, setSearchDateFilter] = useState('');
+  const [searchCinemaFilter, setSearchCinemaFilter] = useState('');
   const catalogRequestRef = useRef({ inFlight: false, requestId: 0, mounted: true });
 
   const loadSuggestionCatalog = useCallback(async () => {
@@ -137,10 +144,17 @@ export default function Header({
     setCatalogStatus('loading');
 
     try {
-      const list = await movieService.getAllMovies({ size: 100 });
+      const [list, showtimes] = await Promise.all([
+        movieService.getAllMovies({ size: 100 }),
+        bookingService.getShowtimes({ size: 250 }).catch(() => [])
+      ]);
       if (!catalogRequestRef.current.mounted || catalogRequestRef.current.requestId !== requestId) return;
       const catalog = Array.isArray(list) ? list : [];
+      const rawShowtimes = Array.isArray(showtimes)
+        ? showtimes
+        : (showtimes?.data?.items ?? showtimes?.items ?? showtimes?.content ?? showtimes?.data ?? []);
       setSuggestionCatalog(catalog);
+      setShowtimesCatalog(rawShowtimes);
       setCatalogStatus(catalog.length > 0 ? 'success' : 'empty');
     } catch {
       if (!catalogRequestRef.current.mounted || catalogRequestRef.current.requestId !== requestId) return;
@@ -171,8 +185,25 @@ export default function Header({
     catalog: suggestionCatalog,
     fallbackMovies: moviesList,
     query: headerQuery,
-  }), [catalogStatus, headerQuery, moviesList, suggestionCatalog]);
-  const visibleMovies = searchView.results.slice(0, 5);
+    directorQuery,
+    actorQuery,
+    filterCategory: searchCategory,
+    selectedDate: searchDateFilter,
+    selectedCinemaId: searchCinemaFilter,
+    cinemasList,
+    showtimesList: showtimesCatalog
+  }), [catalogStatus, searchCategory, headerQuery, directorQuery, actorQuery, moviesList, searchCinemaFilter, searchDateFilter, showtimesCatalog, suggestionCatalog, cinemasList]);
+  const visibleMovies = searchView.results.slice(0, 6);
+  const visibleCinemas = (searchView.matchingCinemas || []).slice(0, 4);
+
+  const resetAllFilters = () => {
+    setHeaderQuery('');
+    setDirectorQuery('');
+    setActorQuery('');
+    setSearchDateFilter('');
+    setSearchCinemaFilter('');
+    setSearchCategory('all');
+  };
 
   const handleSelectCinema = (c) => {
     setSelectedCinema(c);
@@ -195,14 +226,19 @@ export default function Header({
 
   const commitSearch = (queryToUse) => {
     const q = (queryToUse !== undefined ? queryToUse : headerQuery).trim();
-    if (!q) return;
     setSearchOverlayOpen(false);
-    onSearchCommit(q);
+    const params = new URLSearchParams();
+    if (q) params.set('q', q);
+    if (directorQuery.trim()) params.set('director', directorQuery.trim());
+    if (actorQuery.trim()) params.set('actor', actorQuery.trim());
+    if (searchDateFilter) params.set('date', searchDateFilter);
+    if (searchCinemaFilter && searchCinemaFilter !== 'ALL') params.set('cinemaId', searchCinemaFilter);
+    const searchStr = params.toString();
+    navigate(searchStr ? `/movies?${searchStr}` : '/movies?status=all');
   };
 
   const viewAllMovies = () => {
-    setSearchOverlayOpen(false);
-    onSearchCommit(headerQuery.trim());
+    commitSearch();
   };
 
   const handleSuggestionClick = (movie) => {
@@ -435,17 +471,17 @@ export default function Header({
           {/* CENTER / RIGHT: SEARCH, CINEMA SELECTOR, LOGIN */}
           <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
 
-            {/* SEARCH INPUT BAR: Height 44px, Width 220–250px */}
+            {/* SEARCH INPUT BAR: Height 44px, Width 220–260px */}
             {!isStaffRole && !isManagerRole && (
               <div
                 onClick={() => setSearchOverlayOpen(true)}
-                className="hidden md:flex h-[44px] w-[210px] xl:w-[245px] items-center gap-2 rounded-none border border-white/10 bg-[#09090C] px-3 text-neutral-400 cursor-pointer transition-all duration-150 hover:border-white/20 hover:text-white"
+                className="hidden md:flex h-[44px] w-[210px] xl:w-[260px] items-center gap-2 rounded-none border border-white/10 bg-[#09090C] px-3 text-neutral-400 cursor-pointer transition-all duration-150 hover:border-[#F7C600]/40 hover:text-white group"
                 id="search-box-trigger"
-                title="Tìm kiếm phim theo tên"
+                title="Tìm kiếm phim, diễn viên, đạo diễn, rạp, ngày chiếu..."
               >
-                <Search className="h-3.5 w-3.5 text-neutral-400 shrink-0" />
-                <span className="text-[12.5px] text-neutral-400 font-medium truncate select-none">
-                  {headerQuery ? headerQuery : 'Tìm kiếm phim theo tên...'}
+                <Search className="h-3.5 w-3.5 text-neutral-400 group-hover:text-[#F7C600] shrink-0 transition-colors" />
+                <span className="text-[12px] text-neutral-400 group-hover:text-neutral-200 font-medium truncate select-none">
+                  {headerQuery ? headerQuery : 'Tìm phim, diễn viên, rạp, ngày...'}
                 </span>
               </div>
             )}
@@ -712,7 +748,7 @@ export default function Header({
       )}
 
       {/* ========================================================
-          SEARCH OVERLAY MODAL
+          SEARCH OVERLAY MODAL (LUXURY CINEPREMIER SEARCH HUB)
       ======================================================== */}
       {typeof document !== 'undefined' && createPortal(
         <AnimatePresence>
@@ -722,139 +758,531 @@ export default function Header({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setSearchOverlayOpen(false)}
-              className="fixed inset-0 z-[300] flex items-start justify-center bg-black/85 p-4 sm:p-6 pt-14 sm:pt-16 backdrop-blur-xl"
+              className="fixed inset-0 z-[300] flex items-start justify-center bg-black/90 p-3 sm:p-6 pt-10 sm:pt-14 backdrop-blur-2xl"
             >
               <motion.div
-                initial={{ opacity: 0, y: -16, scale: 0.98 }}
+                initial={{ opacity: 0, y: -20, scale: 0.98 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -12, scale: 0.98 }}
+                exit={{ opacity: 0, y: -16, scale: 0.98 }}
                 onClick={(e) => e.stopPropagation()}
-                className="w-full max-w-2xl overflow-hidden rounded-none border border-white/15 bg-[#09090D] shadow-[0_25px_80px_rgba(0,0,0,0.9)]"
+                className="w-full max-w-3xl overflow-hidden rounded-none border border-white/20 bg-[#08080C] shadow-[0_25px_90px_rgba(0,0,0,0.95)] flex flex-col max-h-[88vh]"
               >
-                <div className="flex items-center gap-3 border-b border-white/10 px-5 py-3.5">
-                  <Search className="h-4.5 w-4.5 text-[#F7C600] shrink-0" />
-                  <input
-                    type="text"
-                    autoFocus
-                    placeholder="Tìm kiếm phim theo tên..."
-                    value={headerQuery}
-                    onChange={(e) => setHeaderQuery(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') commitSearch();
-                      if (e.key === 'Escape') setSearchOverlayOpen(false);
-                    }}
-                    className="w-full bg-transparent text-sm sm:text-base font-medium text-white placeholder-neutral-500 outline-none"
-                  />
+                {/* SEARCH TITLE INPUT BAR */}
+                <div className="flex items-center gap-3 border-b border-white/10 px-5 py-3.5 bg-gradient-to-r from-[#F7C600]/10 via-transparent to-purple-950/20">
+                  <Film className="h-5 w-5 text-[#F7C600] shrink-0 animate-pulse" />
+                  <div className="flex-1">
+                    <span className="block text-[9px] font-mono font-bold tracking-wider uppercase text-[#F7C600]">
+                      Tên phim
+                    </span>
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="Tìm theo tên phim (VD: Avengers, Đào Phở...)"
+                      value={headerQuery}
+                      onChange={(e) => setHeaderQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitSearch();
+                        if (e.key === 'Escape') setSearchOverlayOpen(false);
+                      }}
+                      className="w-full bg-transparent text-sm sm:text-base font-semibold text-white placeholder-neutral-500 outline-none"
+                    />
+                  </div>
                   {headerQuery && (
-                    <button onClick={() => setHeaderQuery('')} className="p-1 text-neutral-400 hover:text-white">
+                    <button
+                      type="button"
+                      onClick={() => setHeaderQuery('')}
+                      className="p-1.5 text-neutral-400 hover:text-white transition-colors"
+                      title="Xóa tên phim"
+                    >
                       <X className="h-4 w-4" />
                     </button>
                   )}
-                  <button onClick={() => setSearchOverlayOpen(false)} className="rounded-none border border-white/10 px-2 py-0.5 text-[9px] font-mono text-neutral-400 hover:text-white">
+                  <button
+                    type="button"
+                    onClick={() => setSearchOverlayOpen(false)}
+                    className="rounded-none border border-white/20 px-2.5 py-1 text-[10px] font-mono text-neutral-400 hover:border-white hover:text-white transition-colors"
+                  >
                     ESC
                   </button>
                 </div>
 
-                {searchView.suggestions.length > 0 && (
-                <div className="border-b border-white/5 bg-black/40 px-5 py-2.5">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Gợi ý:</span>
-                    {searchView.suggestions.map((tag) => (
+                {/* DEDICATED INPUTS FOR DIỄN VIÊN & ĐẠO DIỄN */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 border-b border-white/10 bg-[#06060A] px-5 py-2.5">
+                  {/* Diễn viên Input */}
+                  <div className="flex items-center gap-2 rounded-none border border-white/10 bg-black/60 px-3 py-1.5 focus-within:border-purple-400 focus-within:bg-black/90 transition-all">
+                    <User className="h-4 w-4 text-purple-400 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <span className="block text-[9px] font-mono font-bold tracking-wider uppercase text-purple-300/90">
+                        Diễn viên (nhập tên)
+                      </span>
+                      <input
+                        type="text"
+                        value={actorQuery}
+                        onChange={(e) => setActorQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') commitSearch();
+                          if (e.key === 'Escape') setSearchOverlayOpen(false);
+                        }}
+                        placeholder="VD: Doãn Quốc Đam, Tom Holland..."
+                        className="w-full bg-transparent text-xs text-white placeholder-neutral-500 outline-none font-medium"
+                      />
+                    </div>
+                    {actorQuery && (
                       <button
-                        key={tag}
-                        onClick={() => { setHeaderQuery(tag); commitSearch(tag); }}
-                        className="rounded-none border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] text-neutral-300 hover:border-[#F7C600]/40 hover:text-[#F7C600]"
+                        type="button"
+                        onClick={() => setActorQuery('')}
+                        className="p-1 text-neutral-400 hover:text-white"
+                        title="Xóa diễn viên"
                       >
-                        {tag}
+                        <X className="h-3 w-3" />
                       </button>
-                    ))}
+                    )}
+                  </div>
+
+                  {/* Đạo diễn Input */}
+                  <div className="flex items-center gap-2 rounded-none border border-white/10 bg-black/60 px-3 py-1.5 focus-within:border-amber-400 focus-within:bg-black/90 transition-all">
+                    <Clapperboard className="h-4 w-4 text-amber-400 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <span className="block text-[9px] font-mono font-bold tracking-wider uppercase text-amber-300/90">
+                        Đạo diễn (nhập tên)
+                      </span>
+                      <input
+                        type="text"
+                        value={directorQuery}
+                        onChange={(e) => setDirectorQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') commitSearch();
+                          if (e.key === 'Escape') setSearchOverlayOpen(false);
+                        }}
+                        placeholder="VD: Russo Brothers, Victor Vũ..."
+                        className="w-full bg-transparent text-xs text-white placeholder-neutral-500 outline-none font-medium"
+                      />
+                    </div>
+                    {directorQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setDirectorQuery('')}
+                        className="p-1 text-neutral-400 hover:text-white"
+                        title="Xóa đạo diễn"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    )}
                   </div>
                 </div>
+
+                {/* DATE SELECTOR & CINEMA SELECTOR BAR */}
+                <div className="border-b border-white/10 bg-[#08080E] px-5 py-2.5 space-y-2">
+                  {/* Row 1: Chọn ngày chiếu (Date Picker & Date Chips) */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <CalendarDays className="h-3.5 w-3.5 text-sky-400" />
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-400">
+                        Chọn ngày:
+                      </span>
+                    </div>
+
+                    {/* Native Date Picker */}
+                    <div className="relative flex items-center shrink-0">
+                      <input
+                        type="date"
+                        value={searchDateFilter}
+                        onChange={(e) => setSearchDateFilter(e.target.value)}
+                        className="h-[28px] rounded-none border border-sky-500/40 bg-black/80 px-2 text-[11px] font-semibold text-sky-300 focus:border-sky-400 focus:outline-none [color-scheme:dark] cursor-pointer"
+                        title="Bấm để chọn ngày trên lịch"
+                      />
+                      {searchDateFilter && (
+                        <button
+                          type="button"
+                          onClick={() => setSearchDateFilter('')}
+                          className="ml-1 p-0.5 text-neutral-400 hover:text-white"
+                          title="Bỏ chọn ngày"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Quick date selector chips */}
+                    <div className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
+                      <button
+                        type="button"
+                        onClick={() => setSearchDateFilter('')}
+                        className={`px-2 py-0.5 text-[10.5px] font-semibold rounded-none shrink-0 transition-colors ${
+                          !searchDateFilter
+                            ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                            : 'text-neutral-400 hover:text-white border border-transparent'
+                        }`}
+                      >
+                        Tất cả ngày
+                      </button>
+                      {searchView.availableDates.map((d) => (
+                        <button
+                          key={d.key}
+                          type="button"
+                          onClick={() => setSearchDateFilter(prev => prev === d.key ? '' : d.key)}
+                          className={`px-2.5 py-0.5 text-[10.5px] font-semibold rounded-none shrink-0 transition-all ${
+                            searchDateFilter === d.key
+                              ? 'bg-sky-500 text-black font-bold shadow-[0_0_10px_rgba(56,189,248,0.4)]'
+                              : 'border border-white/10 bg-white/5 text-neutral-300 hover:border-sky-400/50 hover:text-sky-300'
+                          }`}
+                        >
+                          {d.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Row 2: Chọn rạp chiếu */}
+                  {cinemasList.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/5">
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <MapPin className="h-3.5 w-3.5 text-emerald-400" />
+                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-neutral-400">
+                          Chọn rạp:
+                        </span>
+                      </div>
+
+                      {/* Dropdown for all cinemas */}
+                      <select
+                        value={searchCinemaFilter}
+                        onChange={(e) => setSearchCinemaFilter(e.target.value)}
+                        className="h-[28px] rounded-none border border-emerald-500/40 bg-black/80 px-2 text-[11px] font-semibold text-emerald-300 focus:border-emerald-400 focus:outline-none [color-scheme:dark] cursor-pointer max-w-[210px] truncate"
+                      >
+                        <option value="">Tất cả cụm rạp</option>
+                        {cinemasList.map((c) => (
+                          <option key={c.id} value={String(c.id)} className="bg-neutral-900 text-white">
+                            {c.name.replace('CinePremier ', '')} {c.city ? `(${c.city})` : ''}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Quick Cinema pills */}
+                      <div className="flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none]">
+                        {cinemasList.slice(0, 4).map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => setSearchCinemaFilter(prev => prev === String(c.id) ? '' : String(c.id))}
+                            className={`px-2 py-0.5 text-[10.5px] font-semibold rounded-none shrink-0 transition-all truncate max-w-[130px] ${
+                              searchCinemaFilter === String(c.id)
+                                ? 'bg-emerald-500 text-black font-bold shadow-[0_0_10px_rgba(16,185,129,0.4)]'
+                                : 'border border-white/10 bg-white/5 text-neutral-300 hover:border-emerald-400/50 hover:text-emerald-300'
+                            }`}
+                            title={c.name}
+                          >
+                            {c.name.replace('CinePremier ', '')}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* ACTIVE APPLIED FILTERS BAR */}
+                {(headerQuery || directorQuery || actorQuery || searchDateFilter || (searchCinemaFilter && searchCinemaFilter !== 'ALL')) && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-white/[0.02] px-5 py-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] font-mono uppercase tracking-wider text-neutral-400">Bộ lọc:</span>
+                      {headerQuery && (
+                        <span className="inline-flex items-center gap-1 bg-[#F7C600]/15 border border-[#F7C600]/40 text-[#F7C600] px-2 py-0.5 text-[10.5px] font-semibold">
+                          <span>Phim: "{headerQuery}"</span>
+                          <button type="button" onClick={() => setHeaderQuery('')} className="hover:text-white"><X className="h-2.5 w-2.5" /></button>
+                        </span>
+                      )}
+                      {actorQuery && (
+                        <span className="inline-flex items-center gap-1 bg-purple-500/15 border border-purple-500/40 text-purple-300 px-2 py-0.5 text-[10.5px] font-semibold">
+                          <span>Diễn viên: "{actorQuery}"</span>
+                          <button type="button" onClick={() => setActorQuery('')} className="hover:text-white"><X className="h-2.5 w-2.5" /></button>
+                        </span>
+                      )}
+                      {directorQuery && (
+                        <span className="inline-flex items-center gap-1 bg-amber-500/15 border border-amber-500/40 text-amber-300 px-2 py-0.5 text-[10.5px] font-semibold">
+                          <span>Đạo diễn: "{directorQuery}"</span>
+                          <button type="button" onClick={() => setDirectorQuery('')} className="hover:text-white"><X className="h-2.5 w-2.5" /></button>
+                        </span>
+                      )}
+                      {searchDateFilter && (
+                        <span className="inline-flex items-center gap-1 bg-sky-500/15 border border-sky-500/40 text-sky-300 px-2 py-0.5 text-[10.5px] font-semibold">
+                          <span>Ngày: {searchDateFilter}</span>
+                          <button type="button" onClick={() => setSearchDateFilter('')} className="hover:text-white"><X className="h-2.5 w-2.5" /></button>
+                        </span>
+                      )}
+                      {searchCinemaFilter && searchCinemaFilter !== 'ALL' && (
+                        <span className="inline-flex items-center gap-1 bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 px-2 py-0.5 text-[10.5px] font-semibold">
+                          <span>Rạp: {cinemasList.find(c => String(c.id) === String(searchCinemaFilter))?.name.replace('CinePremier ', '') || searchCinemaFilter}</span>
+                          <button type="button" onClick={() => setSearchCinemaFilter('')} className="hover:text-white"><X className="h-2.5 w-2.5" /></button>
+                        </span>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={resetAllFilters}
+                      className="flex items-center gap-1 text-[10.5px] font-bold text-red-400 hover:text-red-300 transition-colors ml-auto"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      <span>Đặt lại tất cả</span>
+                    </button>
+                  </div>
                 )}
 
-                <div className="max-h-[55vh] overflow-y-auto p-5 space-y-5 [scrollbar-width:thin]">
-                  <div>
-                    {searchView.showResultCount && (
-                    <div className="flex items-center justify-between mb-2.5">
-                      <h4 className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-widest text-[#F7C600]">
-                        <Film className="h-3 w-3" />
-                        <span>PHIM ({searchView.resultCount})</span>
-                      </h4>
-                      <button onClick={viewAllMovies} className="text-[11px] text-neutral-400 hover:text-[#F7C600]">
-                        Xem tất cả →
-                      </button>
-                    </div>
-                    )}
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {searchView.kind === 'loading' && (
-                        <div className="col-span-full flex min-h-24 items-center justify-center gap-2 text-xs text-neutral-300" role="status">
-                          <LoaderCircle className="h-4 w-4 animate-spin text-[#F7C600]" aria-hidden="true" />
-                          <span>Đang tải danh sách phim...</span>
-                        </div>
-                      )}
-                      {searchView.kind === 'error' && (
-                        <div className="col-span-full flex min-h-32 flex-col items-center justify-center text-center" role="alert">
-                          <AlertCircle className="mb-2 h-5 w-5 text-[#F7C600]" aria-hidden="true" />
-                          <p className="text-sm font-bold text-white">Chưa thể tải danh sách phim</p>
-                          <p className="mt-1 text-xs text-neutral-400">Vui lòng thử lại sau ít phút.</p>
-                          <button
-                            type="button"
-                            onClick={loadSuggestionCatalog}
-                            disabled={catalogStatus === 'loading'}
-                            className="mt-3 border border-[#F7C600]/50 px-3 py-1.5 text-xs font-bold text-[#F7C600] transition-colors hover:bg-[#F7C600]/10 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Thử lại
-                          </button>
-                        </div>
-                      )}
-                      {searchView.kind === 'fallback' && (
-                        <div className="col-span-full flex items-center justify-between gap-3 text-xs text-amber-300" role="status">
-                          <span className="flex items-center gap-1.5">
-                            <AlertCircle className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                            Danh sách phim có thể chưa đầy đủ.
-                          </span>
-                          <button type="button" onClick={loadSuggestionCatalog} className="shrink-0 font-bold text-[#F7C600] hover:underline">Thử lại</button>
-                        </div>
-                      )}
-                      {searchView.kind === 'empty' && (
-                        <p className="col-span-full min-h-24 content-center text-center text-xs text-neutral-400" role="status">Hiện chưa có phim để hiển thị.</p>
-                      )}
-                      {searchView.noResults && (
-                        <p className="col-span-full min-h-24 content-center text-center text-xs text-neutral-400" role="status">Không tìm thấy phim phù hợp với từ khóa của bạn.</p>
-                      )}
-                      {visibleMovies.map((movie) => (
-                        <div
-                          key={movie.backendId || movie.id}
-                          onClick={() => handleSuggestionClick(movie)}
-                          className="flex items-center gap-2.5 rounded-none border border-white/5 bg-white/[0.02] p-2 hover:border-[#F7C600]/40 hover:bg-white/[0.06] cursor-pointer transition-all"
+                {/* SUGGESTION TAGS (When no search active) */}
+                {searchView.suggestions.length > 0 && !headerQuery && !directorQuery && !actorQuery && !searchDateFilter && !searchCinemaFilter && (
+                  <div className="border-b border-white/5 bg-black/40 px-5 py-2">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Gợi ý tìm kiếm:</span>
+                      {searchView.suggestions.map((tag) => (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() => { setHeaderQuery(tag); commitSearch(tag); }}
+                          className="rounded-none border border-white/10 bg-white/5 px-2.5 py-0.5 text-[11px] text-neutral-300 hover:border-[#F7C600]/40 hover:text-[#F7C600] transition-colors"
                         >
-                          <img
-                            src={movie.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=200&q=80'}
-                            alt=""
-                            className="h-12 w-9 rounded-none object-cover border border-white/10 shrink-0"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-xs font-bold text-white leading-tight">{movie.title}</p>
-                            <p className="text-[9.5px] text-neutral-400 truncate mt-0.5">
-                              {[movie.duration ? `${movie.duration}'` : '', (movie.genre || [])[0]].filter(Boolean).join(' · ')}
-                            </p>
-                          </div>
-                        </div>
+                          {tag}
+                        </button>
                       ))}
-                      {searchView.resultCount > visibleMovies.length && (
-                        <p className="col-span-full text-right text-[10px] text-neutral-500">Đang hiển thị 5 kết quả đầu tiên.</p>
-                      )}
                     </div>
                   </div>
+                )}
+
+                {/* SCROLLABLE RESULTS BODY */}
+                <div className="flex-1 overflow-y-auto p-5 space-y-6 [scrollbar-width:thin]">
+                  
+                  {/* Status states */}
+                  {searchView.kind === 'loading' && (
+                    <div className="flex min-h-32 items-center justify-center gap-2.5 text-xs text-neutral-300" role="status">
+                      <LoaderCircle className="h-5 w-5 animate-spin text-[#F7C600]" aria-hidden="true" />
+                      <span className="font-semibold">Đang tải phim và dữ liệu lịch chiếu...</span>
+                    </div>
+                  )}
+
+                  {searchView.kind === 'error' && (
+                    <div className="flex min-h-36 flex-col items-center justify-center text-center p-4" role="alert">
+                      <AlertCircle className="mb-2 h-6 w-6 text-[#F7C600]" aria-hidden="true" />
+                      <p className="text-sm font-bold text-white">Chưa thể tải dữ liệu tìm kiếm</p>
+                      <p className="mt-1 text-xs text-neutral-400">Vui lòng thử lại sau ít phút.</p>
+                      <button
+                        type="button"
+                        onClick={loadSuggestionCatalog}
+                        disabled={catalogStatus === 'loading'}
+                        className="mt-3 border border-[#F7C600]/50 px-3.5 py-1.5 text-xs font-bold text-[#F7C600] transition-colors hover:bg-[#F7C600]/10 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Thử lại
+                      </button>
+                    </div>
+                  )}
+
+                  {searchView.noResults && (
+                    <div className="flex flex-col items-center justify-center min-h-32 text-center space-y-2" role="status">
+                      <Search className="h-8 w-8 text-neutral-600 mb-1" />
+                      <p className="text-sm font-bold text-white">Không tìm thấy kết quả phù hợp</p>
+                      <p className="text-xs text-neutral-400 max-w-md">
+                        Không có phim, diễn viên, đạo diễn, rạp hoặc ngày chiếu nào khớp với tiêu chí tìm kiếm hiện tại. Bạn có thể thử tìm từ khóa khác hoặc đặt lại bộ lọc.
+                      </p>
+                      {(headerQuery || directorQuery || actorQuery || searchDateFilter || (searchCinemaFilter && searchCinemaFilter !== 'ALL')) && (
+                        <button
+                          type="button"
+                          onClick={resetAllFilters}
+                          className="mt-2 text-xs font-bold text-[#F7C600] hover:underline flex items-center gap-1"
+                        >
+                          <RotateCcw className="h-3 w-3" />
+                          <span>Đặt lại tất cả bộ lọc</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 1. MATCHING MOVIES SECTION */}
+                  {visibleMovies.length > 0 && searchCategory !== 'cinema' && (
+                    <div>
+                      <div className="flex items-center justify-between mb-3 border-b border-white/10 pb-2">
+                        <h4 className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-[#F7C600]">
+                          <Film className="h-3.5 w-3.5" />
+                          <span>PHIM TÌM THẤY ({searchView.resultCount})</span>
+                        </h4>
+                        <button onClick={viewAllMovies} className="text-[11px] font-bold text-neutral-400 hover:text-[#F7C600] transition-colors">
+                          Xem tất cả trên trang Khám Phá →
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {visibleMovies.map((movie) => (
+                          <div
+                            key={movie.backendId || movie.id}
+                            className="group relative flex gap-3.5 rounded-none border border-white/10 bg-white/[0.03] p-3 hover:border-[#F7C600]/60 hover:bg-white/[0.07] transition-all duration-200"
+                          >
+                            {/* Poster */}
+                            <div
+                              onClick={() => handleSuggestionClick(movie)}
+                              className="relative h-28 w-20 shrink-0 overflow-hidden border border-white/15 bg-black cursor-pointer"
+                            >
+                              <img
+                                src={movie.posterUrl || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=300&q=80'}
+                                alt={movie.title}
+                                className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              />
+                              {movie.ageRating && (
+                                <span className="absolute top-1 left-1 bg-amber-500 text-black font-black text-[8px] px-1 py-0.5 leading-none">
+                                  {movie.ageRating}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Info */}
+                            <div className="flex-1 min-w-0 flex flex-col justify-between">
+                              <div>
+                                <div className="flex items-start justify-between gap-1.5">
+                                  <h5
+                                    onClick={() => handleSuggestionClick(movie)}
+                                    className="text-xs sm:text-[13px] font-bold text-white group-hover:text-[#F7C600] transition-colors cursor-pointer truncate"
+                                    title={movie.title}
+                                  >
+                                    {movie.title}
+                                  </h5>
+                                  {movie.ratings?.overall > 0 && (
+                                    <span className="flex items-center gap-0.5 text-[10.5px] font-bold text-[#F7C600] shrink-0">
+                                      <Star className="h-2.5 w-2.5 fill-current" />
+                                      {Number(movie.ratings.overall).toFixed(1)}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] text-neutral-400 italic truncate mt-0.5">
+                                  {movie.englishTitle || movie.title}
+                                </p>
+
+                                {/* Meta tags */}
+                                <div className="flex flex-wrap items-center gap-2 mt-1 text-[10px] text-neutral-400">
+                                  {movie.duration > 0 && (
+                                    <span className="flex items-center gap-1">
+                                      <Clock className="h-2.5 w-2.5 text-neutral-500" />
+                                      {movie.duration}'
+                                    </span>
+                                  )}
+                                  {extractMovieGenres(movie).slice(0, 2).map((g) => (
+                                    <span key={g} className="border border-white/10 bg-white/5 px-1 py-0.2 text-[9px] text-neutral-300">
+                                      {g}
+                                    </span>
+                                  ))}
+                                </div>
+
+                                {/* MATCH REASONS BADGES */}
+                                {Array.isArray(movie.matchReasons) && movie.matchReasons.length > 0 && (
+                                  <div className="flex flex-wrap items-center gap-1 mt-2">
+                                    {movie.matchReasons.slice(0, 2).map((r, idx) => {
+                                      if (r.type === 'title') return null;
+                                      return (
+                                        <span
+                                          key={idx}
+                                          className={`inline-flex items-center gap-1 text-[9.5px] font-medium px-1.5 py-0.5 border ${
+                                            r.type === 'director'
+                                              ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+                                              : r.type === 'actor'
+                                              ? 'border-purple-500/40 bg-purple-500/10 text-purple-300'
+                                              : r.type === 'cinema'
+                                              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                                              : r.type === 'date'
+                                              ? 'border-sky-500/40 bg-sky-500/10 text-sky-300'
+                                              : 'border-white/20 bg-white/10 text-white'
+                                          }`}
+                                        >
+                                          {r.type === 'director' && <Clapperboard className="h-2.5 w-2.5 shrink-0" />}
+                                          {r.type === 'actor' && <User className="h-2.5 w-2.5 shrink-0" />}
+                                          {r.type === 'cinema' && <MapPin className="h-2.5 w-2.5 shrink-0" />}
+                                          {r.type === 'date' && <CalendarDays className="h-2.5 w-2.5 shrink-0" />}
+                                          <span className="truncate max-w-[170px]">{r.label}: <strong className="font-bold">{r.value}</strong></span>
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Action Buttons */}
+                              <div className="flex items-center gap-2 mt-2 pt-1.5 border-t border-white/5">
+                                <button
+                                  onClick={() => {
+                                    setSearchOverlayOpen(false);
+                                    navigate(`/movies/${movie.backendId || movie.id}`, { state: { scrollToShowtimes: true } });
+                                  }}
+                                  className="flex items-center gap-1 bg-[#F7C600] text-black font-extrabold text-[10.5px] px-2.5 py-0.5 uppercase tracking-wider hover:bg-amber-400 transition-colors"
+                                >
+                                  <Ticket className="h-2.5 w-2.5" />
+                                  <span>Đặt vé</span>
+                                </button>
+                                <button
+                                  onClick={() => handleSuggestionClick(movie)}
+                                  className="border border-white/15 text-neutral-300 hover:text-white hover:border-white text-[10.5px] font-bold px-2 py-0.5 uppercase tracking-wider transition-colors"
+                                >
+                                  Chi tiết
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 2. MATCHING CINEMAS SECTION */}
+                  {visibleCinemas.length > 0 && (searchCategory === 'all' || searchCategory === 'cinema') && (
+                    <div>
+                      <div className="flex items-center justify-between mb-3 border-b border-white/10 pb-2">
+                        <h4 className="flex items-center gap-2 text-xs font-black uppercase tracking-widest text-emerald-400">
+                          <Building2 className="h-3.5 w-3.5" />
+                          <span>HỆ THỐNG RẠP PHÙ HỢP ({searchView.cinemaCount})</span>
+                        </h4>
+                        <span className="text-[10px] text-neutral-500">Tìm thấy theo tên hoặc địa chỉ rạp</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {visibleCinemas.map((c) => (
+                          <div
+                            key={c.id}
+                            className="flex gap-3 border border-emerald-500/20 bg-emerald-950/10 p-3 hover:border-emerald-400/60 transition-all"
+                          >
+                            <img
+                              src={c.image || 'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=400&q=80'}
+                              alt={c.name}
+                              className="h-16 w-16 object-cover border border-white/10 shrink-0"
+                            />
+                            <div className="flex-1 min-w-0 flex flex-col justify-between">
+                              <div>
+                                <p className="text-xs font-bold text-white truncate">{c.name}</p>
+                                <p className="text-[10px] text-neutral-400 flex items-start gap-1 mt-0.5 line-clamp-2">
+                                  <MapPin className="h-3 w-3 text-emerald-400 shrink-0 mt-0.5" />
+                                  <span>{c.address}</span>
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setSearchOverlayOpen(false);
+                                  navigate(`/showtimes?cinemaId=${c.id}`);
+                                }}
+                                className="mt-2 text-[10.5px] font-bold text-[#F7C600] hover:underline flex items-center gap-1 w-fit"
+                              >
+                                <span>Xem lịch chiếu tại rạp này</span>
+                                <ArrowRight className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                 </div>
 
-                <div className="border-t border-white/10 bg-black/60 px-5 py-2.5 flex items-center justify-between text-[11px] text-neutral-400">
-                  <span>Nhấn <span className="font-mono text-white">Enter ↵</span> để tìm kiếm</span>
+                {/* MODAL FOOTER */}
+                <div className="border-t border-white/10 bg-black/70 px-5 py-3 flex items-center justify-between text-[11px] text-neutral-400">
+                  <div className="flex items-center gap-2">
+                    <span>Tìm thấy <strong className="text-white">{searchView.totalResults || 0}</strong> kết quả</span>
+                    <span className="text-neutral-600">·</span>
+                    <span className="hidden sm:inline">Nhấn <span className="font-mono text-white bg-white/10 px-1 py-0.2">Enter ↵</span> để tìm kiếm</span>
+                  </div>
                   <button onClick={viewAllMovies} className="font-bold text-[#F7C600] hover:underline flex items-center gap-1">
-                    <span>Xem toàn bộ kết quả</span>
-                    <ArrowRight className="h-3 w-3" />
+                    <span>Xem toàn bộ trên Khám Phá</span>
+                    <ArrowRight className="h-3.5 w-3.5" />
                   </button>
                 </div>
               </motion.div>
