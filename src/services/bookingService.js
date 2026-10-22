@@ -9,6 +9,7 @@ export const bookingService = {
   validateTicketPrice: (token, body) => request('/api/v1/ticket-pricing/validate', { method: 'POST', token, body }),
   getCheckoutQuote: (token, body) => request('/api/v1/catalog/checkout-quote', { method: 'POST', token, body }),
   holdSeats: (token, body) => request('/api/v1/bookings/hold', { method: 'POST', token, body }),
+  checkoutBooking: (token, bookingId, body) => request(`/api/v1/bookings/${bookingId}/checkout`, { method: 'POST', token, body }),
   updateHoldingBooking: (token, bookingId, body) => request(`/api/v1/bookings/${bookingId}/items`, { method: 'PUT', token, body }),
   createBooking: (token, body) => request('/api/v1/bookings', { method: 'POST', token, body }),
   getMyBookings: (token) => request('/api/v1/bookings?size=100', { token }).then(unwrapListPayload),
