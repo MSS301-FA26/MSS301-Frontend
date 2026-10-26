@@ -17,8 +17,9 @@ import { useUiStore } from '../../stores/useUiStore';
 const formatVnd = (value) => `${Number(value || 0).toLocaleString('vi-VN')}đ`;
 const labels = {
   PENDING_PAYMENT: 'Chờ thanh toán',
-  PAID: 'Đã thanh toán',
-  PICKED_UP: 'Đã nhận món',
+  PAID: 'Sẵn sàng nhận món',
+  PARTIALLY_PICKED_UP: 'Đang nhận món',
+  PICKED_UP: 'Đã nhận đủ món',
   CANCELLED: 'Đã hủy',
   EXPIRED: 'Đã hết hạn',
 };
@@ -167,7 +168,7 @@ export default function FoodOrdersHistoryPage() {
     const seconds = countdown(order.expiresAt, now);
     const status = order.status === 'PENDING_PAYMENT' && seconds === 0 ? 'EXPIRED' : order.status;
     if (status === 'PENDING_PAYMENT') groups.pending.push(order);
-    else if (status === 'PAID') groups.ready.push(order);
+    else if (status === 'PAID' || status === 'PARTIALLY_PICKED_UP') groups.ready.push(order);
     else groups.history.push(order);
     return groups;
   }, { pending: [], ready: [], history: [] }), [sortedOrders, now]);
@@ -238,7 +239,8 @@ export default function FoodOrdersHistoryPage() {
     const seconds = countdown(order.expiresAt, now);
     const status = order.status === 'PENDING_PAYMENT' && seconds === 0 ? 'EXPIRED' : order.status;
     const pending = status === 'PENDING_PAYMENT';
-    const paid = status === 'PAID';
+    const isPartial = status === 'PARTIALLY_PICKED_UP';
+    const paid = status === 'PAID' || isPartial;
     const pickedUp = status === 'PICKED_UP';
     const items = order.items || [];
     const cinema = getOrderCinema(order);
@@ -248,15 +250,20 @@ export default function FoodOrdersHistoryPage() {
         ? 'Đơn đã hủy.'
         : '';
 
+    const pickedItemsCount = items.filter((it) => it.pickedUp || pickedUp).length;
+    const totalItemsCount = items.length;
+
     return (
       <article
         key={order.id}
         className={`flex flex-col justify-between rounded-xl border p-3.5 sm:p-4 transition-all duration-200 ${
           pending
             ? 'border-amber-400/35 bg-gradient-to-b from-amber-500/[0.04] to-neutral-950/90 shadow-[0_4px_20px_rgba(245,158,11,0.04)]'
-            : paid
-              ? 'border-emerald-400/30 bg-gradient-to-b from-emerald-500/[0.04] to-neutral-950/90 shadow-[0_4px_20px_rgba(16,185,129,0.04)]'
-              : 'border-white/10 bg-neutral-950/60 opacity-80 hover:opacity-100'
+            : isPartial
+              ? 'border-sky-400/40 bg-gradient-to-b from-sky-500/[0.06] to-neutral-950/90 shadow-[0_4px_20px_rgba(56,189,248,0.08)]'
+              : paid
+                ? 'border-emerald-400/30 bg-gradient-to-b from-emerald-500/[0.04] to-neutral-950/90 shadow-[0_4px_20px_rgba(16,185,129,0.04)]'
+                : 'border-white/10 bg-neutral-950/60 opacity-80 hover:opacity-100'
         }`}
       >
         <div className="space-y-3">
@@ -274,13 +281,15 @@ export default function FoodOrdersHistoryPage() {
               className={`shrink-0 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
                 pending
                   ? 'bg-amber-400/15 text-amber-300 border border-amber-400/30'
-                  : paid
-                    ? 'bg-emerald-400/15 text-emerald-300 border border-emerald-400/30'
-                    : 'bg-white/5 text-neutral-400 border border-white/10'
+                  : isPartial
+                    ? 'bg-sky-400/20 text-sky-300 border border-sky-400/40'
+                    : paid
+                      ? 'bg-emerald-400/15 text-emerald-300 border border-emerald-400/30'
+                      : 'bg-white/5 text-neutral-400 border border-white/10'
               }`}
             >
-              <span className={`h-1.5 w-1.5 rounded-full ${pending ? 'bg-amber-400 animate-pulse' : paid ? 'bg-emerald-400' : 'bg-neutral-500'}`} />
-              {labels[status] || status}
+              <span className={`h-1.5 w-1.5 rounded-full ${pending ? 'bg-amber-400 animate-pulse' : isPartial ? 'bg-sky-400 animate-pulse' : paid ? 'bg-emerald-400' : 'bg-neutral-500'}`} />
+              {isPartial ? `Đã nhận ${pickedItemsCount}/${totalItemsCount} món` : (labels[status] || status)}
             </span>
           </div>
 
@@ -321,6 +330,7 @@ export default function FoodOrdersHistoryPage() {
                 items.map((item, idx) => {
                   const itemName = item.name || item.productName || `Món bắp nước #${item.foodItemId || item.productId || idx + 1}`;
                   const itemTotal = item.lineTotal != null ? item.lineTotal : (item.unitPrice ? item.unitPrice * item.quantity : 0);
+                  const isItemPickedUp = Boolean(item.pickedUp || pickedUp);
                   return (
                     <div key={idx} className="flex items-center justify-between py-1.5 text-xs gap-2">
                       <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -333,12 +343,22 @@ export default function FoodOrdersHistoryPage() {
                         >
                           {item.isCombo ? 'Combo' : 'Lẻ'}
                         </span>
-                        <span className="truncate text-xs font-semibold text-neutral-200" title={itemName}>
+                        <span className={`truncate text-xs font-semibold ${isItemPickedUp ? 'line-through text-neutral-400' : 'text-neutral-200'}`} title={itemName}>
                           {itemName}
                         </span>
                         <span className="shrink-0 font-mono text-[10px] font-bold text-amber-400">
                           ×{item.quantity}
                         </span>
+                        {/* Item Delivery Status Badge */}
+                        {isItemPickedUp ? (
+                          <span className="shrink-0 rounded bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.2 text-[8px] font-bold text-emerald-300">
+                            Đã nhận
+                          </span>
+                        ) : paid ? (
+                          <span className="shrink-0 rounded bg-amber-500/15 border border-amber-500/30 px-1.5 py-0.2 text-[8px] font-bold text-amber-300">
+                            Chờ nhận
+                          </span>
+                        ) : null}
                       </div>
                       <span className="shrink-0 font-mono text-[11px] font-semibold text-neutral-300">
                         {formatVnd(itemTotal)}
@@ -411,7 +431,9 @@ export default function FoodOrdersHistoryPage() {
 
           {/* QR nhận món - Nhỏ gọn, sắc nét */}
           {paid && (order.qrCode || order.foodOrderCode || order.orderCode) && (
-            <div className="mt-2.5 flex items-center gap-3 rounded-lg border border-emerald-500/25 bg-emerald-950/25 p-2">
+            <div className={`mt-2.5 flex items-center gap-3 rounded-lg border p-2 ${
+              isPartial ? 'border-sky-500/25 bg-sky-950/25' : 'border-emerald-500/25 bg-emerald-950/25'
+            }`}>
               <div className="shrink-0 rounded bg-white p-1 shadow-sm">
                 <QRCodeSVG
                   value={order.qrCode || `FOOD:${order.orderCode || order.foodOrderCode}:${order.id}`}
@@ -421,15 +443,22 @@ export default function FoodOrdersHistoryPage() {
                 />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-1 text-[9px] font-black uppercase tracking-wider text-emerald-400">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Mã nhận món tại quầy
+                <div className={`flex items-center gap-1 text-[9px] font-black uppercase tracking-wider ${
+                  isPartial ? 'text-sky-400' : 'text-emerald-400'
+                }`}>
+                  <span className={`h-1.5 w-1.5 rounded-full animate-pulse ${
+                    isPartial ? 'bg-sky-400' : 'bg-emerald-400'
+                  }`} />
+                  {isPartial ? `Nhận tiếp ${totalItemsCount - pickedItemsCount} món còn lại` : 'Mã nhận món tại quầy'}
                 </div>
                 <p className="font-mono text-[10px] font-bold text-white truncate mt-0.5">
                   {order.orderCode || order.foodOrderCode}
                 </p>
                 <p className="text-[10px] text-neutral-300 leading-tight mt-0.5">
-                  Đưa mã QR cho nhân viên tại quầy bắp nước <span className="font-bold text-amber-300">{cinema.name}</span>
+                  {isPartial
+                    ? `Đã nhận ${pickedItemsCount}/${totalItemsCount} món. Đưa mã QR cho nhân viên để nhận các món còn lại tại `
+                    : 'Đưa mã QR cho nhân viên tại quầy bắp nước '}
+                  <span className="font-bold text-amber-300">{cinema.name}</span>
                 </p>
               </div>
             </div>
@@ -443,8 +472,14 @@ export default function FoodOrdersHistoryPage() {
           )}
 
           {pickedUp && (
-            <p className="mt-1.5 text-[10px] text-neutral-500 font-medium">
-              Đã nhận món{order.pickedUpAt ? ` lúc ${formatDateTime(order.pickedUpAt)}` : ''}
+            <p className="mt-1.5 text-[10px] text-emerald-400/80 font-medium flex items-center gap-1">
+              ✓ Đã nhận đủ toàn bộ món{order.pickedUpAt ? ` lúc ${formatDateTime(order.pickedUpAt)}` : ''}
+            </p>
+          )}
+
+          {isPartial && (
+            <p className="mt-1.5 text-[10px] text-sky-400/90 font-medium">
+              Đã nhận {pickedItemsCount}/${totalItemsCount} món. Còn {totalItemsCount - pickedItemsCount} món chưa nhận.
             </p>
           )}
         </div>

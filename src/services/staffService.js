@@ -26,10 +26,10 @@ export const staffService = {
     body
   }),
   lookupFoodOrder: (token, code) => request(`/api/v1/staff/check-in/food-orders/lookup?code=${encodeURIComponent(code)}`, { token }),
-  pickUpFoodOrder: (token, code) => request('/api/v1/staff/check-in/food-orders/pickup', {
+  pickUpFoodOrder: (token, code, payload = {}) => request('/api/v1/staff/check-in/food-orders/pickup', {
     method: 'POST',
     token,
-    body: { code }
+    body: { code, ...payload }
   }),
   getRecentFoodOrders: (token, limit = 50) =>
     request(`/api/v1/staff/check-in/food-orders/recent?limit=${encodeURIComponent(limit)}`, { token }),

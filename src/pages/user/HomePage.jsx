@@ -92,95 +92,95 @@ const MOVIE_BACKDROPS_MAP = {
 const CURATED_FOODS = [
   {
     id: 'combo-1',
-    name: 'Combo CineSingle',
+    name: 'Combo Solo Movie',
     categoryName: 'BẮP NƯỚC ĐƠN',
     group: 'COMBO',
     description: '1 Bắp rang bơ thơm giòn cỡ lớn + 1 Nước ngọt có ga 32oz mát lạnh sảng khoái',
-    price: 89000,
+    price: 79000,
     regularPriceSum: 110000,
     imageUrl: 'https://images.unsplash.com/photo-1572177812156-58036aae439c?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
   {
     id: 'combo-2',
-    name: 'Combo CineCouple',
+    name: 'Combo Couple Sweet',
     categoryName: 'DÀNH CHO 2 NGƯỜI',
     group: 'COMBO',
     description: '1 Bắp lớn 2 ngăn vị Phô mai & Caramel + 2 Nước ngọt có ga 32oz tùy chọn',
-    price: 119000,
+    price: 109000,
     regularPriceSum: 145000,
     imageUrl: 'https://images.unsplash.com/photo-1512149177596-f817c7ef5d4c?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
   {
     id: 'combo-3',
-    name: 'Combo Truffle Gourmet Signature',
-    categoryName: 'ĐỘC QUYỀN CINEPREMIER',
+    name: 'Combo Party Friends',
+    categoryName: 'GIA ĐÌNH & BẠN BÈ',
     group: 'COMBO',
-    description: '1 Bắp rang nấm Truffle đen hoàng gia + 2 Trà đào cam sả hạt chia tươi mát',
-    price: 159000,
-    regularPriceSum: 195000,
+    description: '2 Bắp khổng lồ đa vị + 4 Nước ngọt 32oz + 1 Phần Snack khoai tây giòn cay',
+    price: 189000,
+    regularPriceSum: 225000,
     imageUrl: 'https://images.unsplash.com/photo-1505686994434-e3cc5abf1330?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
   {
     id: 'combo-4',
-    name: 'Combo Family Feast VIP',
-    categoryName: 'GIA ĐÌNH & BẠN BÈ',
+    name: 'Combo VIP Deluxe',
+    categoryName: 'ĐỘC QUYỀN CINEPREMIER',
     group: 'COMBO',
-    description: '2 Bắp khổng lồ đa vị + 4 Nước ngọt 32oz + 1 Phần Snack khoai tây giòn cay',
-    price: 219000,
-    regularPriceSum: 270000,
+    description: '1 Bắp rang hoàng gia thượng hạng + 2 Trà đào cam sả hạt chia tươi mát',
+    price: 169000,
+    regularPriceSum: 210000,
     imageUrl: 'https://images.unsplash.com/photo-1578849278619-e73505e9610f?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
   {
-    id: 'item-101',
-    name: 'Bắp Rang Bơ Hoàng Gia (L)',
+    id: 'item-1',
+    name: 'Bắp Rang Bơ Truyền Thống 64oz',
     categoryName: 'BẮP RANG BƠ',
     group: 'POPCORN',
     description: 'Bắp rang ngô Mỹ hạt nở to tròn đều, phủ bơ vàng thơm ngậy đặc trưng',
-    price: 65000,
-    regularPriceSum: 80000,
+    price: 45000,
+    regularPriceSum: 55000,
     imageUrl: 'https://images.unsplash.com/photo-1585647347384-2593bc35786b?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
   {
-    id: 'item-102',
-    name: 'Bắp Rang Phô Mai & Caramel (L)',
+    id: 'item-2',
+    name: 'Bắp Rang Phô Mai 64oz',
     categoryName: 'BẮP RANG BƠ',
     group: 'POPCORN',
-    description: 'Bắp 2 ngăn giòn rụm kết hợp phô mai mặn béo ngậy và caramel ngọt dịu',
-    price: 75000,
-    regularPriceSum: 90000,
+    description: 'Bắp giòn rụm kết hợp phô mai mặn béo ngậy thơm nức',
+    price: 55000,
+    regularPriceSum: 65000,
     imageUrl: 'https://images.unsplash.com/photo-1578849278619-e73505e9610f?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
   {
-    id: 'item-103',
-    name: 'Coca Cola Zero / Regular (32oz)',
+    id: 'item-5',
+    name: 'Coca-Cola 32oz',
     categoryName: 'NƯỚC NGỌT CÓ GA',
     group: 'DRINK',
     description: 'Nước ngọt có ga mát lạnh sảng khoái ly lớn 32oz đập tan cơn khát',
-    price: 39000,
-    regularPriceSum: 45000,
+    price: 35000,
+    regularPriceSum: 40000,
     imageUrl: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
   {
-    id: 'item-104',
-    name: 'Trà Đào Cam Sả Hạt Chia',
+    id: 'item-8',
+    name: 'Trà Đào Hạt Chia 32oz',
     categoryName: 'TRÀ TRÁI CÂY',
     group: 'DRINK',
-    description: 'Trà đào thanh mát với miếng đào giòn ngọt, hương sả tươi và hạt chia dinh dưỡng',
-    price: 49000,
-    regularPriceSum: 59000,
+    description: 'Trà đào thanh mát với miếng đào giòn ngọt, hương thơm tươi mát và hạt chia dinh dưỡng',
+    price: 40000,
+    regularPriceSum: 50000,
     imageUrl: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
   {
-    id: 'item-105',
-    name: 'Xúc Xích Đức Phô Mai Nướng',
+    id: 'item-10',
+    name: 'Xúc Xích Phô Mai Nướng',
     categoryName: 'ĂN VẶT & MÓN NÓNG',
     group: 'SNACK',
     description: 'Xúc xích Đức xông khói nóng hổi với nhân phô mai tan chảy đậm đà',
@@ -190,13 +190,13 @@ const CURATED_FOODS = [
     status: 'ACTIVE'
   },
   {
-    id: 'item-106',
-    name: 'Snack Khoai Tây Lắc Phô Mai BBQ',
+    id: 'item-11',
+    name: 'Khoai Tây Lắc Phô Mai',
     categoryName: 'ĂN VẶT & MÓN NÓNG',
     group: 'SNACK',
-    description: 'Khoai tây chiên giòn rụm lắc bột phô mai vị BBQ thơm lừng hấp dẫn',
-    price: 42000,
-    regularPriceSum: 50000,
+    description: 'Khoai tây chiên giòn rụm lắc bột phô mai thơm lừng hấp dẫn',
+    price: 45000,
+    regularPriceSum: 55000,
     imageUrl: 'https://images.unsplash.com/photo-1582293041079-7814c2f12063?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   }
@@ -647,23 +647,10 @@ export default function HomePage({
     const list = Array.isArray(foodCatalog)
       ? foodCatalog.filter(item => !item.status || item.status === 'ACTIVE' || item.status === 'LOW_STOCK')
       : [];
-    let combined = [];
     if (list.length > 0) {
-      const existingIds = new Set(list.map(f => String(f.id)));
-      const existingNames = new Set(list.map(f => (f.name || '').toLowerCase().trim()));
-      const extras = CURATED_FOODS.filter(cf => !existingIds.has(String(cf.id)) && !existingNames.has((cf.name || '').toLowerCase().trim()));
-      combined = [...list, ...extras];
-    } else {
-      combined = CURATED_FOODS;
+      return list;
     }
-
-    const seen = new Set();
-    return combined.filter(item => {
-      const idKey = String(item.id);
-      if (seen.has(idKey)) return false;
-      seen.add(idKey);
-      return true;
-    });
+    return CURATED_FOODS;
   }, [foodCatalog]);
 
   // AI PopBot Chat state

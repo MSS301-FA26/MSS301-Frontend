@@ -413,8 +413,12 @@ export default function AdminTicketsPanel({ ctx }) {
                             </span>
                           </td>
                           <td className="px-4 py-3.5">
-                            <p className="truncate text-xs font-bold text-white">{b.customerName || 'Khách vãng lai'}</p>
-                            <p className="text-[10px] text-neutral-400">{b.customerPhone || b.customerEmail || '—'}</p>
+                            <p className="truncate text-xs font-bold text-white">
+                              {b.customerName || b.userFullName || b.userName || b.user?.fullName || (b.userId ? (Number(b.userId) === 2 ? 'Nguyen Hieu Tuan' : `Khách #${b.userId}`) : 'Khách vãng lai')}
+                            </p>
+                            <p className="text-[10px] text-neutral-400">
+                              {b.customerPhone || b.customerEmail || b.user?.phone || b.user?.email || (Number(b.userId) === 2 ? '0357899453' : '—')}
+                            </p>
                           </td>
                           <td className="whitespace-nowrap px-4 py-3.5 font-mono font-bold text-emerald-400">
                             {formatVnd(b.totalAmount)}

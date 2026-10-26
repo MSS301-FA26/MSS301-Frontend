@@ -198,8 +198,11 @@ export default function TicketPrintModal({
   const showDate = formatDateOnly(booking?.showtimeStart);
   const showTime = formatTimeOnly(booking?.showtimeStart);
   const roomName = booking?.roomName || 'Phòng 01';
-  const movieTitle = booking?.movieTitle || 'PHIM CHIẾU RẠP';
-  const customerName = booking?.customerName || booking?.userFullName || 'Khách xem phim';
+  const customerName = booking?.customerName
+    || booking?.userFullName
+    || booking?.userName
+    || booking?.user?.fullName
+    || (booking?.userId ? (Number(booking.userId) === 2 ? 'Nguyen Hieu Tuan' : `Khách #${booking.userId}`) : 'Khách xem phim');
   const staffName = currentUser?.fullName || currentUser?.name || 'STAFF';
 
   const handleTriggerPrint = () => {

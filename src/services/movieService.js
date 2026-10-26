@@ -169,11 +169,11 @@ export const movieService = {
   getMoviesByActor: (actorId) => request(`/api/v1/actors/${encodeURIComponent(actorId)}/movies`)
     .then(normalizeMovieListResponse),
   getGenres: () => request('/api/v1/genres'),
-  getFoodItems: () => request('/api/v1/foods/items')
+  getFoodItems: () => request('/api/v1/foods/items?size=100')
     .then(unwrapListPayload)
     .then(sanitizeItemList)
     .catch(() => []),
-  getFoodCombos: () => request('/api/v1/foods/combos')
+  getFoodCombos: () => request('/api/v1/foods/combos?size=100')
     .then(unwrapListPayload)
     .then(sanitizeItemList)
     .catch(() => []),

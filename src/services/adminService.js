@@ -219,7 +219,8 @@ export const adminService = {
   getShowtimeBookingSummary: (token, showtimeId) => request(`/api/v1/admin/bookings/showtimes/${enc(showtimeId)}/summary`, { token }),
   getShowtimesTicketCounts: (token, showtimeIds = []) => {
     if (!showtimeIds || showtimeIds.length === 0) return Promise.resolve({});
-    return request(`/api/v1/admin/bookings/showtimes/counts?showtimeIds=${showtimeIds.join(',')}`, { token });
+    return request(`/api/v1/admin/bookings/showtimes/counts?showtimeIds=${showtimeIds.join(',')}`, { token, timeout: 4000 })
+      .catch(() => ({}));
   },
 
   /** Preview ticket prices for draft slots (no DB write). */

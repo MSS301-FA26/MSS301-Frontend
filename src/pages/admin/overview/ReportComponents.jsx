@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AlertCircle, ArrowDownToLine, ArrowUpRight, CalendarDays, Check, ChevronLeft, ChevronRight, Inbox, RefreshCw } from 'lucide-react';
+import { AlertCircle, ArrowDownToLine, ArrowUpRight, Building2, CalendarDays, Check, ChevronLeft, ChevronRight, Globe, Inbox, Lock, RefreshCw } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, Cell, ComposedChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { compact, dateInput, number, percent, presetRange, shortDate, vnd } from './reportUtils';
 import './reports.css';
@@ -41,7 +41,7 @@ export function ReportFilters({ report, onExport }) {
   };
   const cinemaName = applied.cinemaId
     ? cinemas.find(c => String(c.id) === String(applied.cinemaId))?.name || `Rạp #${applied.cinemaId}`
-    : 'Tất cả rạp';
+    : 'Toàn bộ hệ thống';
 
   return (
     <div className="report-filter-wrap">
@@ -51,7 +51,8 @@ export function ReportFilters({ report, onExport }) {
             ['1', 'Hôm nay'],
             ['7', '7 ngày'],
             ['30', '30 ngày'],
-            ['month', 'Tháng này']
+            ['month', 'Tháng này'],
+            ['90', '90 ngày']
           ].map(([key, label]) => (
             <button
               type="button"
@@ -66,23 +67,31 @@ export function ReportFilters({ report, onExport }) {
         </div>
 
         <div className="report-filter-fields">
-          <label>
-            <span>Cụm rạp</span>
-            <select
-              aria-label="Cụm rạp"
-              value={managerCinema ? String(managerCinema) : draft.cinemaId}
-              disabled={Boolean(managerCinema) || loading}
-              onChange={e => change('cinemaId', e.target.value)}
-            >
-              {!managerCinema && <option value="">Tất cả rạp</option>}
-              {managerCinema && !cinemas.some(c => String(c.id) === String(managerCinema)) && (
-                <option value={managerCinema}>Rạp được phân công</option>
-              )}
-              {cinemas.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </label>
+          {managerCinema ? (
+            <div className="report-locked-cinema" title="Tài khoản Quản lý chỉ được phép xem số liệu thuộc chi nhánh được phân công">
+              <span className="report-locked-label">Cụm rạp phụ trách</span>
+              <div className="report-locked-pill">
+                <Lock size={12} className="text-amber-400 shrink-0" />
+                <span className="report-locked-name">{cinemas.find(c => String(c.id) === String(managerCinema))?.name || `Rạp #${managerCinema}`}</span>
+                <span className="report-locked-badge">Cố định</span>
+              </div>
+            </div>
+          ) : (
+            <label>
+              <span>Cụm rạp</span>
+              <select
+                aria-label="Cụm rạp"
+                value={draft.cinemaId}
+                disabled={loading}
+                onChange={e => change('cinemaId', e.target.value)}
+              >
+                <option value="">Toàn bộ hệ thống (Tất cả rạp)</option>
+                {cinemas.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
 
           <label>
             <span>Từ ngày</span>
@@ -139,7 +148,22 @@ export function ReportFilters({ report, onExport }) {
           <CalendarDays size={14} />
           <span>{shortDate(applied.from)}/{applied.from.slice(0, 4)} – {shortDate(applied.to)}/{applied.to.slice(0, 4)}</span>
           <span className="report-status-divider">/</span>
-          <span className="report-status-cinema">{cinemaName}</span>
+          {managerCinema ? (
+            <span className="report-status-cinema manager flex items-center gap-1.5 text-amber-400">
+              <Lock size={12} />
+              <span>Chi nhánh: {cinemas.find(c => String(c.id) === String(managerCinema))?.name || `Rạp #${managerCinema}`}</span>
+            </span>
+          ) : applied.cinemaId ? (
+            <span className="report-status-cinema filtered flex items-center gap-1.5 text-amber-300">
+              <Building2 size={12} />
+              <span>Lọc chi nhánh: {cinemaName}</span>
+            </span>
+          ) : (
+            <span className="report-status-cinema all flex items-center gap-1.5 text-emerald-400">
+              <Globe size={12} />
+              <span>Toàn bộ hệ thống ({cinemas.length || 'Tất cả'} cụm rạp)</span>
+            </span>
+          )}
         </div>
         <div className="report-status-right">
           {dirty ? (

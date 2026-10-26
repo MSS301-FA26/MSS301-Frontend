@@ -100,10 +100,10 @@ const DEFAULT_FALLBACK_FOODS = [
     foodComboId: 1,
     category: 'combo',
     isCombo: true,
-    name: 'Combo CineSingle',
+    name: 'Combo Solo Movie',
     categoryName: 'BẮP NƯỚC ĐƠN',
     description: '1 Bắp rang bơ thơm giòn cỡ lớn + 1 Nước ngọt có ga 32oz mát lạnh sảng khoái',
-    price: 89000,
+    price: 79000,
     regularPriceSum: 110000,
     imageUrl: 'https://images.unsplash.com/photo-1572177812156-58036aae439c?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
@@ -115,10 +115,10 @@ const DEFAULT_FALLBACK_FOODS = [
     foodComboId: 2,
     category: 'combo',
     isCombo: true,
-    name: 'Combo CineCouple',
+    name: 'Combo Couple Sweet',
     categoryName: 'DÀNH CHO 2 NGƯỜI',
     description: '1 Bắp lớn 2 ngăn vị Phô mai & Caramel + 2 Nước ngọt có ga 32oz tùy chọn',
-    price: 119000,
+    price: 109000,
     regularPriceSum: 145000,
     imageUrl: 'https://images.unsplash.com/photo-1512149177596-f817c7ef5d4c?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
@@ -130,11 +130,11 @@ const DEFAULT_FALLBACK_FOODS = [
     foodComboId: 3,
     category: 'combo',
     isCombo: true,
-    name: 'Combo Truffle Gourmet Signature',
-    categoryName: 'ĐỘC QUYỀN CINEPREMIER',
-    description: '1 Bắp rang nấm Truffle đen hoàng gia + 2 Trà đào cam sả hạt chia tươi mát',
-    price: 159000,
-    regularPriceSum: 195000,
+    name: 'Combo Party Friends',
+    categoryName: 'GIA ĐÌNH & BẠN BÈ',
+    description: '2 Bắp khổng lồ đa vị + 4 Nước ngọt 32oz + 1 Phần Snack khoai tây giòn cay',
+    price: 189000,
+    regularPriceSum: 225000,
     imageUrl: 'https://images.unsplash.com/photo-1505686994434-e3cc5abf1330?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
@@ -145,82 +145,82 @@ const DEFAULT_FALLBACK_FOODS = [
     foodComboId: 4,
     category: 'combo',
     isCombo: true,
-    name: 'Combo Family Feast VIP',
-    categoryName: 'GIA ĐÌNH & BẠN BÈ',
-    description: '2 Bắp khổng lồ đa vị + 4 Nước ngọt 32oz + 1 Phần Snack khoai tây giòn cay',
-    price: 219000,
-    regularPriceSum: 270000,
+    name: 'Combo VIP Deluxe',
+    categoryName: 'ĐỘC QUYỀN CINEPREMIER',
+    description: '1 Bắp rang hoàng gia thượng hạng + 2 Trà đào cam sả hạt chia tươi mát',
+    price: 169000,
+    regularPriceSum: 210000,
     imageUrl: 'https://images.unsplash.com/photo-1578849278619-e73505e9610f?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
   {
-    id: 'item-101',
-    backendId: 101,
-    foodItemId: 101,
+    id: 'item-1',
+    backendId: 1,
+    foodItemId: 1,
     foodComboId: null,
     category: 'item',
     isCombo: false,
-    name: 'Bắp Rang Bơ Hoàng Gia (L)',
+    name: 'Bắp Rang Bơ Truyền Thống 64oz',
     categoryName: 'BẮP RANG BƠ',
     description: 'Bắp rang ngô Mỹ hạt nở to tròn đều, phủ bơ vàng thơm ngậy đặc trưng',
-    price: 65000,
-    regularPriceSum: 80000,
+    price: 45000,
+    regularPriceSum: 55000,
     imageUrl: 'https://images.unsplash.com/photo-1585647347384-2593bc35786b?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
   {
-    id: 'item-102',
-    backendId: 102,
-    foodItemId: 102,
+    id: 'item-2',
+    backendId: 2,
+    foodItemId: 2,
     foodComboId: null,
     category: 'item',
     isCombo: false,
-    name: 'Bắp Rang Phô Mai & Caramel (L)',
+    name: 'Bắp Rang Phô Mai 64oz',
     categoryName: 'BẮP RANG BƠ',
-    description: 'Bắp 2 ngăn giòn rụm kết hợp phô mai mặn béo ngậy và caramel ngọt dịu',
-    price: 75000,
-    regularPriceSum: 90000,
+    description: 'Bắp giòn rụm kết hợp phô mai mặn béo ngậy thơm nức',
+    price: 55000,
+    regularPriceSum: 65000,
     imageUrl: 'https://images.unsplash.com/photo-1578849278619-e73505e9610f?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
   {
-    id: 'item-103',
-    backendId: 103,
-    foodItemId: 103,
+    id: 'item-5',
+    backendId: 5,
+    foodItemId: 5,
     foodComboId: null,
     category: 'item',
     isCombo: false,
-    name: 'Coca Cola Zero / Regular (32oz)',
+    name: 'Coca-Cola 32oz',
     categoryName: 'NƯỚC NGỌT CÓ GA',
     description: 'Nước ngọt có ga mát lạnh sảng khoái ly lớn 32oz đập tan cơn khát',
-    price: 39000,
-    regularPriceSum: 45000,
+    price: 35000,
+    regularPriceSum: 40000,
     imageUrl: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
   {
-    id: 'item-104',
-    backendId: 104,
-    foodItemId: 104,
+    id: 'item-8',
+    backendId: 8,
+    foodItemId: 8,
     foodComboId: null,
     category: 'item',
     isCombo: false,
-    name: 'Trà Đào Cam Sả Hạt Chia',
+    name: 'Trà Đào Hạt Chia 32oz',
     categoryName: 'TRÀ TRÁI CÂY',
-    description: 'Trà đào thanh mát với miếng đào giòn ngọt, hương sả tươi và hạt chia dinh dưỡng',
-    price: 49000,
-    regularPriceSum: 59000,
+    description: 'Trà đào thanh mát với miếng đào giòn ngọt, hương thơm tươi mát và hạt chia dinh dưỡng',
+    price: 40000,
+    regularPriceSum: 50000,
     imageUrl: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
   {
-    id: 'item-105',
-    backendId: 105,
-    foodItemId: 105,
+    id: 'item-10',
+    backendId: 10,
+    foodItemId: 10,
     foodComboId: null,
     category: 'item',
     isCombo: false,
-    name: 'Xúc Xích Đức Phô Mai Nướng',
+    name: 'Xúc Xích Phô Mai Nướng',
     categoryName: 'ĂN VẶT & MÓN NÓNG',
     description: 'Xúc xích Đức xông khói nóng hổi với nhân phô mai tan chảy đậm đà',
     price: 45000,
@@ -229,17 +229,17 @@ const DEFAULT_FALLBACK_FOODS = [
     status: 'ACTIVE'
   },
   {
-    id: 'item-106',
-    backendId: 106,
-    foodItemId: 106,
+    id: 'item-11',
+    backendId: 11,
+    foodItemId: 11,
     foodComboId: null,
     category: 'item',
     isCombo: false,
-    name: 'Snack Khoai Tây Lắc Phô Mai BBQ',
+    name: 'Khoai Tây Lắc Phô Mai',
     categoryName: 'ĂN VẶT & MÓN NÓNG',
-    description: 'Khoai tây chiên giòn rụm lắc bột phô mai vị BBQ thơm lừng hấp dẫn',
-    price: 42000,
-    regularPriceSum: 50000,
+    description: 'Khoai tây chiên giòn rụm lắc bột phô mai thơm lừng hấp dẫn',
+    price: 45000,
+    regularPriceSum: 55000,
     imageUrl: 'https://images.unsplash.com/photo-1582293041079-7814c2f12063?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   }
@@ -412,21 +412,10 @@ export default function ConcessionsPage() {
   }, [requestedBookingId, showToast]);
 
   const effectiveFoodCatalog = useMemo(() => {
-    let combined = [];
     if (Array.isArray(foodCatalog) && foodCatalog.length > 0) {
-      const existingIds = new Set(foodCatalog.map((f) => String(f.id)));
-      const extras = DEFAULT_FALLBACK_FOODS.filter((df) => !existingIds.has(String(df.id)));
-      combined = [...foodCatalog, ...extras];
-    } else {
-      combined = DEFAULT_FALLBACK_FOODS;
+      return foodCatalog;
     }
-    const seen = new Set();
-    return combined.filter(item => {
-      const idKey = String(item.id);
-      if (seen.has(idKey)) return false;
-      seen.add(idKey);
-      return true;
-    });
+    return DEFAULT_FALLBACK_FOODS;
   }, [foodCatalog]);
 
   // Only active products

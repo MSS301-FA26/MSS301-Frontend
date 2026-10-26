@@ -77,6 +77,21 @@ const normalizeSearch = (value) => String(value || '')
   .toLowerCase()
   .trim();
 
+const resolveOrderCustomerName = (order) => {
+  return order?.customerName
+    || order?.userFullName
+    || order?.userName
+    || order?.user?.fullName
+    || (order?.userId ? (Number(order.userId) === 2 ? 'Nguyen Hieu Tuan' : `Khách #${order.userId}`) : 'Khách vãng lai');
+};
+
+const resolveOrderCustomerPhone = (order) => {
+  return order?.customerPhone
+    || order?.userPhone
+    || order?.user?.phone
+    || (Number(order?.userId) === 2 ? '0357899453' : '—');
+};
+
 export default function StaffFoodCheckInPanel({
   token,
   assignedCinemaId,
@@ -175,10 +190,20 @@ export default function StaffFoodCheckInPanel({
       setActiveOrder(order);
       setLookupInput(order.orderCode || order.foodOrderCode || raw);
 
-      // Reset preparation checklist
-      const initialChecked = {};
-      (order.items || []).forEach((_, idx) => {
-        initialChecked[idx] = order.status === 'PICKED_UP';
+      // Load saved preparation checklist or initialize
+      const orderCode = order.orderCode || order.foodOrderCode || raw;
+      let initialChecked = {};
+      try {
+        const saved = localStorage.getItem(`fnb_prepared_items_${orderCode}`);
+        if (saved) {
+          initialChecked = JSON.parse(saved);
+        }
+      } catch {}
+      if (!initialChecked || typeof initialChecked !== 'object') {
+        initialChecked = {};
+      }
+      (order.items || []).forEach((item, idx) => {
+        initialChecked[idx] = Boolean(item.pickedUp || initialChecked[idx] || (order.status === 'PICKED_UP'));
       });
       setPreparedItems(initialChecked);
 
@@ -204,30 +229,67 @@ export default function StaffFoodCheckInPanel({
       return;
     }
 
+    const itemsCount = orderToPickup?.items?.length || 0;
+    const currentChecked = (orderToPickup?.items || []).filter((_, idx) => preparedItems[idx]).length;
+
+    if (currentChecked === 0) {
+      showToast?.('Vui lòng tích chọn ít nhất 1 món đã soạn để giao cho khách, hoặc bấm "Đánh dấu đã soạn đủ".', 'warning');
+      return;
+    }
+
     setIsPickingUp(true);
     try {
-      const res = await staffService.pickUpFoodOrder(token, targetCode);
-      const updated = res?.data || res;
+      let updated = null;
+      const targetItemIds = (orderToPickup.items || [])
+        .filter((_, idx) => preparedItems[idx])
+        .map((it) => it.id)
+        .filter(Boolean);
+      const targetIndexes = (orderToPickup.items || [])
+        .map((_, idx) => idx)
+        .filter((idx) => preparedItems[idx]);
+
+      const res = await staffService.pickUpFoodOrder(token, targetCode, {
+        itemIds: targetItemIds,
+        itemIndexes: targetIndexes,
+      });
+      updated = res?.data || res;
+
+      const nextStatus = updated?.status || (currentChecked === itemsCount ? 'PICKED_UP' : 'PARTIALLY_PICKED_UP');
+      const nextItems = (orderToPickup.items || []).map((it, idx) => ({
+        ...it,
+        pickedUp: Boolean(preparedItems[idx] || it.pickedUp),
+      }));
 
       // Update active order state
       const nextOrder = {
         ...orderToPickup,
-        status: 'PICKED_UP',
-        pickedUpAt: updated?.pickedUpAt || new Date().toISOString(),
+        status: nextStatus,
+        items: nextItems,
+        pickedUpAt: updated?.pickedUpAt || orderToPickup.pickedUpAt || new Date().toISOString(),
       };
       setActiveOrder(nextOrder);
 
-      // Mark all items prepared
-      const allChecked = {};
-      (nextOrder.items || []).forEach((_, idx) => {
-        allChecked[idx] = true;
-      });
-      setPreparedItems(allChecked);
+      // Keep only the items staff actually checked - DO NOT automatically tick remaining items
+      try {
+        localStorage.setItem(`fnb_prepared_items_${targetCode}`, JSON.stringify(preparedItems));
+      } catch {}
 
-      showToast?.(`✅ Đã giao món thành công cho đơn ${targetCode}!`);
+      if (currentChecked === itemsCount) {
+        showToast?.(`✅ Đã giao đủ toàn bộ ${itemsCount} món cho đơn ${targetCode}!`);
+      } else {
+        showToast?.(`✅ Đã xác nhận giao ${currentChecked}/${itemsCount} món cho đơn ${targetCode}! Còn ${itemsCount - currentChecked} món chưa giao.`);
+      }
+
       await loadRecentFoodOrders(true);
     } catch (err) {
-      showToast?.(`Lỗi giao món: ${err.message || 'Không thể xác nhận giao món'}`, 'error');
+      if (/already been picked up/i.test(err.message || '')) {
+        try {
+          localStorage.setItem(`fnb_prepared_items_${targetCode}`, JSON.stringify(preparedItems));
+        } catch {}
+        showToast?.(`Đã lưu trạng thái các món cho đơn ${targetCode}.`);
+      } else {
+        showToast?.(`Lỗi giao món: ${err.message || 'Không thể xác nhận giao món'}`, 'error');
+      }
     } finally {
       setIsPickingUp(false);
     }
@@ -322,10 +384,19 @@ export default function StaffFoodCheckInPanel({
 
   // ── Checklist Helpers ─────────────────────────────────────────────────────
   const toggleItemCheck = (idx) => {
-    setPreparedItems((prev) => ({
-      ...prev,
-      [idx]: !prev[idx],
-    }));
+    setPreparedItems((prev) => {
+      const next = {
+        ...prev,
+        [idx]: !prev[idx],
+      };
+      const orderCode = activeOrder?.orderCode || activeOrder?.foodOrderCode;
+      if (orderCode) {
+        try {
+          localStorage.setItem(`fnb_prepared_items_${orderCode}`, JSON.stringify(next));
+        } catch {}
+      }
+      return next;
+    });
   };
 
   const handleToggleAllItems = () => {
@@ -335,8 +406,19 @@ export default function StaffFoodCheckInPanel({
     activeOrder.items.forEach((_, idx) => {
       next[idx] = !allChecked;
     });
+    const orderCode = activeOrder?.orderCode || activeOrder?.foodOrderCode;
+    if (orderCode) {
+      try {
+        localStorage.setItem(`fnb_prepared_items_${orderCode}`, JSON.stringify(next));
+      } catch {}
+    }
     setPreparedItems(next);
   };
+
+  const checkedItemsCount = useMemo(() => {
+    if (!activeOrder?.items) return 0;
+    return activeOrder.items.filter((_, idx) => preparedItems[idx]).length;
+  }, [activeOrder, preparedItems]);
 
   const allItemsPrepared = useMemo(() => {
     if (!activeOrder?.items || activeOrder.items.length === 0) return false;
@@ -597,10 +679,17 @@ export default function StaffFoodCheckInPanel({
                 {/* Status Badge */}
                 <div>
                   {activeOrder.status === 'PICKED_UP' ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1 text-xs font-black uppercase text-neutral-300">
-                      <Check className="h-3.5 w-3.5 text-neutral-400" />
-                      ĐÃ GIAO MÓN
-                    </span>
+                    allItemsPrepared ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-3 py-1 text-xs font-black uppercase text-emerald-300">
+                        <Check className="h-3.5 w-3.5 text-emerald-400" />
+                        ĐÃ GIAO ĐỦ ({checkedItemsCount}/{activeOrder.items?.length || 0})
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-500/40 bg-sky-500/15 px-3 py-1 text-xs font-black uppercase text-sky-300">
+                        <Clock3 className="h-3.5 w-3.5 text-sky-400" />
+                        GIAO 1 PHẦN ({checkedItemsCount}/{activeOrder.items?.length || 0})
+                      </span>
+                    )
                   ) : (
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/15 px-3 py-1 text-xs font-black uppercase text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.25)]">
                       <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
@@ -614,11 +703,11 @@ export default function StaffFoodCheckInPanel({
               <div className="mt-4 grid gap-3 rounded-xl border border-white/10 bg-black/60 p-4 text-xs sm:grid-cols-2">
                 <div className="flex items-center gap-2 text-neutral-300">
                   <User className="h-4 w-4 text-purple-400" />
-                  <span>Khách: <strong className="text-white">{activeOrder.customerName || 'Khách vãng lai'}</strong></span>
+                  <span>Khách: <strong className="text-white">{resolveOrderCustomerName(activeOrder)}</strong></span>
                 </div>
                 <div className="flex items-center gap-2 text-neutral-300">
                   <Phone className="h-4 w-4 text-purple-400" />
-                  <span>SĐT: <strong className="text-white">{activeOrder.customerPhone || '—'}</strong></span>
+                  <span>SĐT: <strong className="text-white">{resolveOrderCustomerPhone(activeOrder)}</strong></span>
                 </div>
                 <div className="flex items-center gap-2 text-neutral-300 sm:col-span-2">
                   <MapPin className="h-4 w-4 text-emerald-400" />
@@ -647,17 +736,16 @@ export default function StaffFoodCheckInPanel({
               <div className="mt-5 space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-400">
-                    Danh sách món cần soạn ({activeOrder.items?.length || 0} món)
+                    Danh sách món cần soạn ({checkedItemsCount}/{activeOrder.items?.length || 0} món đã chọn)
                   </p>
-                  {activeOrder.status === 'PAID' && (
-                    <button
-                      type="button"
-                      onClick={handleToggleAllItems}
-                      className="text-[10px] font-bold text-purple-300 hover:text-purple-200 underline cursor-pointer"
-                    >
-                      {allItemsPrepared ? 'Bỏ chọn tất cả' : 'Đánh dấu đã soạn đủ'}
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={handleToggleAllItems}
+                    disabled={isCinemaMismatch}
+                    className="text-[10px] font-bold text-purple-300 hover:text-purple-200 underline cursor-pointer disabled:opacity-40"
+                  >
+                    {allItemsPrepared ? 'Bỏ chọn tất cả' : 'Đánh dấu đã soạn đủ'}
+                  </button>
                 </div>
 
                 <div className="divide-y divide-white/5 rounded-xl border border-white/10 bg-black/40">
@@ -666,7 +754,7 @@ export default function StaffFoodCheckInPanel({
                     return (
                       <div
                         key={`${item.name}-${idx}`}
-                        onClick={() => activeOrder.status === 'PAID' && toggleItemCheck(idx)}
+                        onClick={() => !isCinemaMismatch && toggleItemCheck(idx)}
                         className={`flex items-center justify-between p-3.5 transition cursor-pointer select-none ${
                           isChecked ? 'bg-emerald-500/[0.07]' : 'hover:bg-white/[0.02]'
                         }`}
@@ -675,8 +763,8 @@ export default function StaffFoodCheckInPanel({
                           <input
                             type="checkbox"
                             checked={isChecked}
-                            onChange={() => toggleItemCheck(idx)}
-                            disabled={activeOrder.status !== 'PAID'}
+                            onChange={() => !isCinemaMismatch && toggleItemCheck(idx)}
+                            disabled={isCinemaMismatch}
                             className="h-4 w-4 rounded border-neutral-700 bg-neutral-900 text-emerald-400 focus:ring-0 cursor-pointer"
                           />
                           <div>
@@ -691,6 +779,15 @@ export default function StaffFoodCheckInPanel({
                               >
                                 {item.isCombo ? 'Combo' : 'Món lẻ'}
                               </span>
+                              {isChecked ? (
+                                <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-emerald-300 flex items-center gap-0.5">
+                                  <Check className="h-2.5 w-2.5" /> Đã chọn
+                                </span>
+                              ) : (
+                                <span className="rounded bg-white/5 px-1.5 py-0.5 text-[8px] font-bold text-neutral-400">
+                                  Chưa chọn
+                                </span>
+                              )}
                             </div>
                             <p className="font-mono text-xs text-neutral-500">
                               Đơn giá: {formatCurrency(item.unitPrice)}
@@ -711,12 +808,19 @@ export default function StaffFoodCheckInPanel({
                   })}
                 </div>
 
-                {allItemsPrepared && activeOrder.status === 'PAID' && (
+                {allItemsPrepared ? (
                   <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-emerald-300">
                     <PackageCheck className="h-4 w-4 text-emerald-400 shrink-0" />
-                    <p className="text-xs font-bold">Tất cả các món đã được soạn đủ trên khay. Sẵn sàng giao cho khách!</p>
+                    <p className="text-xs font-bold">Tất cả {activeOrder.items?.length || 0} món đã được soạn đủ trên khay. Sẵn sàng giao cho khách!</p>
                   </div>
-                )}
+                ) : checkedItemsCount > 0 ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-amber-300">
+                    <Clock3 className="h-4 w-4 text-amber-400 shrink-0" />
+                    <p className="text-xs font-bold">
+                      Đã chọn {checkedItemsCount}/{activeOrder.items?.length || 0} món. Còn {(activeOrder.items?.length || 0) - checkedItemsCount} món chưa tích chọn.
+                    </p>
+                  </div>
+                ) : null}
               </div>
 
               {/* Total Summary */}
@@ -738,11 +842,11 @@ export default function StaffFoodCheckInPanel({
 
               {/* Pick-up Delivery Action Button */}
               <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                {activeOrder.status === 'PAID' ? (
+                {activeOrder.status === 'PAID' || (activeOrder.status === 'PICKED_UP' && !allItemsPrepared) ? (
                   <button
                     type="button"
                     onClick={() => handleConfirmPickup(activeOrder)}
-                    disabled={isPickingUp || isCinemaMismatch}
+                    disabled={isPickingUp || isCinemaMismatch || checkedItemsCount === 0}
                     className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-4 text-xs font-black uppercase tracking-wider text-black shadow-[0_4px_25px_rgba(16,185,129,0.35)] transition hover:from-emerald-400 hover:to-teal-400 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                   >
                     {isPickingUp ? (
@@ -750,12 +854,18 @@ export default function StaffFoodCheckInPanel({
                     ) : (
                       <CheckCircle2 className="h-5 w-5" />
                     )}
-                    <span>{isPickingUp ? 'Đang xác nhận...' : 'Xác nhận đã giao món cho khách'}</span>
+                    <span>
+                      {isPickingUp
+                        ? 'Đang xác nhận...'
+                        : allItemsPrepared
+                          ? 'Xác nhận đã giao đủ món cho khách'
+                          : `Xác nhận đã giao ${checkedItemsCount}/${activeOrder.items?.length || 0} món đã chọn`}
+                    </span>
                   </button>
                 ) : (
-                  <div className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900/60 px-4 py-3.5 text-xs font-bold text-neutral-400">
+                  <div className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3.5 text-xs font-bold text-emerald-300">
                     <Check className="h-4 w-4 text-emerald-400" />
-                    <span>Đã giao món {activeOrder.pickedUpAt ? `lúc ${formatDateTime(activeOrder.pickedUpAt)}` : ''}</span>
+                    <span>Đã giao đủ toàn bộ {activeOrder.items?.length || 0} món {activeOrder.pickedUpAt ? `lúc ${formatDateTime(activeOrder.pickedUpAt)}` : ''}</span>
                   </div>
                 )}
 
@@ -901,20 +1011,48 @@ export default function StaffFoodCheckInPanel({
                             )}
                           </div>
                           <p className="mt-1 text-xs font-bold text-neutral-300">
-                            {order.customerName || 'Khách vãng lai'}
-                            {order.customerPhone ? ` · ${order.customerPhone}` : ''}
+                            {resolveOrderCustomerName(order)}
+                            {resolveOrderCustomerPhone(order) !== '—' ? ` · ${resolveOrderCustomerPhone(order)}` : ''}
                           </p>
                         </div>
 
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
-                            isPaid
-                              ? 'border border-amber-500/40 bg-amber-500/15 text-amber-300'
-                              : 'border border-neutral-700 bg-neutral-900 text-neutral-400'
-                          }`}
-                        >
-                          {isPaid ? 'Chờ giao' : 'Đã giao'}
-                        </span>
+                        {(() => {
+                          if (isPaid) {
+                            return (
+                              <span className="rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-amber-300">
+                                Chờ giao
+                              </span>
+                            );
+                          }
+                          const orderCode = order.orderCode || order.foodOrderCode;
+                          let partialDelivery = false;
+                          let checkedCount = 0;
+                          const totalItems = (order.items || []).length;
+                          if (totalItems > 0 && orderCode) {
+                            try {
+                              const saved = localStorage.getItem(`fnb_prepared_items_${orderCode}`);
+                              if (saved) {
+                                const parsed = JSON.parse(saved);
+                                checkedCount = (order.items || []).filter((_, idx) => parsed[idx]).length;
+                                if (checkedCount > 0 && checkedCount < totalItems) {
+                                  partialDelivery = true;
+                                }
+                              }
+                            } catch {}
+                          }
+                          if (partialDelivery) {
+                            return (
+                              <span className="rounded-full border border-sky-500/40 bg-sky-500/15 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-sky-300">
+                                Giao {checkedCount}/{totalItems} món
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="rounded-full border border-neutral-700 bg-neutral-900 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-neutral-400">
+                              Đã giao
+                            </span>
+                          );
+                        })()}
                       </div>
 
                       {/* Items Summary */}
@@ -1174,7 +1312,7 @@ export default function StaffFoodCheckInPanel({
                 )}
                 <div className="flex justify-between">
                   <span className="text-neutral-500">Khách hàng:</span>
-                  <span>{printSlipOrder.customerName || 'Khách vãng lai'}</span>
+                  <span>{resolveOrderCustomerName(printSlipOrder)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-neutral-500">Thời gian:</span>

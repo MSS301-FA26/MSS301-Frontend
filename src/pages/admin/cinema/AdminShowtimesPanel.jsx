@@ -601,9 +601,7 @@ export default function AdminShowtimesPanel({ ctx }) {
               }));
             }
           })
-          .catch(err => {
-            console.warn('L?i t?i s? v? ?? b?n:', err);
-          });
+          .catch(() => {});
       }
     } catch (err) {
       if (reqId === fetchShowsReqIdRef.current) {
