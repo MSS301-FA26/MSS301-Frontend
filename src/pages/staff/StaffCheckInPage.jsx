@@ -635,14 +635,7 @@ export default function StaffCheckInPage() {
   const [savingStaffFoodKey, setSavingStaffFoodKey] = useState('');
   const [staffFoodPage, setStaffFoodPage] = useState(1);
   const [staffFoodSearch, setStaffFoodSearch] = useState('');
-  const [failedRefunds, setFailedRefunds] = useState([]);
-  const [failedRefundPage, setFailedRefundPage] = useState(0);
-  const [failedRefundTotalPages, setFailedRefundTotalPages] = useState(1);
-  const [isLoadingFailedRefunds, setIsLoadingFailedRefunds] = useState(false);
-  const [failedRefundError, setFailedRefundError] = useState('');
-  const [manualRefundModal, setManualRefundModal] = useState(null);
-  const [manualRefundForm, setManualRefundForm] = useState({ refundMethod: 'MANUAL_BANK_TRANSFER', notes: '' });
-  const [isSavingManualRefund, setIsSavingManualRefund] = useState(false);
+
   const [selectedTicketCodes, setSelectedTicketCodes] = useState([]);
   const [counterSaleBooking, setCounterSaleBooking] = useState(null);
   const [counterSaleQuantities, setCounterSaleQuantities] = useState({});
@@ -701,10 +694,6 @@ export default function StaffCheckInPage() {
     setIsLoggingOut(false);
     navigate('/');
   };
-
-  const pendingCheckinCount = useMemo(() => {
-    return (failedRefunds || []).filter((r) => r.status === 'PENDING' || !r.status).length;
-  }, [failedRefunds]);
 
   const allRawBookings = showtimeBookings.length > 0 ? showtimeBookings : recentBookings;
   // Booking vừa tra cứu/check-in chỉ lấy bên trong rạp mà staff làm việc, được phân công
@@ -768,6 +757,10 @@ export default function StaffCheckInPage() {
     const paid = visibleBookings.filter((booking) => booking.status === 'PAID').length;
     return { checked, paid, total: visibleBookings.length };
   }, [visibleBookings]);
+
+  const pendingCheckinCount = useMemo(() => {
+    return Number(stats.paid || 0);
+  }, [stats.paid]);
 
   const getToken = () => {
     const { accessToken } = getStoredAuth();
@@ -934,56 +927,7 @@ export default function StaffCheckInPage() {
     }
   };
 
-  const loadFailedRefunds = async (page = 0) => {
-    const token = getToken();
-    if (!token) {
-      setFailedRefundError('Vui long dang nhap bang tai khoan STAFF.');
-      return;
-    }
 
-    setIsLoadingFailedRefunds(true);
-    setFailedRefundError('');
-    try {
-      const data = await staffService.getFailedBulkRefunds(token, { page, size: 8 });
-      const items = data?.items || data?.content || (Array.isArray(data) ? data : []);
-      setFailedRefunds(items);
-      setFailedRefundTotalPages(data?.totalPages || 1);
-      setFailedRefundPage(page);
-    } catch (error) {
-      setFailedRefundError(error.message || 'Khong the tai danh sach refund loi.');
-    } finally {
-      setIsLoadingFailedRefunds(false);
-    }
-  };
-
-  const openManualRefundModal = async (refund) => {
-    const token = getToken();
-    if (!token) return;
-    setFailedRefundError('');
-    try {
-      const detail = await staffService.getBulkRefundDetail(token, refund.bookingId);
-      setManualRefundModal(detail);
-      setManualRefundForm({ refundMethod: 'MANUAL_BANK_TRANSFER', notes: '' });
-    } catch (error) {
-      setFailedRefundError(error.message || 'Khong the tai chi tiet refund.');
-    }
-  };
-
-  const confirmManualRefund = async () => {
-    const token = getToken();
-    if (!token || !manualRefundModal?.bookingId) return;
-    setIsSavingManualRefund(true);
-    setFailedRefundError('');
-    try {
-      await staffService.confirmManualBulkRefund(token, manualRefundModal.bookingId, manualRefundForm);
-      setManualRefundModal(null);
-      await loadFailedRefunds(failedRefundPage);
-    } catch (error) {
-      setFailedRefundError(error.message || 'Khong the xac nhan hoan tien ngoai.');
-    } finally {
-      setIsSavingManualRefund(false);
-    }
-  };
 
   const updateStaffFoodStatus = async (food, nextStatus) => {
     const foodKey = `${food.kind}-${food.id}`;
@@ -1010,7 +954,6 @@ export default function StaffCheckInPage() {
   useEffect(() => {
     loadRecentBookings();
     loadStaffFoods();
-    loadFailedRefunds();
   }, []);
 
   useEffect(() => () => stopQrScanner(), []);
@@ -1378,12 +1321,12 @@ export default function StaffCheckInPage() {
 
           <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             {/* Left: Portal Identity */}
-            <div className="flex items-center gap-3.5">
-              <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-emerald-500/30 bg-emerald-500/10 shadow-[0_0_25px_rgba(16,185,129,0.2)]">
-                <ShieldCheck className="h-6 w-6 text-emerald-400" />
-                <span className="absolute -bottom-0.5 -right-0.5 flex h-3.5 w-3.5">
+            <div className="flex items-center gap-3">
+              <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-emerald-500/30 bg-emerald-500/10 shadow-[0_0_25px_rgba(16,185,129,0.2)]">
+                <ShieldCheck className="h-5 w-5 text-emerald-400" />
+                <span className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3">
                   <span className="absolute inset-0 rounded-full bg-emerald-400 opacity-75 animate-ping" />
-                  <span className="relative h-3.5 w-3.5 rounded-full border-2 border-black bg-emerald-400" />
+                  <span className="relative h-3 w-3 rounded-full border-2 border-black bg-emerald-400" />
                 </span>
               </div>
               <div>
@@ -1391,34 +1334,33 @@ export default function StaffCheckInPage() {
                   <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.2em] text-emerald-400">
                     CinePremier Staff Portal
                   </span>
-                  <span className="hidden sm:inline-block text-[9px] font-mono text-neutral-500">
+                  <span className="hidden sm:inline-block text-[8px] font-mono text-neutral-500">
                     v2.6 · Trực ca
                   </span>
                 </div>
-                <h1 className="mt-1 text-base sm:text-lg font-black uppercase tracking-wide text-white">
+                <h1 className="mt-0.5 text-sm sm:text-base font-black uppercase tracking-wide text-white">
                   Quầy Soát Vé & Vận Hành Rạp
                 </h1>
               </div>
             </div>
 
             {/* Middle: Cinema Workstation Info (Cố định 1 rạp duy nhất) */}
-            <div className="flex items-center gap-3 rounded-xl border border-amber-500/35 bg-gradient-to-r from-amber-500/10 to-amber-600/5 p-3 sm:px-4 sm:py-2.5 shadow-sm">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400 shadow-inner">
-                <Building2 className="h-5 w-5" />
+            <div className="flex items-center gap-2.5 rounded-xl border border-amber-500/35 bg-gradient-to-r from-amber-500/10 to-amber-600/5 p-2.5 sm:px-3.5 sm:py-2 shadow-sm">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-500/20 text-amber-400 shadow-inner">
+                <Building2 className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[9px] font-black uppercase tracking-wider text-amber-400">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[8px] font-black uppercase tracking-wider text-amber-400">
                     Rạp được phân công:
                   </span>
-                  <span className="font-extrabold text-white text-xs truncate">
+                  <span className="font-extrabold text-white text-[11px] truncate">
                     {activeCinema?.name}
                   </span>
-
                 </div>
                 {activeCinema?.address && (
-                  <p className="mt-0.5 text-[10px] text-neutral-300 truncate max-w-[280px] sm:max-w-[360px]" title={activeCinema.address}>
-                    <MapPin className="inline h-3 w-3 mr-1 text-amber-400/80 -mt-0.5" />
+                  <p className="mt-0.5 text-[9px] text-neutral-300 truncate max-w-[280px] sm:max-w-[360px]" title={activeCinema.address}>
+                    <MapPin className="inline h-2.5 w-2.5 mr-1 text-amber-400/80 -mt-0.5" />
                     {activeCinema.address}
                   </p>
                 )}
@@ -1426,18 +1368,18 @@ export default function StaffCheckInPage() {
             </div>
 
             {/* Right: Staff Identity & Logout Button */}
-            <div className="flex items-center justify-between sm:justify-end gap-3 border-t border-white/5 pt-3 lg:border-t-0 lg:pt-0">
-              <div className="flex items-center gap-2.5 text-right">
+            <div className="flex items-center justify-between sm:justify-end gap-2.5 border-t border-white/5 pt-2.5 lg:border-t-0 lg:pt-0">
+              <div className="flex items-center gap-2 text-right">
                 <div className="hidden sm:block">
-                  <p className="text-xs font-bold text-white leading-tight">
+                  <p className="text-[11px] font-bold text-white leading-tight">
                     {currentUser?.fullName || currentUser?.name || 'CinemaAI Staff'}
                   </p>
-                  <p className="text-[10px] font-mono text-neutral-400 truncate max-w-[160px]">
+                  <p className="text-[9px] font-mono text-neutral-400 truncate max-w-[160px]">
                     {currentUser?.email || 'staff@cinemaai.com'}
                   </p>
                 </div>
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-amber-300">
-                  <User className="h-4 w-4" />
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-amber-300">
+                  <User className="h-3.5 w-3.5" />
                 </div>
               </div>
 
@@ -1445,10 +1387,10 @@ export default function StaffCheckInPage() {
               <button
                 type="button"
                 onClick={() => setShowLogoutModal(true)}
-                className="flex items-center gap-2 rounded-xl border border-rose-500/35 bg-gradient-to-r from-rose-500/15 to-rose-600/10 px-3.5 py-2 text-xs font-black uppercase tracking-wider text-rose-300 transition-all hover:border-rose-500 hover:from-rose-500/25 hover:to-rose-600/20 hover:text-white hover:shadow-[0_0_25px_rgba(244,63,94,0.35)] active:scale-95 cursor-pointer"
+                className="flex items-center gap-1.5 rounded-xl border border-rose-500/35 bg-gradient-to-r from-rose-500/15 to-rose-600/10 px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-rose-300 transition-all hover:border-rose-500 hover:from-rose-500/25 hover:to-rose-600/20 hover:text-white hover:shadow-[0_0_25px_rgba(244,63,94,0.35)] active:scale-95 cursor-pointer"
                 title="Đăng xuất khỏi ca trực Staff"
               >
-                <LogOut className="h-4 w-4 text-rose-400" />
+                <LogOut className="h-3.5 w-3.5 text-rose-400" />
                 <span>Đăng xuất</span>
               </button>
             </div>
@@ -1456,16 +1398,16 @@ export default function StaffCheckInPage() {
         </header>
 
         {/* Tab Navigation (Glassmorphic Segmented Bar) */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
-          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] p-1.5 shadow-inner">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
+          <div className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.03] p-1 shadow-inner">
             <button
               onClick={() => setActiveSection('checkin')}
-              className={`relative flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeSection === 'checkin'
+              className={`relative flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer ${activeSection === 'checkin'
                   ? 'bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-[0_4px_16px_rgba(16,185,129,0.35)]'
                   : 'text-neutral-400 hover:text-white hover:bg-white/5'
                 }`}
             >
-              <ScanLine className="h-4 w-4" />
+              <ScanLine className="h-3.5 w-3.5" />
               <span>Soát vé & Vào rạp</span>
               {pendingCheckinCount > 0 && (
                 <span className="flex h-2 w-2 rounded-full bg-rose-500 animate-pulse" />
@@ -1474,15 +1416,15 @@ export default function StaffCheckInPage() {
 
             <button
               onClick={() => setActiveSection('fnb')}
-              className={`relative flex items-center gap-2 rounded-lg px-4 py-2 text-xs font-black uppercase tracking-wider transition-all cursor-pointer ${activeSection === 'fnb'
+              className={`relative flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer ${activeSection === 'fnb'
                   ? 'bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow-[0_4px_16px_rgba(168,85,247,0.35)] font-black'
                   : 'text-neutral-400 hover:text-white hover:bg-white/5'
                 }`}
             >
-              <Popcorn className="h-4 w-4 text-purple-300" />
+              <Popcorn className="h-3.5 w-3.5 text-purple-300" />
               <span>Quầy bắp nước & F&B</span>
               {pendingFnbCount > 0 && (
-                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-400 px-1.5 text-[9px] font-black text-black">
+                <span className="flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-amber-400 px-1 text-[8px] font-black text-black">
                   {pendingFnbCount}
                 </span>
               )}
@@ -1490,34 +1432,34 @@ export default function StaffCheckInPage() {
           </div>
 
           {/* Quick Stats Pill */}
-          <div className="hidden md:flex items-center gap-3 text-xs font-mono">
+          <div className="hidden md:flex items-center gap-2.5 text-[11px] font-mono">
             {activeSection === 'fnb' ? (
               <>
-                <div className="flex items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-1.5 text-amber-300">
-                  <Clock3 className="h-3.5 w-3.5" />
+                <div className="flex items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/5 px-2.5 py-1 text-amber-300">
+                  <Clock3 className="h-3 w-3" />
                   <span>F&B chờ giao: <strong>{pendingFnbCount}</strong></span>
                 </div>
-                <div className="flex items-center gap-1.5 rounded-lg border border-purple-500/20 bg-purple-500/5 px-3 py-1.5 text-purple-300">
-                  <Popcorn className="h-3.5 w-3.5" />
+                <div className="flex items-center gap-1.5 rounded-lg border border-purple-500/20 bg-purple-500/5 px-2.5 py-1 text-purple-300">
+                  <Popcorn className="h-3 w-3" />
                   <span>Món mở bán: <strong>{foodStats.active}</strong></span>
                 </div>
               </>
             ) : (
               <>
-                <div className="flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-3 py-1.5 text-emerald-400">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
+                <div className="flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-2.5 py-1 text-emerald-400">
+                  <CheckCircle2 className="h-3 w-3" />
                   <span>Đã soát: <strong>{stats.checked}</strong></span>
                 </div>
-                <div className="flex items-center gap-1.5 rounded-lg border border-purple-500/20 bg-purple-500/5 px-3 py-1.5 text-purple-300">
-                  <Ticket className="h-3.5 w-3.5" />
+                <div className="flex items-center gap-1.5 rounded-lg border border-purple-500/20 bg-purple-500/5 px-2.5 py-1 text-purple-300">
+                  <Ticket className="h-3 w-3" />
                   <span>Chờ check-in: <strong>{stats.paid}</strong></span>
                 </div>
                 {pendingFnbCount > 0 && (
                   <div
                     onClick={() => setActiveSection('fnb')}
-                    className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-amber-300 cursor-pointer hover:bg-amber-500/20"
+                    className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-amber-300 cursor-pointer hover:bg-amber-500/20"
                   >
-                    <Popcorn className="h-3.5 w-3.5 animate-pulse" />
+                    <Popcorn className="h-3 w-3 animate-pulse" />
                     <span>F&B chờ: <strong>{pendingFnbCount}</strong></span>
                   </div>
                 )}
@@ -1547,51 +1489,51 @@ export default function StaffCheckInPage() {
         {activeSection === 'checkin' && (
           <>
             <section className="grid gap-4 xl:grid-cols-[1fr_380px]">
-              <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-r from-[#0d0f14] via-[#090b0e] to-[#050608] p-5 shadow-[0_24px_80px_rgba(0,0,0,0.45)] sm:p-6">
+              <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-r from-[#0d0f14] via-[#090b0e] to-[#050608] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.45)] sm:p-5">
                 <div className="absolute right-0 top-0 h-full w-1/2 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.16),transparent_62%)]" />
                 <div className="relative">
-                  <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <span className="rounded-full border border-purple-400/30 bg-purple-500/10 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-purple-300">
+                  <div className="mb-2.5 flex flex-wrap items-center gap-2">
+                    <span className="rounded-full border border-purple-400/30 bg-purple-500/10 px-2.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-purple-300">
                       STAFF OPERATIONS
                     </span>
                   </div>
-                  <h2 className="text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">Kiểm soát vé bằng QR booking</h2>
-                  <p className="mt-3 max-w-2xl text-xs leading-6 text-neutral-400">
+                  <h2 className="text-lg font-black uppercase tracking-tight text-white sm:text-xl">Kiểm soát vé bằng QR booking</h2>
+                  <p className="mt-2 max-w-2xl text-[11px] leading-5 text-neutral-400">
                     Mỗi ghế có một mã QR riêng như thẻ lên máy bay. Quét mã ghế để check-in từng người, hoặc quét mã booking để xác nhận cả nhóm cùng lúc.
                   </p>
-                  <p className="mt-3 text-[10px] font-black uppercase tracking-[0.18em] text-neutral-500">
+                  <p className="mt-2 text-[9px] font-black uppercase tracking-[0.18em] text-neutral-500">
                     Nhân viên: {currentUser?.fullName || currentUser?.name || currentUser?.email || 'STAFF'}
                   </p>
                 </div>
               </motion.div>
 
-              <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }} className="rounded-2xl border border-white/10 bg-gradient-to-b from-[#0d0f14] to-[#050608] p-5 shadow-2xl">
-                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-neutral-400">Phiên hiện tại</p>
-                <p className="mt-1 text-2xl font-black text-white">{stats.checked}/{stats.total}</p>
-                <div className="mt-4 grid grid-cols-3 gap-2">
-                  <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-2.5"><p className="text-lg font-black text-emerald-300">{stats.checked}</p><p className="text-[8px] font-black uppercase tracking-widest text-emerald-200/70">Đã vào</p></div>
-                  <div className="rounded-xl border border-purple-400/30 bg-purple-500/10 p-2.5"><p className="text-lg font-black text-purple-300">{stats.paid}</p><p className="text-[8px] font-black uppercase tracking-widest text-purple-200/70">Chờ vào</p></div>
-                  <div className="rounded-xl border border-white/10 bg-black/60 p-2.5"><p className="text-lg font-black text-white">{stats.total}</p><p className="text-[8px] font-black uppercase tracking-widest text-neutral-400">Đã tra</p></div>
+              <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.08 }} className="rounded-2xl border border-white/10 bg-gradient-to-b from-[#0d0f14] to-[#050608] p-4 shadow-2xl">
+                <p className="text-[8px] font-black uppercase tracking-[0.2em] text-neutral-400">Phiên hiện tại</p>
+                <p className="mt-1 text-xl font-black text-white">{stats.checked}/{stats.total}</p>
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  <div className="rounded-xl border border-emerald-400/30 bg-emerald-500/10 p-2"><p className="text-base font-black text-emerald-300">{stats.checked}</p><p className="text-[8px] font-black uppercase tracking-widest text-emerald-200/70">Đã vào</p></div>
+                  <div className="rounded-xl border border-purple-400/30 bg-purple-500/10 p-2"><p className="text-base font-black text-purple-300">{stats.paid}</p><p className="text-[8px] font-black uppercase tracking-widest text-purple-200/70">Chờ vào</p></div>
+                  <div className="rounded-xl border border-white/10 bg-black/60 p-2"><p className="text-base font-black text-white">{stats.total}</p><p className="text-[8px] font-black uppercase tracking-widest text-neutral-400">Đã tra</p></div>
                 </div>
               </motion.div>
             </section>
 
             <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(380px,0.75fr)]">
-              <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-[#0c0e12] to-[#050608] p-5 shadow-2xl sm:p-7">
-                <div className="grid gap-6 lg:grid-cols-2">
-                  <div className="space-y-4">
+              <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-[#0c0e12] to-[#050608] p-4 shadow-2xl sm:p-5">
+                <div className="grid gap-5 lg:grid-cols-2">
+                  <div className="space-y-3.5">
                     <div>
-                      <p className="text-[9px] font-black uppercase tracking-[0.22em] text-emerald-400">Quét/Xác nhận QR</p>
-                      <h3 className="mt-2 text-xl font-black uppercase text-white">Check-in bằng mã QR</h3>
-                      <p className="mt-2 text-xs leading-6 text-neutral-400">Quét QR trên vé, hoặc dán chuỗi `CINEAI:...` / mã booking `BK...` để tra cứu và check-in.</p>
+                      <p className="text-[8px] font-black uppercase tracking-[0.22em] text-emerald-400">Quét/Xác nhận QR</p>
+                      <h3 className="mt-1 text-base font-black uppercase text-white">Check-in bằng mã QR</h3>
+                      <p className="mt-1 text-[11px] leading-5 text-neutral-400">Quét QR trên vé, hoặc dán chuỗi `CINEAI:...` / mã booking `BK...` để tra cứu và check-in.</p>
                     </div>
-                    <div className="space-y-3 rounded-xl border border-white/10 bg-black/50 p-4">
+                    <div className="space-y-2.5 rounded-xl border border-white/10 bg-black/50 p-3">
                       <button
                         type="button"
                         onClick={isCameraOpen ? stopQrScanner : startQrScanner}
-                        className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.04] px-4 py-3 text-[9px] font-black uppercase tracking-[0.18em] text-neutral-200 transition hover:border-emerald-400 hover:bg-white/10 hover:text-white"
+                        className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/[0.04] px-3.5 py-2.5 text-[9px] font-black uppercase tracking-[0.18em] text-neutral-200 transition hover:border-emerald-400 hover:bg-white/10 hover:text-white"
                       >
-                        {isCameraOpen ? <CameraOff className="h-4 w-4" /> : <Camera className="h-4 w-4" />}
+                        {isCameraOpen ? <CameraOff className="h-3.5 w-3.5" /> : <Camera className="h-3.5 w-3.5" />}
                         {isCameraOpen ? 'Tắt camera' : 'Mở camera quét QR'}
                       </button>
                       {isCameraOpen && (
@@ -1618,42 +1560,42 @@ export default function StaffCheckInPage() {
                       value={qrCode}
                       onChange={(event) => setQrCode(event.target.value)}
                       placeholder="Dán QR vé, QR nhận bắp nước hoặc mã booking..."
-                      rows={6}
-                      className="w-full resize-none rounded-xl border border-white/10 bg-black/60 p-4 text-sm font-bold text-white outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/70 focus:ring-1 focus:ring-emerald-400/20"
+                      rows={5}
+                      className="w-full resize-none rounded-xl border border-white/10 bg-black/60 p-3 text-xs font-bold text-white outline-none transition placeholder:text-neutral-600 focus:border-emerald-400/70 focus:ring-1 focus:ring-emerald-400/20"
                     />
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="grid gap-2.5 sm:grid-cols-2">
                       <button
                         type="button"
                         onClick={() => lookupBooking({ preferQr: true })}
                         disabled={isLookingUp || !qrCode.trim()}
-                        className="flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.04] px-5 py-3.5 text-[10px] font-black uppercase tracking-[0.18em] text-neutral-200 transition hover:border-emerald-400 hover:bg-white/10 hover:text-white disabled:opacity-50"
+                        className="flex items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/[0.04] px-4 py-2.5 text-[9px] font-black uppercase tracking-[0.18em] text-neutral-200 transition hover:border-emerald-400 hover:bg-white/10 hover:text-white disabled:opacity-50"
                       >
-                        {isLookingUp ? <RefreshCw className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />} Kiểm tra mã
+                        {isLookingUp ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <QrCode className="h-3.5 w-3.5" />} Kiểm tra mã
                       </button>
                       <button
                         type="button"
                         onClick={() => checkInByQr()}
                         disabled={isCheckingIn || !qrCode.trim()}
-                        className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-5 py-3.5 text-[10px] font-black uppercase tracking-[0.18em] text-black font-extrabold shadow-[0_4px_20px_rgba(16,185,129,0.3)] transition hover:from-emerald-400 hover:to-emerald-500 disabled:opacity-50"
+                        className="flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 px-4 py-2.5 text-[9px] font-black uppercase tracking-[0.18em] text-black font-extrabold shadow-[0_4px_20px_rgba(16,185,129,0.3)] transition hover:from-emerald-400 hover:to-emerald-500 disabled:opacity-50"
                       >
-                        {isCheckingIn ? <RefreshCw className="h-4 w-4 animate-spin" /> : <ScanLine className="h-4 w-4" />} {isFoodPickupCode(qrCode) ? 'Xác nhận giao món' : 'Xác nhận check-in'}
+                        {isCheckingIn ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <ScanLine className="h-3.5 w-3.5" />} {isFoodPickupCode(qrCode) ? 'Xác nhận giao món' : 'Xác nhận check-in'}
                       </button>
                     </div>
                   </div>
 
-                  <div className="space-y-4">
+                  <div className="space-y-3.5">
                     <div>
-                      <p className="text-[9px] font-black uppercase tracking-[0.22em] text-purple-400">Tra cứu thủ công</p>
-                      <h3 className="mt-2 text-xl font-black uppercase text-white">Tìm theo mã đơn</h3>
-                      <p className="mt-2 text-xs leading-6 text-neutral-400">Nhập mã booking BK... hoặc mã nhận bắp nước FO... khi khách chưa mở được QR.</p>
+                      <p className="text-[8px] font-black uppercase tracking-[0.22em] text-purple-400">Tra cứu thủ công</p>
+                      <h3 className="mt-1 text-base font-black uppercase text-white">Tìm theo mã đơn</h3>
+                      <p className="mt-1 text-[11px] leading-5 text-neutral-400">Nhập mã booking BK... hoặc mã nhận bắp nước FO... khi khách chưa mở được QR.</p>
                     </div>
                     <div className="relative">
-                      <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" />
+                      <Search className="absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-500" />
                       <input
                         value={bookingCode}
                         onChange={(event) => setBookingCode(event.target.value)}
                         placeholder="VD: BKABC123... hoặc FOABC123..."
-                        className="w-full rounded-xl border border-white/10 bg-black/60 py-3.5 pl-11 pr-4 text-sm font-bold text-white outline-none transition placeholder:text-neutral-600 focus:border-purple-400/70 focus:ring-1 focus:ring-purple-400/20"
+                        className="w-full rounded-xl border border-white/10 bg-black/60 py-2.5 pl-9 pr-4 text-xs font-bold text-white outline-none transition placeholder:text-neutral-600 focus:border-purple-400/70 focus:ring-1 focus:ring-purple-400/20"
                       />
                     </div>
                     <button
@@ -1733,104 +1675,6 @@ export default function StaffCheckInPage() {
               {showtimeError && <p className="mt-3 text-xs font-bold text-rose-400">{showtimeError}</p>}
             </section> */}
 
-            {/* <section className="border border-neutral-800 bg-[#070707] p-5">
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                <div>
-                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-rose-300">Bulk refund failed</p>
-                  <h3 className="mt-1 text-lg font-black uppercase text-white">Xu ly hoan tien thu cong</h3>
-                  <p className="mt-2 text-xs leading-6 text-neutral-500">
-                    STAFF xem cac booking VNPay refund loi, hoan tien ngoai he thong, roi xac nhan de can bang diem loyalty.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => loadFailedRefunds(failedRefundPage)}
-                  disabled={isLoadingFailedRefunds}
-                  className="flex items-center justify-center gap-2 border border-neutral-700 bg-black px-4 py-3 text-[10px] font-black uppercase tracking-widest text-neutral-300 transition hover:border-rose-300 hover:text-white disabled:opacity-50"
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${isLoadingFailedRefunds ? 'animate-spin' : ''}`} /> Lam moi
-                </button>
-              </div>
-              {failedRefundError && <p className="mt-3 text-xs font-bold text-rose-400">{failedRefundError}</p>}
-              <div className="mt-4 overflow-x-auto border border-neutral-800 bg-black">
-                <table className="w-full min-w-[860px] text-left">
-                  <thead className="border-b border-neutral-800 bg-[#050505] text-[8px] font-black uppercase tracking-[0.18em] text-neutral-500">
-                    <tr>
-                      <th className="px-4 py-3">Booking</th>
-                      <th className="px-3 py-3">Khach</th>
-                      <th className="px-3 py-3">Phim / suat</th>
-                      <th className="px-3 py-3">So tien</th>
-                      <th className="px-3 py-3">Diem NET</th>
-                      <th className="px-4 py-3 text-right">Thao tac</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-900">
-                    {isLoadingFailedRefunds ? (
-                      <tr>
-                        <td colSpan={6} className="px-5 py-10 text-center text-xs font-bold text-neutral-500">
-                          Dang tai danh sach refund loi...
-                        </td>
-                      </tr>
-                    ) : failedRefunds.length > 0 ? failedRefunds.map((refund) => (
-                      <tr key={refund.bookingId} className="transition hover:bg-rose-400/5">
-                        <td className="px-4 py-4">
-                          <p className="font-mono text-[11px] font-black text-white">{refund.bookingCode}</p>
-                          <p className="mt-1 font-mono text-[8px] text-neutral-600">#{refund.bookingId}</p>
-                        </td>
-                        <td className="px-3 py-4">
-                          <p className="max-w-[180px] truncate text-xs font-bold text-neutral-300">{refund.customerName || '--'}</p>
-                          <p className="max-w-[180px] truncate text-[10px] text-neutral-600">{refund.customerEmail}</p>
-                        </td>
-                        <td className="px-3 py-4">
-                          <p className="max-w-[220px] truncate text-xs font-bold text-neutral-300">{refund.movieName}</p>
-                          <p className="text-[10px] font-bold text-neutral-500">{formatDateTime(refund.showtimeStart)}</p>
-                        </td>
-                        <td className="px-3 py-4 font-mono text-xs font-black text-amber-300">{formatCurrency(refund.refundAmount)}</td>
-                        <td className="px-3 py-4 font-mono text-xs font-black text-emerald-300">
-                          {Number(refund.loyaltyCalculation?.netBalanceChange || 0).toLocaleString('vi-VN')}
-                        </td>
-                        <td className="px-4 py-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => openManualRefundModal(refund)}
-                            className="border border-amber-400/40 bg-amber-400 px-3 py-2 text-[8px] font-black uppercase tracking-widest text-black transition hover:bg-amber-300"
-                          >
-                            Xac nhan ngoai
-                          </button>
-                        </td>
-                      </tr>
-                    )) : (
-                      <tr>
-                        <td colSpan={6} className="px-5 py-10 text-center text-xs font-bold text-neutral-500">
-                          Khong co booking refund loi.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-              <div className="mt-4 flex items-center justify-between text-[10px] font-black uppercase tracking-[0.18em] text-neutral-500">
-                <span>Trang {failedRefundPage + 1}/{failedRefundTotalPages}</span>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    disabled={failedRefundPage <= 0}
-                    onClick={() => loadFailedRefunds(failedRefundPage - 1)}
-                    className="border border-neutral-700 px-3 py-2 text-white transition hover:border-rose-300 disabled:opacity-30"
-                  >
-                    Truoc
-                  </button>
-                  <button
-                    type="button"
-                    disabled={failedRefundPage >= failedRefundTotalPages - 1}
-                    onClick={() => loadFailedRefunds(failedRefundPage + 1)}
-                    className="border border-neutral-700 px-3 py-2 text-white transition hover:border-rose-300 disabled:opacity-30"
-                  >
-                    Sau
-                  </button>
-                </div>
-              </div>
-            </section> */}
 
             <section className="rounded-2xl border border-white/10 bg-gradient-to-b from-[#0c0e12] to-[#050608] p-5 shadow-2xl">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -2238,89 +2082,7 @@ export default function StaffCheckInPage() {
                 </motion.div>
               </div>
             )}
-            {manualRefundModal && (
-              <div className="fixed inset-0 z-[260] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.96 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  className="w-full max-w-lg border border-amber-400/30 bg-[#070707] p-6 shadow-[0_30px_90px_rgba(0,0,0,0.55)]"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-[9px] font-black uppercase tracking-[0.2em] text-amber-300">Manual refund</p>
-                      <h3 className="mt-1 text-lg font-black uppercase text-white">Xac nhan da hoan tien ngoai</h3>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setManualRefundModal(null)}
-                      className="border border-neutral-700 px-3 py-2 text-[10px] font-black uppercase text-neutral-300 hover:border-white hover:text-white"
-                    >
-                      Dong
-                    </button>
-                  </div>
-                  <div className="mt-5 grid gap-3 text-xs sm:grid-cols-2">
-                    <div className="border border-neutral-800 bg-black p-3">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-neutral-500">Booking</p>
-                      <p className="mt-1 font-mono font-black text-white">{manualRefundModal.bookingCode}</p>
-                    </div>
-                    <div className="border border-neutral-800 bg-black p-3">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-neutral-500">So tien</p>
-                      <p className="mt-1 font-mono font-black text-amber-300">{formatCurrency(manualRefundModal.refundAmount)}</p>
-                    </div>
-                    <div className="border border-neutral-800 bg-black p-3">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-neutral-500">Khach hang</p>
-                      <p className="mt-1 truncate font-bold text-neutral-300">{manualRefundModal.customerName || manualRefundModal.customerEmail}</p>
-                    </div>
-                    <div className="border border-neutral-800 bg-black p-3">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-neutral-500">Diem NET</p>
-                      <p className="mt-1 font-mono font-black text-emerald-300">
-                        {Number(manualRefundModal.loyaltyCalculation?.netBalanceChange || 0).toLocaleString('vi-VN')}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <label className="space-y-1.5">
-                      <span className="text-[9px] font-black uppercase tracking-widest text-neutral-500">Phuong thuc</span>
-                      <select
-                        value={manualRefundForm.refundMethod}
-                        onChange={(event) => setManualRefundForm((current) => ({ ...current, refundMethod: event.target.value }))}
-                        className="w-full border border-neutral-800 bg-black px-3 py-3 text-xs font-bold text-white outline-none focus:border-amber-300"
-                      >
-                        <option value="MANUAL_BANK_TRANSFER">Bank Transfer</option>
-                        <option value="CASH">Cash</option>
-                      </select>
-                    </label>
-                    <label className="space-y-1.5">
-                      <span className="text-[9px] font-black uppercase tracking-widest text-neutral-500">Ghi chu</span>
-                      <input
-                        value={manualRefundForm.notes}
-                        onChange={(event) => setManualRefundForm((current) => ({ ...current, notes: event.target.value }))}
-                        maxLength={500}
-                        placeholder="Transaction ID, STK, ca truc..."
-                        className="w-full border border-neutral-800 bg-black px-3 py-3 text-xs font-bold text-white outline-none placeholder:text-neutral-700 focus:border-amber-300"
-                      />
-                    </label>
-                  </div>
-                  <div className="mt-5 flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setManualRefundModal(null)}
-                      className="flex-1 border border-neutral-700 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-neutral-300 transition hover:border-white hover:text-white"
-                    >
-                      Quay lại
-                    </button>
-                    <button
-                      type="button"
-                      onClick={confirmManualRefund}
-                      disabled={isSavingManualRefund}
-                      className="flex-1 bg-amber-400 px-4 py-3 text-[10px] font-black uppercase tracking-widest text-black transition hover:bg-amber-300 disabled:opacity-50"
-                    >
-                      {isSavingManualRefund ? 'Dang luu...' : 'Da hoan tien ngoai'}
-                    </button>
-                  </div>
-                </motion.div>
-              </div>
-            )}
+
           </>
         )}
 

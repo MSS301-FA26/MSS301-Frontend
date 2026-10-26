@@ -337,7 +337,7 @@ export default function ConcessionsPage() {
       if (setSelectedCinema) setSelectedCinema(found);
       try {
         localStorage.setItem('concessions_pickup_cinema_id', String(found.id));
-      } catch {}
+      } catch { }
       showToast(`Điểm nhận bắp nước: ${found.name}`, 'info');
     }
   };
@@ -368,13 +368,18 @@ export default function ConcessionsPage() {
   useEffect(() => {
     const { accessToken } = getStoredAuth();
     if (!accessToken) return;
-    Promise.all([
-      loyaltyService.getMyLoyalty(accessToken).catch(() => null),
-      loyaltyService.getConfiguration(accessToken).catch(() => null),
-    ]).then(([loyalty, config]) => {
-      setLoyaltyPoints(Number(loyalty?.points ?? 0));
-      setEarningRatePercent(Math.max(0, Number(config?.earningRatePercent ?? 1) || 0));
-    });
+    const fetchLoyalty = () => {
+      Promise.all([
+        loyaltyService.getMyLoyalty(accessToken).catch(() => null),
+        loyaltyService.getConfiguration(accessToken).catch(() => null),
+      ]).then(([loyalty, config]) => {
+        setLoyaltyPoints(Number(loyalty?.points ?? 0));
+        setEarningRatePercent(Math.max(0, Number(config?.earningRatePercent ?? 1) || 0));
+      });
+    };
+    fetchLoyalty();
+    window.addEventListener('loyalty-updated', fetchLoyalty);
+    return () => window.removeEventListener('loyalty-updated', fetchLoyalty);
   }, []);
 
   useEffect(() => {
@@ -731,7 +736,7 @@ export default function ConcessionsPage() {
             };
           }
           localStorage.setItem('food_orders_cinema_map', JSON.stringify(map));
-        } catch {}
+        } catch { }
       }
 
       await refreshFoodOrders();
@@ -765,13 +770,12 @@ export default function ConcessionsPage() {
     return (
       <article
         key={item.id}
-        className={`group relative flex flex-col justify-between border bg-[#0a0a0a] transition-all duration-300 ${
-          isOutOfStock
-            ? 'opacity-65 border-white/5'
-            : quantity > 0
+        className={`group relative flex flex-col justify-between border bg-[#0a0a0a] transition-all duration-300 ${isOutOfStock
+          ? 'opacity-65 border-white/5'
+          : quantity > 0
             ? 'border-amber-400/70 shadow-lg shadow-amber-500/10'
             : 'border-white/10 hover:border-amber-400/50 hover:shadow-xl hover:shadow-black/50'
-        }`}
+          }`}
       >
         {/* Top Badges */}
         <div className="relative h-28 sm:h-32 w-full overflow-hidden bg-neutral-900">
@@ -779,9 +783,8 @@ export default function ConcessionsPage() {
             src={item.imageUrl || fallbackImage}
             alt={item.name}
             onError={(e) => { e.currentTarget.src = fallbackImage; }}
-            className={`h-full w-full object-cover transition-transform duration-500 ${
-              !isOutOfStock && 'group-hover:scale-105'
-            }`}
+            className={`h-full w-full object-cover transition-transform duration-500 ${!isOutOfStock && 'group-hover:scale-105'
+              }`}
             referrerPolicy="no-referrer"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/30" />
@@ -789,11 +792,10 @@ export default function ConcessionsPage() {
           {/* Left Badge: Type / Category */}
           <div className="absolute left-2 top-2 flex flex-wrap gap-1">
             <span
-              className={`px-1.5 py-0.5 text-[7.5px] font-black uppercase tracking-widest border backdrop-blur-md ${
-                isCombo
-                  ? 'border-amber-500/50 bg-amber-500/20 text-amber-300'
-                  : 'border-white/20 bg-black/70 text-neutral-300'
-              }`}
+              className={`px-1.5 py-0.5 text-[7.5px] font-black uppercase tracking-widest border backdrop-blur-md ${isCombo
+                ? 'border-amber-500/50 bg-amber-500/20 text-amber-300'
+                : 'border-white/20 bg-black/70 text-neutral-300'
+                }`}
             >
               {isCombo ? 'Combo' : item.categoryName || 'Món lẻ'}
             </span>
@@ -1257,20 +1259,18 @@ export default function ConcessionsPage() {
                   key={tab.id}
                   type="button"
                   onClick={() => setSelectedTab(tab.id)}
-                  className={`flex items-center gap-2 px-4 py-2.5 text-xs font-black uppercase tracking-wider whitespace-nowrap border transition ${
-                    isActive
-                      ? 'border-amber-400 bg-amber-400 text-black shadow-md shadow-amber-500/10'
-                      : tab.highlight
+                  className={`flex items-center gap-2 px-4 py-2.5 text-xs font-black uppercase tracking-wider whitespace-nowrap border transition ${isActive
+                    ? 'border-amber-400 bg-amber-400 text-black shadow-md shadow-amber-500/10'
+                    : tab.highlight
                       ? 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
                       : 'border-white/10 bg-black text-neutral-400 hover:text-white hover:border-white/30'
-                  }`}
+                    }`}
                 >
                   <Icon className={`h-3.5 w-3.5 ${isActive ? 'text-black' : tab.highlight ? 'text-amber-400' : 'text-neutral-400'}`} />
                   <span>{tab.label}</span>
                   <span
-                    className={`text-[9px] font-mono px-1.5 py-0.2 rounded-none font-bold ${
-                      isActive ? 'bg-black/20 text-black' : 'bg-white/10 text-neutral-300'
-                    }`}
+                    className={`text-[9px] font-mono px-1.5 py-0.2 rounded-none font-bold ${isActive ? 'bg-black/20 text-black' : 'bg-white/10 text-neutral-300'
+                      }`}
                   >
                     {tab.count}
                   </span>
@@ -1444,11 +1444,10 @@ export default function ConcessionsPage() {
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className={`px-1.5 py-0.2 text-[7px] font-black uppercase tracking-wider border ${
-                          row.category === 'combo'
-                            ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
-                            : 'border-white/10 bg-white/5 text-neutral-400'
-                        }`}>
+                        <span className={`px-1.5 py-0.2 text-[7px] font-black uppercase tracking-wider border ${row.category === 'combo'
+                          ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                          : 'border-white/10 bg-white/5 text-neutral-400'
+                          }`}>
                           {row.category === 'combo' ? 'Combo' : 'Món'}
                         </span>
                         <p className="text-xs font-black uppercase text-white truncate" title={row.name}>
@@ -1599,17 +1598,17 @@ export default function ConcessionsPage() {
                     {totalItems === 0
                       ? 'Chọn món để thanh toán'
                       : !linkedBooking && activeStandaloneOrder
-                      ? 'Hoàn tất đơn đang chờ'
-                      : 'Thanh toán qua VNPay'}
+                        ? 'Hoàn tất đơn đang chờ'
+                        : 'Thanh toán qua VNPay'}
                   </>
                 )}
               </button>
 
               <div className="text-center space-y-1">
-                <p className="text-[9px] text-neutral-500">
-                  Thanh toán an toàn qua cổng VNPay (QR Pay / Thẻ ATM / Visa).
+                <p className="text-[10px] text-neutral-500">
+                  Thanh toán an toàn qua cổng VNPay.
                 </p>
-                <p className="text-[9px] text-neutral-400 font-mono">
+                <p className="text-[10px] text-neutral-400 font-mono">
                   Sau khi thanh toán, xuất trình mã đơn tại quầy để nhận bắp nước.
                 </p>
               </div>
