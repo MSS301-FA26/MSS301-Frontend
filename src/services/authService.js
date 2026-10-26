@@ -343,6 +343,10 @@ export const unwrapListPayload = (payload) => {
   if (Array.isArray(payload?.movies)) return payload.movies;
   if (Array.isArray(payload?.results)) return payload.results;
   if (Array.isArray(payload?.recommendations)) return payload.recommendations;
+  if (Array.isArray(payload?.data?.items)) return payload.data.items;
+  if (Array.isArray(payload?.data?.content)) return payload.data.content;
+  if (Array.isArray(payload?.data?.movies)) return payload.data.movies;
+  if (Array.isArray(payload?.data?.results)) return payload.data.results;
   if (Array.isArray(payload?.data?.recommendations)) return payload.data.recommendations;
   if (Array.isArray(payload?.data)) return payload.data;
   return [];

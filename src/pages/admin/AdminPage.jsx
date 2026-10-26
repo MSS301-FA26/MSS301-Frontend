@@ -1703,6 +1703,7 @@ export default function AdminDashboard({
     isAdmin,
     isManager,
     isEffectiveManager,
+    isEffectiveAdmin,
     currentUser
   };
 

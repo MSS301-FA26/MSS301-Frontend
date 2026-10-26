@@ -26,10 +26,10 @@ export const staffService = {
     body
   }),
   lookupFoodOrder: (token, code) => request(`/api/v1/staff/check-in/food-orders/lookup?code=${encodeURIComponent(code)}`, { token }),
-  pickUpFoodOrder: (token, code) => request('/api/v1/staff/check-in/food-orders/pickup', {
+  pickUpFoodOrder: (token, code, payload = {}) => request('/api/v1/staff/check-in/food-orders/pickup', {
     method: 'POST',
     token,
-    body: { code }
+    body: { code: String(code), foodOrderCode: String(code), ...payload }
   }),
   getRecentFoodOrders: (token, limit = 50) =>
     request(`/api/v1/staff/check-in/food-orders/recent?limit=${encodeURIComponent(limit)}`, { token }),
@@ -57,15 +57,4 @@ export const staffService = {
     token,
     body: { status }
   })),
-  getFailedBulkRefunds: (token, params = {}) => {
-    const query = new URLSearchParams(params);
-    return request(`/api/v1/staff/bulk-refunds/failed?${query.toString()}`, { token });
-  },
-  getBulkRefundDetail: (token, bookingId) =>
-    request(`/api/v1/staff/bulk-refunds/${encodeURIComponent(bookingId)}/detail`, { token }),
-  confirmManualBulkRefund: (token, bookingId, payload) => request(`/api/v1/staff/bulk-refunds/${encodeURIComponent(bookingId)}/confirm`, {
-    method: 'POST',
-    token,
-    body: payload
-  }),
 };

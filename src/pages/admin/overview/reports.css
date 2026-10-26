@@ -1285,6 +1285,154 @@
   }
 }
 
+/* Metric Tone: Rose */
+.report-metric.rose {
+  border-top-color: var(--rp-rose);
+}
+.report-metric.rose .report-metric-icon {
+  border-color: rgba(244, 63, 94, 0.25);
+  background: rgba(244, 63, 94, 0.08);
+  color: var(--rp-rose);
+}
+
+/* Locked Cinema Badge for Manager Role */
+.report-locked-cinema {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 220px;
+}
+.report-locked-label {
+  font-size: 10px;
+  color: var(--rp-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-family: monospace;
+}
+.report-locked-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 12px;
+  background: #0d111a;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  color: #f1f5f9;
+  font-size: 12px;
+  font-weight: 600;
+}
+.report-locked-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.report-locked-badge {
+  font-size: 9px;
+  font-family: monospace;
+  text-transform: uppercase;
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--rp-amber);
+  padding: 2px 6px;
+  letter-spacing: 0.5px;
+}
+
+/* Executive Scope Ribbon */
+.report-ribbon {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  padding: 12px 18px;
+  background: #11141c;
+  border: 1px solid var(--rp-line);
+  border-left: 3px solid var(--rp-amber);
+  font-size: 12px;
+  align-items: center;
+}
+.report-ribbon.manager {
+  border-left-color: var(--rp-blue);
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.05) 0%, #11141c 100%);
+}
+.report-ribbon-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.report-ribbon-item strong {
+  color: #fff;
+  font-weight: 700;
+}
+.report-ribbon-item span {
+  color: var(--rp-muted);
+}
+.report-scope-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: monospace;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  letter-spacing: 0.5px;
+}
+.report-scope-tag.all {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.report-scope-tag.cinema {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--rp-amber);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+/* Occupancy Status Pills */
+.report-occupancy-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: monospace;
+}
+.report-occupancy-pill.high {
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.report-occupancy-pill.medium {
+  background: rgba(245, 158, 11, 0.15);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.report-occupancy-pill.low {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.report-cinema-drilldown-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--rp-amber);
+  background: transparent;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  padding: 4px 8px;
+  text-transform: uppercase;
+  font-weight: 700;
+  font-family: monospace;
+  cursor: pointer;
+}
+.report-cinema-drilldown-btn:hover {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: var(--rp-amber);
+}
+
 @media (max-width: 480px) {
   .report-kpis {
     grid-template-columns: 1fr;

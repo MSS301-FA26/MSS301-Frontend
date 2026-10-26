@@ -192,6 +192,12 @@ export default function PaymentCallbackPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (status === 'success') {
+      window.dispatchEvent(new Event('loyalty-updated'));
+    }
+  }, [status]);
+
   return (
     <div className="min-h-screen bg-black flex items-center justify-center px-4">
       <div className="max-w-md w-full border border-white/10 bg-neutral-950 p-8 space-y-6 text-center">

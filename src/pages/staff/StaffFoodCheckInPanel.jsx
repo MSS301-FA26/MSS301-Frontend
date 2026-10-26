@@ -77,6 +77,21 @@ const normalizeSearch = (value) => String(value || '')
   .toLowerCase()
   .trim();
 
+const resolveOrderCustomerName = (order) => {
+  return order?.customerName
+    || order?.userFullName
+    || order?.userName
+    || order?.user?.fullName
+    || (order?.userId ? `Khách #${order.userId}` : 'Khách vãng lai');
+};
+
+const resolveOrderCustomerPhone = (order) => {
+  return order?.customerPhone
+    || order?.userPhone
+    || order?.user?.phone
+    || '—';
+};
+
 export default function StaffFoodCheckInPanel({
   token,
   assignedCinemaId,
@@ -139,7 +154,7 @@ export default function StaffFoodCheckInPanel({
       });
       setFnbOrders(filtered);
 
-      const pendingCount = filtered.filter((o) => o.status === 'PAID').length;
+      const pendingCount = filtered.filter((o) => o.status === 'PAID' || o.status === 'PARTIALLY_PICKED_UP').length;
       onPendingFnbCountChange?.(pendingCount);
     } catch (err) {
       console.warn('Lỗi tải danh sách F&B gần đây:', err);
@@ -175,10 +190,10 @@ export default function StaffFoodCheckInPanel({
       setActiveOrder(order);
       setLookupInput(order.orderCode || order.foodOrderCode || raw);
 
-      // Reset preparation checklist
+      // Khởi tạo checklist: chỉ các món đã giao (pickedUp: true) mới được tích sẵn và khóa
       const initialChecked = {};
-      (order.items || []).forEach((_, idx) => {
-        initialChecked[idx] = order.status === 'PICKED_UP';
+      (order.items || []).forEach((item, idx) => {
+        initialChecked[idx] = Boolean(item.pickedUp || (order.status === 'PICKED_UP'));
       });
       setPreparedItems(initialChecked);
 
@@ -204,30 +219,88 @@ export default function StaffFoodCheckInPanel({
       return;
     }
 
+    // CHỈ lấy các món mà staff thực sự tích chọn và CHƯA giao
+    const pendingItemsToDeliver = (orderToPickup?.items || []).filter(
+      (it, idx) => preparedItems[idx] && !it.pickedUp
+    );
+
+    if (pendingItemsToDeliver.length === 0) {
+      showToast?.('Vui lòng tích chọn món cần giao trước khi ấn xác nhận.', 'warning');
+      return;
+    }
+
+    const itemsCount = orderToPickup?.items?.length || 0;
+    const targetItemIds = pendingItemsToDeliver.map((it) => it.id).filter(Boolean);
+    const targetIndexes = (orderToPickup?.items || [])
+      .map((it, idx) => (preparedItems[idx] && !it.pickedUp ? idx : null))
+      .filter((idx) => idx !== null);
+
     setIsPickingUp(true);
     try {
-      const res = await staffService.pickUpFoodOrder(token, targetCode);
-      const updated = res?.data || res;
+      let updated = null;
+      const res = await staffService.pickUpFoodOrder(token, targetCode, {
+        itemIds: targetItemIds,
+        itemIndexes: targetIndexes,
+        code: targetCode,
+      });
+      updated = res?.data || res;
+
+      // Cập nhật lại danh sách items với trạng thái pickedUp mới
+      let nextItems = [];
+      if (Array.isArray(updated?.items) && updated.items.length > 0) {
+        nextItems = updated.items;
+      } else {
+        nextItems = (orderToPickup.items || []).map((it, idx) => {
+          const isJustPicked = targetIndexes.includes(idx) || (it.id && targetItemIds.includes(it.id));
+          return {
+            ...it,
+            pickedUp: Boolean(it.pickedUp || isJustPicked),
+          };
+        });
+      }
+
+      const allDelivered = nextItems.length > 0 && nextItems.every((it) => it.pickedUp);
+      const deliveredCount = nextItems.filter((it) => it.pickedUp).length;
+      const nextStatus = allDelivered ? 'PICKED_UP' : 'PARTIALLY_PICKED_UP';
 
       // Update active order state
       const nextOrder = {
         ...orderToPickup,
-        status: 'PICKED_UP',
-        pickedUpAt: updated?.pickedUpAt || new Date().toISOString(),
+        status: updated?.status || nextStatus,
+        items: nextItems,
+        pickedUpAt: allDelivered ? (updated?.pickedUpAt || new Date().toISOString()) : orderToPickup.pickedUpAt,
       };
       setActiveOrder(nextOrder);
 
-      // Mark all items prepared
-      const allChecked = {};
-      (nextOrder.items || []).forEach((_, idx) => {
-        allChecked[idx] = true;
+      // Cập nhật preparedItems: các món đã giao thành true, các món chưa giao giữ nguyên false
+      const nextPrepared = {};
+      nextItems.forEach((it, idx) => {
+        nextPrepared[idx] = Boolean(it.pickedUp);
       });
-      setPreparedItems(allChecked);
+      setPreparedItems(nextPrepared);
 
-      showToast?.(`✅ Đã giao món thành công cho đơn ${targetCode}!`);
+      try {
+        localStorage.setItem(`fnb_prepared_items_${targetCode}`, JSON.stringify(nextPrepared));
+      } catch {}
+
+      if (allDelivered) {
+        showToast?.(`✅ Đã giao đủ toàn bộ ${itemsCount} món cho đơn ${targetCode}!`);
+      } else {
+        showToast?.(`✅ Đã giao ${pendingItemsToDeliver.length} món cho đơn ${targetCode}. (Đã giao ${deliveredCount}/${itemsCount} món)`);
+      }
       await loadRecentFoodOrders(true);
     } catch (err) {
-      showToast?.(`Lỗi giao món: ${err.message || 'Không thể xác nhận giao món'}`, 'error');
+      if (/already been picked up/i.test(err.message || '') || /da duoc giao/i.test(err.message || '')) {
+        setActiveOrder((prev) => ({
+          ...prev,
+          status: 'PICKED_UP',
+          items: (prev?.items || []).map((it) => ({ ...it, pickedUp: true })),
+        }));
+        showToast?.(`Đơn ${targetCode} đã được xác nhận giao hoàn tất.`);
+        await loadRecentFoodOrders(true);
+      } else {
+        showToast?.(`Lỗi giao món: ${err.message || 'Không thể xác nhận giao món'}`, 'error');
+      }
     } finally {
       setIsPickingUp(false);
     }
@@ -321,33 +394,81 @@ export default function StaffFoodCheckInPanel({
   useEffect(() => () => stopQrScanner(), [stopQrScanner]);
 
   // ── Checklist Helpers ─────────────────────────────────────────────────────
+  const isDelivered = activeOrder?.status === 'PICKED_UP' ||
+    (Boolean(activeOrder?.items?.length) && activeOrder.items.every((it) => it.pickedUp));
+
+  // Khi staff click tích chọn món: chỉ toggle trạng thái check cho món CHƯA giao
   const toggleItemCheck = (idx) => {
-    setPreparedItems((prev) => ({
-      ...prev,
-      [idx]: !prev[idx],
-    }));
+    if (isDelivered || isCinemaMismatch || isPickingUp) return;
+    const item = activeOrder?.items?.[idx];
+    if (item?.pickedUp) return; // Món đã giao thì không cho bỏ chọn
+
+    setPreparedItems((prev) => {
+      const next = {
+        ...prev,
+        [idx]: !prev[idx],
+      };
+      const orderCode = activeOrder?.orderCode || activeOrder?.foodOrderCode;
+      if (orderCode) {
+        try {
+          localStorage.setItem(`fnb_prepared_items_${orderCode}`, JSON.stringify(next));
+        } catch {}
+      }
+      return next;
+    });
   };
 
   const handleToggleAllItems = () => {
-    if (!activeOrder?.items) return;
-    const allChecked = activeOrder.items.every((_, idx) => preparedItems[idx]);
-    const next = {};
-    activeOrder.items.forEach((_, idx) => {
-      next[idx] = !allChecked;
+    if (isDelivered || isCinemaMismatch || isPickingUp || !activeOrder?.items) return;
+    const undeliveredIndexes = activeOrder.items
+      .map((it, idx) => (!it.pickedUp ? idx : null))
+      .filter((idx) => idx !== null);
+    if (undeliveredIndexes.length === 0) return;
+
+    const allUndeliveredChecked = undeliveredIndexes.every((idx) => preparedItems[idx]);
+    const next = { ...preparedItems };
+    undeliveredIndexes.forEach((idx) => {
+      next[idx] = !allUndeliveredChecked;
     });
+    const orderCode = activeOrder?.orderCode || activeOrder?.foodOrderCode;
+    if (orderCode) {
+      try {
+        localStorage.setItem(`fnb_prepared_items_${orderCode}`, JSON.stringify(next));
+      } catch {}
+    }
     setPreparedItems(next);
   };
 
+  // Số món đã giao từ trước (theo DB)
+  const deliveredItemsCount = useMemo(() => {
+    if (!activeOrder?.items) return 0;
+    return activeOrder.items.filter((it) => it.pickedUp).length;
+  }, [activeOrder]);
+
+  // Số món chưa giao đang được staff tick chọn để giao
+  const pendingSelectedCount = useMemo(() => {
+    if (!activeOrder?.items || isDelivered) return 0;
+    return activeOrder.items.filter((it, idx) => !it.pickedUp && preparedItems[idx]).length;
+  }, [activeOrder, preparedItems, isDelivered]);
+
+  // Tổng số món đã chọn (gồm món đã giao + món vừa tick chọn)
+  const checkedItemsCount = useMemo(() => {
+    if (!activeOrder?.items) return 0;
+    if (isDelivered) return activeOrder.items.length;
+    return deliveredItemsCount + pendingSelectedCount;
+  }, [activeOrder, deliveredItemsCount, pendingSelectedCount, isDelivered]);
+
   const allItemsPrepared = useMemo(() => {
     if (!activeOrder?.items || activeOrder.items.length === 0) return false;
-    return activeOrder.items.every((_, idx) => preparedItems[idx]);
-  }, [activeOrder, preparedItems]);
+    if (isDelivered) return true;
+    return activeOrder.items.every((it, idx) => it.pickedUp || preparedItems[idx]);
+  }, [activeOrder, preparedItems, isDelivered]);
 
   // ── Filtered Orders Queue ─────────────────────────────────────────────────
   const filteredOrders = useMemo(() => {
     return fnbOrders.filter((order) => {
       // Status filter
-      if (ordersFilter === 'PAID' && order.status !== 'PAID') return false;
+      if (ordersFilter === 'PAID' && order.status !== 'PAID' && order.status !== 'PARTIALLY_PICKED_UP') return false;
       if (ordersFilter === 'PICKED_UP' && order.status !== 'PICKED_UP') return false;
 
       // Text search
@@ -367,7 +488,7 @@ export default function StaffFoodCheckInPanel({
   }, [fnbOrders, ordersFilter, ordersSearch]);
 
   const fnbStats = useMemo(() => {
-    const pending = fnbOrders.filter((o) => o.status === 'PAID').length;
+    const pending = fnbOrders.filter((o) => o.status === 'PAID' || o.status === 'PARTIALLY_PICKED_UP').length;
     const pickedUp = fnbOrders.filter((o) => o.status === 'PICKED_UP').length;
     const total = fnbOrders.length;
     return { pending, pickedUp, total };
@@ -406,6 +527,8 @@ export default function StaffFoodCheckInPanel({
     activeOrder?.cinemaId && assignedCinemaId && Number(activeOrder.cinemaId) !== Number(assignedCinemaId)
   );
 
+  const isChecklistDisabled = isCinemaMismatch || isDelivered;
+
   return (
     <div className="space-y-6">
       {/* ── Top Hero Banner ──────────────────────────────────────────────── */}
@@ -416,54 +539,54 @@ export default function StaffFoodCheckInPanel({
       >
         <div className="absolute right-0 top-0 h-full w-1/2 bg-[radial-gradient(circle_at_top_right,rgba(168,85,247,0.18),transparent_65%)] pointer-events-none" />
         <div className="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="flex items-center gap-1.5 rounded-full border border-purple-500/40 bg-purple-500/15 px-3 py-1 text-[9px] font-black uppercase tracking-widest text-purple-300">
-                <Popcorn className="h-3.5 w-3.5 text-purple-400" />
+              <span className="flex items-center gap-1.5 rounded-full border border-purple-500/40 bg-purple-500/15 px-2.5 py-0.5 text-[8px] font-black uppercase tracking-widest text-purple-300">
+                <Popcorn className="h-3 w-3 text-purple-400" />
                 CONCESSIONS & F&B CHECK-IN
               </span>
-              <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-[9px] font-black uppercase tracking-wider text-emerald-400">
-                <MapPin className="h-3 w-3" />
+              <span className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-emerald-400">
+                <MapPin className="h-2.5 w-2.5" />
                 {activeCinema?.name || 'CinemaAI'}
               </span>
             </div>
-            <h2 className="text-2xl font-black uppercase tracking-tight text-white sm:text-3xl">
+            <h2 className="text-lg font-black uppercase tracking-tight text-white sm:text-xl">
               Quầy bắp nước & Tra cứu đơn F&B
             </h2>
-            <p className="max-w-2xl text-xs leading-6 text-neutral-400">
+            <p className="max-w-2xl text-[11px] leading-5 text-neutral-400">
               Quét mã QR bắp nước của khách hàng hoặc tra cứu theo mã đơn <span className="font-mono text-purple-300 font-bold">FO...</span> / mã vé <span className="font-mono text-emerald-300 font-bold">BK...</span> để đối chiếu món trên khay và xác nhận giao nhanh chóng.
             </p>
           </div>
 
           {/* Quick Metrics */}
-          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-            <div className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 shadow-[0_0_20px_rgba(245,158,11,0.12)]">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400">
-                <Clock3 className="h-5 w-5 animate-pulse" />
+          <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+            <div className="flex items-center gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 shadow-[0_0_20px_rgba(245,158,11,0.12)]">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/20 text-amber-400">
+                <Clock3 className="h-4 w-4 animate-pulse" />
               </div>
               <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-amber-300/80">Chờ giao món</p>
-                <p className="text-xl font-black text-amber-300">{fnbStats.pending}</p>
+                <p className="text-[8px] font-black uppercase tracking-widest text-amber-300/80">Chờ giao món</p>
+                <p className="text-base font-black text-amber-300 sm:text-lg">{fnbStats.pending}</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 shadow-[0_0_20px_rgba(16,185,129,0.12)]">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400">
-                <CheckCircle2 className="h-5 w-5" />
+            <div className="flex items-center gap-2.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 shadow-[0_0_20px_rgba(16,185,129,0.12)]">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400">
+                <CheckCircle2 className="h-4 w-4" />
               </div>
               <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-emerald-300/80">Đã giao trong ca</p>
-                <p className="text-xl font-black text-emerald-300">{fnbStats.pickedUp}</p>
+                <p className="text-[8px] font-black uppercase tracking-widest text-emerald-300/80">Đã giao trong ca</p>
+                <p className="text-base font-black text-emerald-300 sm:text-lg">{fnbStats.pickedUp}</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/10 text-white">
-                <ShoppingBag className="h-5 w-5" />
+            <div className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-white">
+                <ShoppingBag className="h-4 w-4" />
               </div>
               <div>
-                <p className="text-[9px] font-black uppercase tracking-widest text-neutral-400">Tổng đơn quầy</p>
-                <p className="text-xl font-black text-white">{fnbStats.total}</p>
+                <p className="text-[8px] font-black uppercase tracking-widest text-neutral-400">Tổng đơn quầy</p>
+                <p className="text-base font-black text-white sm:text-lg">{fnbStats.total}</p>
               </div>
             </div>
           </div>
@@ -475,27 +598,27 @@ export default function StaffFoodCheckInPanel({
         {/* ── Left Column: Scanner, Search & Active Order Checklist ───────── */}
         <div className="space-y-6">
           {/* Card 1: Lookup & Scanner */}
-          <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-[#0c0e12] to-[#050608] p-5 shadow-2xl sm:p-6">
-            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+          <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-[#0c0e12] to-[#050608] p-4 shadow-2xl sm:p-5">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-purple-500/30 bg-purple-500/15 text-purple-400">
-                  <QrCode className="h-4 w-4" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-purple-500/30 bg-purple-500/15 text-purple-400">
+                  <QrCode className="h-3.5 w-3.5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black uppercase tracking-wider text-white">Tra cứu & Quét mã F&B</h3>
-                  <p className="text-[10px] text-neutral-400">Quét QR hoặc nhập mã nhận món từ vé/đơn hàng</p>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-white">Tra cứu & Quét mã F&B</h3>
+                  <p className="text-[9px] text-neutral-400">Quét QR hoặc nhập mã nhận món từ vé/đơn hàng</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={isCameraOpen ? stopQrScanner : startQrScanner}
-                className={`flex items-center gap-2 rounded-xl border px-3.5 py-2 text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer ${
+                className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer ${
                   isCameraOpen
                     ? 'border-rose-500/40 bg-rose-500/15 text-rose-300 hover:bg-rose-500/25'
                     : 'border-purple-500/40 bg-purple-500/15 text-purple-300 hover:bg-purple-500/25'
                 }`}
               >
-                {isCameraOpen ? <CameraOff className="h-3.5 w-3.5" /> : <Camera className="h-3.5 w-3.5" />}
+                {isCameraOpen ? <CameraOff className="h-3 w-3" /> : <Camera className="h-3 w-3" />}
                 <span>{isCameraOpen ? 'Tắt camera' : 'Mở camera quét QR'}</span>
               </button>
             </div>
@@ -514,25 +637,25 @@ export default function StaffFoodCheckInPanel({
                   </div>
                 </div>
                 {scannerMessage && (
-                  <p className="mt-2 text-center text-[11px] font-medium text-purple-300">{scannerMessage}</p>
+                  <p className="mt-2 text-center text-[10px] font-medium text-purple-300">{scannerMessage}</p>
                 )}
                 {scannerError && (
-                  <p className="mt-2 text-center text-[11px] font-bold text-rose-400">{scannerError}</p>
+                  <p className="mt-2 text-center text-[10px] font-bold text-rose-400">{scannerError}</p>
                 )}
               </div>
             )}
 
             {/* Input Bar */}
-            <div className="mt-5 space-y-3">
+            <div className="mt-4 space-y-2.5">
               <div className="relative">
-                <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-neutral-500" />
+                <Search className="absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-500" />
                 <input
                   type="text"
                   value={lookupInput}
                   onChange={(e) => setLookupInput(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
                   placeholder="Dán mã QR, mã bắp nước (FO...) hoặc mã đặt vé (BK...)"
-                  className="w-full rounded-xl border border-white/10 bg-black/70 py-3.5 pl-11 pr-24 text-sm font-bold text-white placeholder-neutral-500 outline-none transition focus:border-purple-400/80 focus:ring-2 focus:ring-purple-400/20"
+                  className="w-full rounded-xl border border-white/10 bg-black/70 py-2.5 pl-9 pr-20 text-xs font-bold text-white placeholder-neutral-500 outline-none transition focus:border-purple-400/80 focus:ring-2 focus:ring-purple-400/20"
                 />
                 {lookupInput && (
                   <button
@@ -541,18 +664,18 @@ export default function StaffFoodCheckInPanel({
                       setLookupInput('');
                       setLookupError('');
                     }}
-                    className="absolute right-20 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white"
+                    className="absolute right-16 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white"
                   >
-                    <XCircle className="h-4 w-4" />
+                    <XCircle className="h-3.5 w-3.5" />
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={() => handleLookup()}
                   disabled={isLookingUp || !lookupInput.trim()}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5 rounded-lg bg-purple-500 px-3.5 py-2 text-[10px] font-black uppercase tracking-wider text-white transition hover:bg-purple-400 disabled:opacity-40 cursor-pointer"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-1 rounded-lg bg-purple-500 px-2.5 py-1.5 text-[9px] font-black uppercase tracking-wider text-white transition hover:bg-purple-400 disabled:opacity-40 cursor-pointer"
                 >
-                  {isLookingUp ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <ArrowRight className="h-3.5 w-3.5" />}
+                  {isLookingUp ? <RefreshCw className="h-3 w-3 animate-spin" /> : <ArrowRight className="h-3 w-3" />}
                   <span>Kiểm tra</span>
                 </button>
               </div>
@@ -571,39 +694,44 @@ export default function StaffFoodCheckInPanel({
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className="rounded-2xl border border-purple-500/30 bg-gradient-to-b from-[#0f0c16] via-[#090b0e] to-[#050608] p-5 shadow-2xl sm:p-6"
+              className="rounded-2xl border border-purple-500/30 bg-gradient-to-b from-[#0f0c16] via-[#090b0e] to-[#050608] p-4 shadow-2xl sm:p-5"
             >
               {/* Order Header */}
-              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 pb-4">
+              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 pb-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em] text-purple-400">
+                    <span className="text-[9px] font-black uppercase tracking-[0.2em] text-purple-400">
                       Đơn bắp nước chi tiết
                     </span>
                     {activeOrder.bookingCode && (
-                      <span className="rounded bg-white/10 px-2 py-0.5 font-mono text-[9px] font-black text-neutral-300">
+                      <span className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-[8px] font-black text-neutral-300">
                         Vé: {activeOrder.bookingCode}
                       </span>
                     )}
                   </div>
-                  <h3 className="mt-1 font-mono text-xl font-black text-white">
+                  <h3 className="mt-1 font-mono text-base font-black text-white sm:text-lg">
                     {activeOrder.orderCode || activeOrder.foodOrderCode}
                   </h3>
-                  <p className="mt-1 text-xs text-neutral-400">
+                  <p className="mt-0.5 text-[11px] text-neutral-400">
                     Đặt lúc: {formatDateTime(activeOrder.createdAt || activeOrder.paidAt)}
                   </p>
                 </div>
 
                 {/* Status Badge */}
                 <div>
-                  {activeOrder.status === 'PICKED_UP' ? (
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-neutral-700 bg-neutral-900 px-3 py-1 text-xs font-black uppercase text-neutral-300">
-                      <Check className="h-3.5 w-3.5 text-neutral-400" />
-                      ĐÃ GIAO MÓN
+                  {isDelivered ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2.5 py-0.5 text-[10px] font-black uppercase text-emerald-300">
+                      <Check className="h-3 w-3 text-emerald-400" />
+                      ĐÃ GIAO ĐỦ ({activeOrder.items?.length || 0}/{activeOrder.items?.length || 0})
+                    </span>
+                  ) : deliveredItemsCount > 0 ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-500/40 bg-sky-500/15 px-2.5 py-0.5 text-[10px] font-black uppercase text-sky-300 shadow-[0_0_15px_rgba(14,165,233,0.25)]">
+                      <Clock3 className="h-3 w-3 text-sky-400" />
+                      GIAO 1 PHẦN ({deliveredItemsCount}/{activeOrder.items?.length || 0})
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/15 px-3 py-1 text-xs font-black uppercase text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.25)]">
-                      <span className="h-2 w-2 rounded-full bg-amber-400 animate-ping" />
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/15 px-2.5 py-0.5 text-[10px] font-black uppercase text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.25)]">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-400 animate-ping" />
                       CHỜ GIAO MÓN
                     </span>
                   )}
@@ -611,31 +739,31 @@ export default function StaffFoodCheckInPanel({
               </div>
 
               {/* Customer Info & Cinema Badge */}
-              <div className="mt-4 grid gap-3 rounded-xl border border-white/10 bg-black/60 p-4 text-xs sm:grid-cols-2">
+              <div className="mt-3.5 grid gap-2.5 rounded-xl border border-white/10 bg-black/60 p-3 text-[11px] sm:grid-cols-2">
                 <div className="flex items-center gap-2 text-neutral-300">
-                  <User className="h-4 w-4 text-purple-400" />
-                  <span>Khách: <strong className="text-white">{activeOrder.customerName || 'Khách vãng lai'}</strong></span>
+                  <User className="h-3.5 w-3.5 text-purple-400" />
+                  <span>Khách: <strong className="text-white">{resolveOrderCustomerName(activeOrder)}</strong></span>
                 </div>
                 <div className="flex items-center gap-2 text-neutral-300">
-                  <Phone className="h-4 w-4 text-purple-400" />
-                  <span>SĐT: <strong className="text-white">{activeOrder.customerPhone || '—'}</strong></span>
+                  <Phone className="h-3.5 w-3.5 text-purple-400" />
+                  <span>SĐT: <strong className="text-white">{resolveOrderCustomerPhone(activeOrder)}</strong></span>
                 </div>
                 <div className="flex items-center gap-2 text-neutral-300 sm:col-span-2">
-                  <MapPin className="h-4 w-4 text-emerald-400" />
+                  <MapPin className="h-3.5 w-3.5 text-emerald-400" />
                   <span>Rạp đặt đơn: <strong className={isCinemaMismatch ? 'text-rose-400' : 'text-emerald-300'}>{activeOrder.cinemaName || `#${activeOrder.cinemaId}`}</strong></span>
                 </div>
               </div>
 
               {/* Cinema Mismatch Alert */}
               {isCinemaMismatch && (
-                <div className="mt-4 rounded-xl border border-rose-500/40 bg-rose-500/15 p-4 text-rose-300">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="h-5 w-5 shrink-0 text-rose-400 mt-0.5" />
+                <div className="mt-3 rounded-xl border border-rose-500/40 bg-rose-500/15 p-3 text-rose-300">
+                  <div className="flex items-start gap-2.5">
+                    <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400 mt-0.5" />
                     <div>
-                      <p className="text-xs font-black uppercase tracking-wider text-rose-300">
+                      <p className="text-[11px] font-black uppercase tracking-wider text-rose-300">
                         CẢNH BÁO: ĐƠN THUỘC RẠP KHÁC
                       </p>
-                      <p className="mt-1 text-xs text-rose-200 leading-5">
+                      <p className="mt-0.5 text-[11px] text-rose-200 leading-4">
                         Đơn bắp nước này được đặt tại <strong>{activeOrder.cinemaName || `#${activeOrder.cinemaId}`}</strong>. Ca trực của bạn tại <strong>{activeCinema?.name}</strong>. Nhân viên không được phép giao món của rạp khác để bảo đảm kiểm kê kho chính xác.
                       </p>
                     </div>
@@ -644,44 +772,61 @@ export default function StaffFoodCheckInPanel({
               )}
 
               {/* Prep Checklist Section */}
-              <div className="mt-5 space-y-3">
+              <div className="mt-4 space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-neutral-400">
-                    Danh sách món cần soạn ({activeOrder.items?.length || 0} món)
+                  <p className="text-[9px] font-black uppercase tracking-[0.2em] text-neutral-400">
+                    {isDelivered
+                      ? `Danh sách món đã giao (${activeOrder.items?.length || 0}/${activeOrder.items?.length || 0} món)`
+                      : deliveredItemsCount > 0
+                        ? `Danh sách món (Đã giao: ${deliveredItemsCount}/${activeOrder.items?.length || 0} · Đang chọn: ${pendingSelectedCount} món)`
+                        : `Danh sách món cần soạn (${pendingSelectedCount}/${activeOrder.items?.length || 0} món đã chọn)`}
                   </p>
-                  {activeOrder.status === 'PAID' && (
+                  {isDelivered ? (
+                    <span className="flex items-center gap-1 rounded-full bg-emerald-500/20 px-2 py-0.5 text-[9px] font-black uppercase tracking-wider text-emerald-300">
+                      <Check className="h-2.5 w-2.5" /> Đã hoàn tất giao
+                    </span>
+                  ) : (
                     <button
                       type="button"
                       onClick={handleToggleAllItems}
-                      className="text-[10px] font-bold text-purple-300 hover:text-purple-200 underline cursor-pointer"
+                      disabled={isChecklistDisabled || isPickingUp}
+                      className="text-[9px] font-bold text-purple-300 hover:text-purple-200 underline cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      {allItemsPrepared ? 'Bỏ chọn tất cả' : 'Đánh dấu đã soạn đủ'}
+                      {allItemsPrepared ? 'Bỏ chọn các món còn lại' : 'Chọn tất cả món còn lại'}
                     </button>
                   )}
                 </div>
 
                 <div className="divide-y divide-white/5 rounded-xl border border-white/10 bg-black/40">
                   {(activeOrder.items || []).map((item, idx) => {
-                    const isChecked = Boolean(preparedItems[idx]);
+                    const isAlreadyPickedUp = Boolean(item.pickedUp || isDelivered);
+                    const isSelected = Boolean(preparedItems[idx]);
+                    const isChecked = isAlreadyPickedUp || isSelected;
+                    const canToggle = !isAlreadyPickedUp && !isChecklistDisabled && !isPickingUp;
+
                     return (
                       <div
                         key={`${item.name}-${idx}`}
-                        onClick={() => activeOrder.status === 'PAID' && toggleItemCheck(idx)}
-                        className={`flex items-center justify-between p-3.5 transition cursor-pointer select-none ${
-                          isChecked ? 'bg-emerald-500/[0.07]' : 'hover:bg-white/[0.02]'
-                        }`}
+                        onClick={() => canToggle && toggleItemCheck(idx)}
+                        className={`flex items-center justify-between p-3 transition select-none ${
+                          canToggle ? 'cursor-pointer hover:bg-white/[0.03]' : 'cursor-default'
+                        } ${isAlreadyPickedUp ? 'bg-emerald-500/[0.08]' : isSelected ? 'bg-purple-500/[0.08]' : ''}`}
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2.5">
                           <input
                             type="checkbox"
                             checked={isChecked}
-                            onChange={() => toggleItemCheck(idx)}
-                            disabled={activeOrder.status !== 'PAID'}
-                            className="h-4 w-4 rounded border-neutral-700 bg-neutral-900 text-emerald-400 focus:ring-0 cursor-pointer"
+                            onChange={() => canToggle && toggleItemCheck(idx)}
+                            disabled={!canToggle}
+                            className={`h-3.5 w-3.5 rounded border-neutral-700 bg-neutral-900 ${
+                              isAlreadyPickedUp
+                                ? 'text-emerald-400 opacity-90 cursor-not-allowed'
+                                : 'text-purple-500 cursor-pointer focus:ring-0'
+                            }`}
                           />
                           <div>
-                            <div className="flex items-center gap-2">
-                              <span className={`text-sm font-black ${isChecked ? 'text-emerald-300 line-through' : 'text-white'}`}>
+                            <div className="flex items-center gap-1.5">
+                              <span className={`text-xs font-black ${isAlreadyPickedUp ? 'text-emerald-300 line-through' : isSelected ? 'text-purple-200' : 'text-white'}`}>
                                 {item.name}
                               </span>
                               <span
@@ -691,18 +836,31 @@ export default function StaffFoodCheckInPanel({
                               >
                                 {item.isCombo ? 'Combo' : 'Món lẻ'}
                               </span>
+                              {isAlreadyPickedUp ? (
+                                <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-emerald-300 flex items-center gap-0.5">
+                                  <Check className="h-2 w-2" /> Đã giao
+                                </span>
+                              ) : isSelected ? (
+                                <span className="rounded bg-purple-500/25 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wider text-purple-300 flex items-center gap-0.5">
+                                  <Check className="h-2 w-2" /> Đã chọn giao
+                                </span>
+                              ) : (
+                                <span className="rounded bg-white/5 px-1.5 py-0.5 text-[8px] font-bold text-neutral-400">
+                                  Chưa chọn
+                                </span>
+                              )}
                             </div>
-                            <p className="font-mono text-xs text-neutral-500">
+                            <p className="font-mono text-[11px] text-neutral-500">
                               Đơn giá: {formatCurrency(item.unitPrice)}
                             </p>
                           </div>
                         </div>
 
                         <div className="text-right">
-                          <span className="inline-block rounded-lg bg-white/10 px-2.5 py-1 font-mono text-sm font-black text-amber-300">
+                          <span className="inline-block rounded-lg bg-white/10 px-2 py-0.5 font-mono text-xs font-black text-amber-300">
                             × {item.quantity}
                           </span>
-                          <p className="mt-1 font-mono text-xs font-black text-neutral-300">
+                          <p className="mt-0.5 font-mono text-[11px] font-black text-neutral-300">
                             {formatCurrency(item.totalPrice)}
                           </p>
                         </div>
@@ -711,73 +869,104 @@ export default function StaffFoodCheckInPanel({
                   })}
                 </div>
 
-                {allItemsPrepared && activeOrder.status === 'PAID' && (
-                  <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-emerald-300">
-                    <PackageCheck className="h-4 w-4 text-emerald-400 shrink-0" />
-                    <p className="text-xs font-bold">Tất cả các món đã được soạn đủ trên khay. Sẵn sàng giao cho khách!</p>
+                {isDelivered ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5 text-emerald-300">
+                    <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                    <p className="text-[11px] font-bold">
+                      Đơn hàng đã được xác nhận giao hoàn tất. Danh sách món đã được khóa (không thể chỉnh sửa).
+                    </p>
+                  </div>
+                ) : pendingSelectedCount > 0 ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-purple-500/30 bg-purple-500/10 p-2.5 text-purple-300">
+                    <PackageCheck className="h-3.5 w-3.5 text-purple-400 shrink-0" />
+                    <p className="text-[11px] font-bold">
+                      Đang chọn {pendingSelectedCount} món để giao. Bấm nút "Xác nhận giao" bên dưới để hoàn tất giao các món này.
+                    </p>
+                  </div>
+                ) : deliveredItemsCount > 0 ? (
+                  <div className="flex items-center gap-2 rounded-xl border border-sky-500/30 bg-sky-500/10 p-2.5 text-sky-300">
+                    <Clock3 className="h-3.5 w-3.5 text-sky-400 shrink-0" />
+                    <p className="text-[11px] font-bold">
+                      Đã giao {deliveredItemsCount}/{activeOrder.items?.length || 0} món. Vui lòng tick chọn thêm món còn lại để tiếp tục giao.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 text-amber-300">
+                    <Clock3 className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                    <p className="text-[11px] font-bold">
+                      Vui lòng tick chọn món trên khay trước khi bấm xác nhận giao.
+                    </p>
                   </div>
                 )}
               </div>
 
               {/* Total Summary */}
-              <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-4">
+              <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3">
                 <div>
-                  <span className="text-[10px] font-black uppercase tracking-widest text-neutral-400">
+                  <span className="text-[9px] font-black uppercase tracking-widest text-neutral-400">
                     Tổng Tiền
                   </span>
                   {activeOrder.paidAt && (
-                    <p className="text-[10px] text-neutral-500">
+                    <p className="text-[9px] text-neutral-500">
                       Đã thanh toán lúc: {formatDateTime(activeOrder.paidAt)}
                     </p>
                   )}
                 </div>
-                <strong className="font-mono text-2xl font-black text-white">
+                <strong className="font-mono text-lg font-black text-white sm:text-xl">
                   {formatCurrency(activeOrder.totalAmount || activeOrder.subtotal)}
                 </strong>
               </div>
 
               {/* Pick-up Delivery Action Button */}
-              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                {activeOrder.status === 'PAID' ? (
+              <div className="mt-5 flex flex-col gap-2.5 sm:flex-row">
+                {!isDelivered ? (
                   <button
                     type="button"
                     onClick={() => handleConfirmPickup(activeOrder)}
-                    disabled={isPickingUp || isCinemaMismatch}
-                    className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-6 py-4 text-xs font-black uppercase tracking-wider text-black shadow-[0_4px_25px_rgba(16,185,129,0.35)] transition hover:from-emerald-400 hover:to-teal-400 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                    disabled={isPickingUp || isCinemaMismatch || pendingSelectedCount === 0}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 px-4 py-2.5 text-[11px] font-black uppercase tracking-wider text-black shadow-[0_4px_25px_rgba(16,185,129,0.35)] transition hover:from-emerald-400 hover:to-teal-400 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                   >
                     {isPickingUp ? (
-                      <RefreshCw className="h-4 w-4 animate-spin" />
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
                     ) : (
-                      <CheckCircle2 className="h-5 w-5" />
+                      <CheckCircle2 className="h-4 w-4" />
                     )}
-                    <span>{isPickingUp ? 'Đang xác nhận...' : 'Xác nhận đã giao món cho khách'}</span>
+                    <span>
+                      {isPickingUp
+                        ? 'Đang xác nhận...'
+                        : pendingSelectedCount === 0
+                          ? 'Vui lòng tích chọn món để xác nhận giao'
+                          : deliveredItemsCount + pendingSelectedCount === (activeOrder.items?.length || 0)
+                            ? `Xác nhận giao ${pendingSelectedCount} món còn lại (Giao đủ đơn)`
+                            : `Xác nhận giao ${pendingSelectedCount} món đã chọn`}
+                    </span>
                   </button>
                 ) : (
-                  <div className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-neutral-800 bg-neutral-900/60 px-4 py-3.5 text-xs font-bold text-neutral-400">
-                    <Check className="h-4 w-4 text-emerald-400" />
-                    <span>Đã giao món {activeOrder.pickedUpAt ? `lúc ${formatDateTime(activeOrder.pickedUpAt)}` : ''}</span>
+                  <div className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-2.5 text-[11px] font-bold text-emerald-300">
+                    <Check className="h-3.5 w-3.5 text-emerald-400" />
+                    <span>Đã giao đủ toàn bộ {activeOrder.items?.length || 0} món {activeOrder.pickedUpAt ? `lúc ${formatDateTime(activeOrder.pickedUpAt)}` : ''}</span>
                   </div>
                 )}
 
                 <button
                   type="button"
                   onClick={() => setPrintSlipOrder(activeOrder)}
-                  className="flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.04] px-4 py-3.5 text-xs font-black uppercase tracking-wider text-neutral-200 transition hover:bg-white/10 hover:text-white cursor-pointer"
+                  className="flex items-center justify-center gap-1.5 rounded-xl border border-white/15 bg-white/[0.04] px-3.5 py-2.5 text-[11px] font-black uppercase tracking-wider text-neutral-200 transition hover:bg-white/10 hover:text-white cursor-pointer"
                 >
-                  <Printer className="h-4 w-4" />
+                  <Printer className="h-3.5 w-3.5" />
                   <span>In phiếu</span>
                 </button>
               </div>
             </motion.div>
           ) : (
-            <div className="flex min-h-[300px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-gradient-to-b from-[#0c0e12] to-[#050608] p-6 text-center shadow-xl">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-purple-500/30 bg-purple-500/10 text-purple-400 shadow-[0_0_25px_rgba(168,85,247,0.15)]">
-                <Popcorn className="h-8 w-8" />
+            <div className="flex min-h-[260px] flex-col items-center justify-center rounded-2xl border border-dashed border-white/15 bg-gradient-to-b from-[#0c0e12] to-[#050608] p-5 text-center shadow-xl">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-purple-500/30 bg-purple-500/10 text-purple-400 shadow-[0_0_25px_rgba(168,85,247,0.15)]">
+                <Popcorn className="h-7 w-7" />
               </div>
-              <p className="mt-4 text-xs font-black uppercase tracking-widest text-neutral-300">
+              <p className="mt-3 text-[11px] font-black uppercase tracking-widest text-neutral-300">
                 Chưa chọn đơn bắp nước
               </p>
-              <p className="mt-2 max-w-sm text-xs leading-6 text-neutral-500">
+              <p className="mt-1.5 max-w-sm text-[11px] leading-5 text-neutral-500">
                 Nhập mã đơn, quét mã QR của khách hoặc click vào một đơn trong danh sách chờ bên cạnh để tiến hành soạn và giao món.
               </p>
             </div>
@@ -786,18 +975,18 @@ export default function StaffFoodCheckInPanel({
 
         {/* ── Right Column: Live Concessions Queue ─────────────────────────── */}
         <div className="space-y-6">
-          <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-[#0c0e12] to-[#050608] p-5 shadow-2xl sm:p-6">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
+          <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-[#0c0e12] to-[#050608] p-4 shadow-2xl sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-black uppercase tracking-wider text-white">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-white">
                     Hàng đợi đơn F&B tại rạp
                   </h3>
-                  <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-black text-purple-300">
+                  <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-[9px] font-black text-purple-300">
                     {filteredOrders.length} đơn
                   </span>
                 </div>
-                <p className="text-[10px] text-neutral-400">
+                <p className="text-[9px] text-neutral-400">
                   Cập nhật thời gian thực các đơn bắp nước tại {activeCinema?.name}
                 </p>
               </div>
@@ -806,7 +995,7 @@ export default function StaffFoodCheckInPanel({
                 type="button"
                 onClick={() => loadRecentFoodOrders()}
                 disabled={isLoadingOrders}
-                className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[10px] font-bold text-neutral-300 transition hover:bg-white/10 hover:text-white cursor-pointer"
+                className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[9px] font-bold text-neutral-300 transition hover:bg-white/10 hover:text-white cursor-pointer"
               >
                 <RefreshCw className={`h-3 w-3 ${isLoadingOrders ? 'animate-spin' : ''}`} />
                 <span>Làm mới</span>
@@ -814,12 +1003,12 @@ export default function StaffFoodCheckInPanel({
             </div>
 
             {/* Filter Tabs & Search */}
-            <div className="mt-4 space-y-3">
+            <div className="mt-3.5 space-y-2.5">
               <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-black/60 p-1">
                 <button
                   type="button"
                   onClick={() => setOrdersFilter('ALL')}
-                  className={`flex-1 rounded-lg py-1.5 text-center text-[10px] font-black uppercase tracking-wider transition cursor-pointer ${
+                  className={`flex-1 rounded-lg py-1 text-center text-[9px] font-black uppercase tracking-wider transition cursor-pointer ${
                     ordersFilter === 'ALL'
                       ? 'bg-white/15 text-white font-extrabold shadow-sm'
                       : 'text-neutral-400 hover:text-white'
@@ -830,47 +1019,47 @@ export default function StaffFoodCheckInPanel({
                 <button
                   type="button"
                   onClick={() => setOrdersFilter('PAID')}
-                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-center text-[10px] font-black uppercase tracking-wider transition cursor-pointer ${
+                  className={`flex-1 flex items-center justify-center gap-1 rounded-lg py-1 text-center text-[9px] font-black uppercase tracking-wider transition cursor-pointer ${
                     ordersFilter === 'PAID'
                       ? 'bg-amber-500/20 text-amber-300 font-extrabold border border-amber-500/30'
                       : 'text-neutral-400 hover:text-white'
                   }`}
                 >
-                  <Clock3 className="h-3 w-3 text-amber-400" />
+                  <Clock3 className="h-2.5 w-2.5 text-amber-400" />
                   <span>Chờ giao ({fnbStats.pending})</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setOrdersFilter('PICKED_UP')}
-                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-center text-[10px] font-black uppercase tracking-wider transition cursor-pointer ${
+                  className={`flex-1 flex items-center justify-center gap-1 rounded-lg py-1 text-center text-[9px] font-black uppercase tracking-wider transition cursor-pointer ${
                     ordersFilter === 'PICKED_UP'
                       ? 'bg-emerald-500/20 text-emerald-300 font-extrabold border border-emerald-500/30'
                       : 'text-neutral-400 hover:text-white'
                   }`}
                 >
-                  <Check className="h-3 w-3 text-emerald-400" />
+                  <Check className="h-2.5 w-2.5 text-emerald-400" />
                   <span>Đã giao ({fnbStats.pickedUp})</span>
                 </button>
               </div>
 
               <div className="relative">
-                <Search className="absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-500" />
+                <Search className="absolute left-3 top-1/2 h-3 w-3 -translate-y-1/2 text-neutral-500" />
                 <input
                   type="text"
                   value={ordersSearch}
                   onChange={(e) => setOrdersSearch(e.target.value)}
                   placeholder="Lọc theo mã đơn, khách hàng, số điện thoại..."
-                  className="w-full rounded-xl border border-white/10 bg-black/60 py-2.5 pl-9 pr-4 text-xs font-medium text-white placeholder-neutral-500 outline-none focus:border-purple-400/50"
+                  className="w-full rounded-xl border border-white/10 bg-black/60 py-2 pl-8 pr-3 text-[11px] font-medium text-white placeholder-neutral-500 outline-none focus:border-purple-400/50"
                 />
               </div>
             </div>
 
             {/* Orders List */}
-            <div className="mt-4 max-h-[580px] overflow-y-auto space-y-2.5 pr-1">
+            <div className="mt-3.5 max-h-[580px] overflow-y-auto space-y-2 pr-1">
               {isLoadingOrders && fnbOrders.length === 0 ? (
-                <div className="flex items-center justify-center py-12 text-neutral-400">
-                  <RefreshCw className="h-5 w-5 animate-spin mr-2" />
-                  <span className="text-xs font-bold">Đang tải danh sách đơn...</span>
+                <div className="flex items-center justify-center py-10 text-neutral-400">
+                  <RefreshCw className="h-4 w-4 animate-spin mr-2" />
+                  <span className="text-[11px] font-bold">Đang tải danh sách đơn...</span>
                 </div>
               ) : filteredOrders.length > 0 ? (
                 filteredOrders.map((order) => {
@@ -882,7 +1071,7 @@ export default function StaffFoodCheckInPanel({
                       key={order.orderCode || order.foodOrderCode || order.id}
                       layout
                       onClick={() => handleLookup(order.orderCode || order.foodOrderCode)}
-                      className={`relative rounded-xl border p-3.5 transition cursor-pointer ${
+                      className={`relative rounded-xl border p-3 transition cursor-pointer ${
                         isSelected
                           ? 'border-purple-500/60 bg-purple-500/10 shadow-[0_0_20px_rgba(168,85,247,0.15)]'
                           : 'border-white/10 bg-black/50 hover:border-white/20 hover:bg-white/[0.02]'
@@ -890,48 +1079,70 @@ export default function StaffFoodCheckInPanel({
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs font-black text-white">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono text-[11px] font-black text-white">
                               {order.orderCode || order.foodOrderCode}
                             </span>
                             {order.bookingCode && (
-                              <span className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-[9px] font-bold text-neutral-300">
+                              <span className="rounded bg-white/10 px-1 py-0.5 font-mono text-[8px] font-bold text-neutral-300">
                                 {order.bookingCode}
                               </span>
                             )}
                           </div>
-                          <p className="mt-1 text-xs font-bold text-neutral-300">
-                            {order.customerName || 'Khách vãng lai'}
-                            {order.customerPhone ? ` · ${order.customerPhone}` : ''}
+                          <p className="mt-0.5 text-[11px] font-bold text-neutral-300">
+                            {resolveOrderCustomerName(order)}
+                            {resolveOrderCustomerPhone(order) !== '—' ? ` · ${resolveOrderCustomerPhone(order)}` : ''}
                           </p>
                         </div>
 
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
-                            isPaid
-                              ? 'border border-amber-500/40 bg-amber-500/15 text-amber-300'
-                              : 'border border-neutral-700 bg-neutral-900 text-neutral-400'
-                          }`}
-                        >
-                          {isPaid ? 'Chờ giao' : 'Đã giao'}
-                        </span>
+                        {(() => {
+                          const totalItems = (order.items || []).length;
+                          const delivered = (order.items || []).filter((it) => it.pickedUp).length;
+                          const isAllDelivered = order.status === 'PICKED_UP' || (totalItems > 0 && delivered === totalItems);
+                          const isPartial = order.status === 'PARTIALLY_PICKED_UP' || (delivered > 0 && delivered < totalItems);
+
+                          if (isAllDelivered) {
+                            return (
+                              <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[8px] font-black uppercase tracking-wider text-emerald-400">
+                                Đã giao ({totalItems}/{totalItems})
+                              </span>
+                            );
+                          }
+                          if (isPartial) {
+                            return (
+                              <span className="rounded-full border border-sky-500/40 bg-sky-500/15 px-2 py-0.5 text-[8px] font-black uppercase tracking-wider text-sky-300 shadow-[0_0_12px_rgba(14,165,233,0.2)]">
+                                Giao 1 phần ({delivered}/{totalItems})
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[8px] font-black uppercase tracking-wider text-amber-300">
+                              Chờ giao
+                            </span>
+                          );
+                        })()}
                       </div>
 
                       {/* Items Summary */}
-                      <div className="mt-2.5 flex flex-wrap gap-1.5">
+                      <div className="mt-2 flex flex-wrap gap-1">
                         {(order.items || []).map((item, idx) => (
                           <span
                             key={idx}
-                            className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-0.5 text-[10px] text-neutral-300"
+                            className={`rounded-md border px-1.5 py-0.5 text-[9px] ${
+                              item.pickedUp
+                                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 line-through opacity-80'
+                                : 'border-white/10 bg-white/[0.03] text-neutral-300'
+                            }`}
                           >
                             <strong>{item.name}</strong> <span className="font-mono text-purple-300">×{item.quantity}</span>
+                            {item.pickedUp && <Check className="inline h-2.5 w-2.5 ml-1 text-emerald-400" />}
                           </span>
                         ))}
                       </div>
 
-                      <div className="mt-3 flex items-center justify-between border-t border-white/5 pt-2 text-[10px] text-neutral-500">
+                      <div className="mt-2.5 flex items-center justify-between border-t border-white/5 pt-2 text-[9px] text-neutral-500">
                         <span>{formatTimeAgo(order.createdAt || order.paidAt)}</span>
-                        <strong className="font-mono text-xs font-black text-white">
+                        <strong className="font-mono text-[11px] font-black text-white">
                           {formatCurrency(order.totalAmount || order.subtotal)}
                         </strong>
                       </div>
@@ -939,9 +1150,9 @@ export default function StaffFoodCheckInPanel({
                   );
                 })
               ) : (
-                <div className="rounded-xl border border-white/5 bg-black/30 py-10 text-center">
-                  <Popcorn className="mx-auto h-8 w-8 text-neutral-600 mb-2" />
-                  <p className="text-xs font-bold text-neutral-400">Không có đơn nào phù hợp với bộ lọc.</p>
+                <div className="rounded-xl border border-white/5 bg-black/30 py-8 text-center">
+                  <Popcorn className="mx-auto h-7 w-7 text-neutral-600 mb-2" />
+                  <p className="text-[11px] font-bold text-neutral-400">Không có đơn nào phù hợp với bộ lọc.</p>
                 </div>
               )}
             </div>
@@ -950,22 +1161,22 @@ export default function StaffFoodCheckInPanel({
       </div>
 
       {/* ── Section 3: Quản lý trạng thái món/combo tại quầy (Stock Control) ─ */}
-      <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-[#0c0e12] to-[#050608] p-5 shadow-2xl sm:p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-purple-500/30 bg-purple-500/15 text-purple-400">
-              <Sparkles className="h-5 w-5" />
+      <div className="rounded-2xl border border-white/10 bg-gradient-to-b from-[#0c0e12] to-[#050608] p-4 shadow-2xl sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-purple-500/30 bg-purple-500/15 text-purple-400">
+              <Sparkles className="h-4 w-4" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-black uppercase tracking-wider text-white">
+                <h3 className="text-xs font-black uppercase tracking-wider text-white">
                   Trạng thái món/combo tại quầy {activeCinema?.name}
                 </h3>
-                <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[9px] font-black text-emerald-400 border border-emerald-500/30">
+                <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[8px] font-black text-emerald-400 border border-emerald-500/30">
                   {stockStats.active} đang mở bán
                 </span>
               </div>
-              <p className="text-[10px] text-neutral-400">
+              <p className="text-[9px] text-neutral-400">
                 Cập nhật nhanh tình trạng còn/hết hàng để hệ thống đồng bộ tới ứng dụng đặt món của khách.
               </p>
             </div>
@@ -975,15 +1186,15 @@ export default function StaffFoodCheckInPanel({
             <button
               type="button"
               onClick={() => onReloadFoods?.()}
-              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-3.5 py-2 text-[10px] font-bold text-neutral-300 transition hover:bg-white/10 hover:text-white cursor-pointer"
+              className="flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[9px] font-bold text-neutral-300 transition hover:bg-white/10 hover:text-white cursor-pointer"
             >
-              <RefreshCw className="h-3.5 w-3.5" />
+              <RefreshCw className="h-3 w-3" />
               <span>Tải lại thực đơn</span>
             </button>
             <button
               type="button"
               onClick={() => setShowStockManager((prev) => !prev)}
-              className="rounded-xl border border-purple-500/30 bg-purple-500/15 px-3.5 py-2 text-[10px] font-black uppercase tracking-wider text-purple-300 transition hover:bg-purple-500/25 cursor-pointer"
+              className="rounded-xl border border-purple-500/30 bg-purple-500/15 px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-purple-300 transition hover:bg-purple-500/25 cursor-pointer"
             >
               {showStockManager ? 'Thu gọn' : 'Mở bảng quản lý kho'}
             </button>
@@ -991,9 +1202,9 @@ export default function StaffFoodCheckInPanel({
         </div>
 
         {showStockManager && (
-          <div className="mt-5 space-y-4">
+          <div className="mt-4 space-y-3.5">
             {/* Filter toolbar */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-2.5">
               <div className="flex items-center gap-1.5">
                 {[
                   { id: 'ALL', label: `Tất cả (${stockStats.total})` },
@@ -1008,7 +1219,7 @@ export default function StaffFoodCheckInPanel({
                       setStockStatusFilter(tab.id);
                       setStockPage(1);
                     }}
-                    className={`rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-wider transition cursor-pointer ${
+                    className={`rounded-lg px-2.5 py-1 text-[9px] font-black uppercase tracking-wider transition cursor-pointer ${
                       stockStatusFilter === tab.id
                         ? 'bg-purple-500 text-white shadow-sm'
                         : 'border border-white/10 bg-black/40 text-neutral-400 hover:text-white'
@@ -1019,8 +1230,8 @@ export default function StaffFoodCheckInPanel({
                 ))}
               </div>
 
-              <div className="relative min-w-[240px]">
-                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neutral-500" />
+              <div className="relative min-w-[220px]">
+                <Search className="absolute left-3 top-1/2 h-3 w-3 -translate-y-1/2 text-neutral-500" />
                 <input
                   type="text"
                   value={stockSearch}
@@ -1029,13 +1240,13 @@ export default function StaffFoodCheckInPanel({
                     setStockPage(1);
                   }}
                   placeholder="Tìm tên món / combo..."
-                  className="w-full rounded-xl border border-white/10 bg-black/60 py-2 pl-8 pr-3 text-xs text-white placeholder-neutral-500 outline-none focus:border-purple-400"
+                  className="w-full rounded-xl border border-white/10 bg-black/60 py-1.5 pl-8 pr-3 text-[11px] text-white placeholder-neutral-500 outline-none focus:border-purple-400"
                 />
               </div>
             </div>
 
             {/* Foods Grid / Table */}
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
               {paginatedStockFoods.map((food) => {
                 const foodKey = `${food.kind}-${food.id}`;
                 const isSaving = savingStaffFoodKey === foodKey;
@@ -1044,7 +1255,7 @@ export default function StaffFoodCheckInPanel({
                 return (
                   <div
                     key={foodKey}
-                    className="flex flex-col justify-between rounded-xl border border-white/10 bg-black/50 p-4 transition hover:border-white/20"
+                    className="flex flex-col justify-between rounded-xl border border-white/10 bg-black/50 p-3.5 transition hover:border-white/20"
                   >
                     <div>
                       <div className="flex items-start justify-between gap-2">
@@ -1056,27 +1267,27 @@ export default function StaffFoodCheckInPanel({
                           >
                             {food.kind === 'combo' ? 'Combo' : 'Món lẻ'}
                           </span>
-                          <h4 className="mt-1 text-sm font-black text-white">{food.name}</h4>
+                          <h4 className="mt-1 text-xs font-black text-white">{food.name}</h4>
                         </div>
-                        <span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase ${meta.className}`}>
+                        <span className={`rounded-full border px-2 py-0.5 text-[8px] font-black uppercase ${meta.className}`}>
                           {meta.label}
                         </span>
                       </div>
-                      <p className="mt-2 font-mono text-xs font-black text-amber-300">
+                      <p className="mt-1.5 font-mono text-[11px] font-black text-amber-300">
                         {formatCurrency(food.price)}
                       </p>
                     </div>
 
-                    <div className="mt-4 pt-3 border-t border-white/5">
-                      <p className="text-[9px] font-black uppercase tracking-wider text-neutral-500 mb-2">
+                    <div className="mt-3 pt-2.5 border-t border-white/5">
+                      <p className="text-[8px] font-black uppercase tracking-wider text-neutral-500 mb-1.5">
                         Đổi trạng thái tại rạp:
                       </p>
-                      <div className="grid grid-cols-3 gap-1.5">
+                      <div className="grid grid-cols-3 gap-1">
                         <button
                           type="button"
                           disabled={isSaving || food.status === 'ACTIVE'}
                           onClick={() => onUpdateFoodStatus?.(food, 'ACTIVE')}
-                          className={`rounded-lg py-1 text-[9px] font-black uppercase transition cursor-pointer ${
+                          className={`rounded-lg py-1 text-[8px] font-black uppercase transition cursor-pointer ${
                             food.status === 'ACTIVE'
                               ? 'bg-emerald-500/30 text-emerald-300 font-extrabold border border-emerald-500/40'
                               : 'border border-white/10 bg-white/[0.02] text-neutral-400 hover:text-white hover:bg-white/10'
@@ -1088,7 +1299,7 @@ export default function StaffFoodCheckInPanel({
                           type="button"
                           disabled={isSaving || food.status === 'LOW_STOCK'}
                           onClick={() => onUpdateFoodStatus?.(food, 'LOW_STOCK')}
-                          className={`rounded-lg py-1 text-[9px] font-black uppercase transition cursor-pointer ${
+                          className={`rounded-lg py-1 text-[8px] font-black uppercase transition cursor-pointer ${
                             food.status === 'LOW_STOCK'
                               ? 'bg-purple-500/30 text-purple-300 font-extrabold border border-purple-500/40'
                               : 'border border-white/10 bg-white/[0.02] text-neutral-400 hover:text-white hover:bg-white/10'
@@ -1100,7 +1311,7 @@ export default function StaffFoodCheckInPanel({
                           type="button"
                           disabled={isSaving || food.status === 'OUT_OF_STOCK'}
                           onClick={() => onUpdateFoodStatus?.(food, 'OUT_OF_STOCK')}
-                          className={`rounded-lg py-1 text-[9px] font-black uppercase transition cursor-pointer ${
+                          className={`rounded-lg py-1 text-[8px] font-black uppercase transition cursor-pointer ${
                             food.status === 'OUT_OF_STOCK'
                               ? 'bg-rose-500/30 text-rose-300 font-extrabold border border-rose-500/40'
                               : 'border border-white/10 bg-white/[0.02] text-neutral-400 hover:text-white hover:bg-white/10'
@@ -1117,16 +1328,16 @@ export default function StaffFoodCheckInPanel({
 
             {/* Pagination */}
             {stockTotalPages > 1 && (
-              <div className="flex items-center justify-between border-t border-white/10 pt-3">
-                <span className="text-xs text-neutral-400">
+              <div className="flex items-center justify-between border-t border-white/10 pt-2.5">
+                <span className="text-[11px] text-neutral-400">
                   Trang {safeStockPage} / {stockTotalPages}
                 </span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     disabled={safeStockPage <= 1}
                     onClick={() => setStockPage((p) => Math.max(1, p - 1))}
-                    className="rounded-lg border border-white/10 px-3 py-1 text-xs text-neutral-300 disabled:opacity-40"
+                    className="rounded-lg border border-white/10 px-2.5 py-1 text-[11px] text-neutral-300 disabled:opacity-40"
                   >
                     Trước
                   </button>
@@ -1174,7 +1385,7 @@ export default function StaffFoodCheckInPanel({
                 )}
                 <div className="flex justify-between">
                   <span className="text-neutral-500">Khách hàng:</span>
-                  <span>{printSlipOrder.customerName || 'Khách vãng lai'}</span>
+                  <span>{resolveOrderCustomerName(printSlipOrder)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-neutral-500">Thời gian:</span>

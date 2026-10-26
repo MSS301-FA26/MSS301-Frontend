@@ -265,13 +265,22 @@ export default function Header({
       if (!accessToken) return;
       try {
         const loyalty = await loyaltyService.getMyLoyalty(accessToken);
-        if (!cancelled) setLoyaltyPoints(Number(loyalty?.points ?? 2450));
+        if (!cancelled) setLoyaltyPoints(Number(loyalty?.points ?? 0));
       } catch {
-        if (!cancelled) setLoyaltyPoints(2450);
+        if (!cancelled) setLoyaltyPoints(0);
       }
     };
     loadLoyalty();
-  }, [canShowLoyalty, currentUser?.id, loyaltyRefreshKey]);
+
+    const handleLoyaltyEvent = () => {
+      loadLoyalty();
+    };
+    window.addEventListener('loyalty-updated', handleLoyaltyEvent);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('loyalty-updated', handleLoyaltyEvent);
+    };
+  }, [canShowLoyalty, currentUser?.id, loyaltyRefreshKey, location.pathname]);
 
   return (
     <header

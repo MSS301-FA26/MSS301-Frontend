@@ -100,10 +100,10 @@ const DEFAULT_FALLBACK_FOODS = [
     foodComboId: 1,
     category: 'combo',
     isCombo: true,
-    name: 'Combo CineSingle',
+    name: 'Combo Solo Movie',
     categoryName: 'BẮP NƯỚC ĐƠN',
     description: '1 Bắp rang bơ thơm giòn cỡ lớn + 1 Nước ngọt có ga 32oz mát lạnh sảng khoái',
-    price: 89000,
+    price: 79000,
     regularPriceSum: 110000,
     imageUrl: 'https://images.unsplash.com/photo-1572177812156-58036aae439c?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
@@ -115,10 +115,10 @@ const DEFAULT_FALLBACK_FOODS = [
     foodComboId: 2,
     category: 'combo',
     isCombo: true,
-    name: 'Combo CineCouple',
+    name: 'Combo Couple Sweet',
     categoryName: 'DÀNH CHO 2 NGƯỜI',
     description: '1 Bắp lớn 2 ngăn vị Phô mai & Caramel + 2 Nước ngọt có ga 32oz tùy chọn',
-    price: 119000,
+    price: 109000,
     regularPriceSum: 145000,
     imageUrl: 'https://images.unsplash.com/photo-1512149177596-f817c7ef5d4c?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
@@ -130,11 +130,11 @@ const DEFAULT_FALLBACK_FOODS = [
     foodComboId: 3,
     category: 'combo',
     isCombo: true,
-    name: 'Combo Truffle Gourmet Signature',
-    categoryName: 'ĐỘC QUYỀN CINEPREMIER',
-    description: '1 Bắp rang nấm Truffle đen hoàng gia + 2 Trà đào cam sả hạt chia tươi mát',
-    price: 159000,
-    regularPriceSum: 195000,
+    name: 'Combo Party Friends',
+    categoryName: 'GIA ĐÌNH & BẠN BÈ',
+    description: '2 Bắp khổng lồ đa vị + 4 Nước ngọt 32oz + 1 Phần Snack khoai tây giòn cay',
+    price: 189000,
+    regularPriceSum: 225000,
     imageUrl: 'https://images.unsplash.com/photo-1505686994434-e3cc5abf1330?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
@@ -145,82 +145,82 @@ const DEFAULT_FALLBACK_FOODS = [
     foodComboId: 4,
     category: 'combo',
     isCombo: true,
-    name: 'Combo Family Feast VIP',
-    categoryName: 'GIA ĐÌNH & BẠN BÈ',
-    description: '2 Bắp khổng lồ đa vị + 4 Nước ngọt 32oz + 1 Phần Snack khoai tây giòn cay',
-    price: 219000,
-    regularPriceSum: 270000,
+    name: 'Combo VIP Deluxe',
+    categoryName: 'ĐỘC QUYỀN CINEPREMIER',
+    description: '1 Bắp rang hoàng gia thượng hạng + 2 Trà đào cam sả hạt chia tươi mát',
+    price: 169000,
+    regularPriceSum: 210000,
     imageUrl: 'https://images.unsplash.com/photo-1578849278619-e73505e9610f?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
   {
-    id: 'item-101',
-    backendId: 101,
-    foodItemId: 101,
+    id: 'item-1',
+    backendId: 1,
+    foodItemId: 1,
     foodComboId: null,
     category: 'item',
     isCombo: false,
-    name: 'Bắp Rang Bơ Hoàng Gia (L)',
+    name: 'Bắp Rang Bơ Truyền Thống 64oz',
     categoryName: 'BẮP RANG BƠ',
     description: 'Bắp rang ngô Mỹ hạt nở to tròn đều, phủ bơ vàng thơm ngậy đặc trưng',
-    price: 65000,
-    regularPriceSum: 80000,
+    price: 45000,
+    regularPriceSum: 55000,
     imageUrl: 'https://images.unsplash.com/photo-1585647347384-2593bc35786b?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
   {
-    id: 'item-102',
-    backendId: 102,
-    foodItemId: 102,
+    id: 'item-2',
+    backendId: 2,
+    foodItemId: 2,
     foodComboId: null,
     category: 'item',
     isCombo: false,
-    name: 'Bắp Rang Phô Mai & Caramel (L)',
+    name: 'Bắp Rang Phô Mai 64oz',
     categoryName: 'BẮP RANG BƠ',
-    description: 'Bắp 2 ngăn giòn rụm kết hợp phô mai mặn béo ngậy và caramel ngọt dịu',
-    price: 75000,
-    regularPriceSum: 90000,
+    description: 'Bắp giòn rụm kết hợp phô mai mặn béo ngậy thơm nức',
+    price: 55000,
+    regularPriceSum: 65000,
     imageUrl: 'https://images.unsplash.com/photo-1578849278619-e73505e9610f?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
   {
-    id: 'item-103',
-    backendId: 103,
-    foodItemId: 103,
+    id: 'item-5',
+    backendId: 5,
+    foodItemId: 5,
     foodComboId: null,
     category: 'item',
     isCombo: false,
-    name: 'Coca Cola Zero / Regular (32oz)',
+    name: 'Coca-Cola 32oz',
     categoryName: 'NƯỚC NGỌT CÓ GA',
     description: 'Nước ngọt có ga mát lạnh sảng khoái ly lớn 32oz đập tan cơn khát',
-    price: 39000,
-    regularPriceSum: 45000,
+    price: 35000,
+    regularPriceSum: 40000,
     imageUrl: 'https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
   {
-    id: 'item-104',
-    backendId: 104,
-    foodItemId: 104,
+    id: 'item-8',
+    backendId: 8,
+    foodItemId: 8,
     foodComboId: null,
     category: 'item',
     isCombo: false,
-    name: 'Trà Đào Cam Sả Hạt Chia',
+    name: 'Trà Đào Hạt Chia 32oz',
     categoryName: 'TRÀ TRÁI CÂY',
-    description: 'Trà đào thanh mát với miếng đào giòn ngọt, hương sả tươi và hạt chia dinh dưỡng',
-    price: 49000,
-    regularPriceSum: 59000,
+    description: 'Trà đào thanh mát với miếng đào giòn ngọt, hương thơm tươi mát và hạt chia dinh dưỡng',
+    price: 40000,
+    regularPriceSum: 50000,
     imageUrl: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   },
   {
-    id: 'item-105',
-    backendId: 105,
-    foodItemId: 105,
+    id: 'item-10',
+    backendId: 10,
+    foodItemId: 10,
     foodComboId: null,
     category: 'item',
     isCombo: false,
-    name: 'Xúc Xích Đức Phô Mai Nướng',
+    name: 'Xúc Xích Phô Mai Nướng',
     categoryName: 'ĂN VẶT & MÓN NÓNG',
     description: 'Xúc xích Đức xông khói nóng hổi với nhân phô mai tan chảy đậm đà',
     price: 45000,
@@ -229,17 +229,17 @@ const DEFAULT_FALLBACK_FOODS = [
     status: 'ACTIVE'
   },
   {
-    id: 'item-106',
-    backendId: 106,
-    foodItemId: 106,
+    id: 'item-11',
+    backendId: 11,
+    foodItemId: 11,
     foodComboId: null,
     category: 'item',
     isCombo: false,
-    name: 'Snack Khoai Tây Lắc Phô Mai BBQ',
+    name: 'Khoai Tây Lắc Phô Mai',
     categoryName: 'ĂN VẶT & MÓN NÓNG',
-    description: 'Khoai tây chiên giòn rụm lắc bột phô mai vị BBQ thơm lừng hấp dẫn',
-    price: 42000,
-    regularPriceSum: 50000,
+    description: 'Khoai tây chiên giòn rụm lắc bột phô mai thơm lừng hấp dẫn',
+    price: 45000,
+    regularPriceSum: 55000,
     imageUrl: 'https://images.unsplash.com/photo-1582293041079-7814c2f12063?auto=format&fit=crop&w=800&q=80',
     status: 'ACTIVE'
   }
@@ -337,7 +337,7 @@ export default function ConcessionsPage() {
       if (setSelectedCinema) setSelectedCinema(found);
       try {
         localStorage.setItem('concessions_pickup_cinema_id', String(found.id));
-      } catch {}
+      } catch { }
       showToast(`Điểm nhận bắp nước: ${found.name}`, 'info');
     }
   };
@@ -368,13 +368,18 @@ export default function ConcessionsPage() {
   useEffect(() => {
     const { accessToken } = getStoredAuth();
     if (!accessToken) return;
-    Promise.all([
-      loyaltyService.getMyLoyalty(accessToken).catch(() => null),
-      loyaltyService.getConfiguration(accessToken).catch(() => null),
-    ]).then(([loyalty, config]) => {
-      setLoyaltyPoints(Number(loyalty?.points ?? 0));
-      setEarningRatePercent(Math.max(0, Number(config?.earningRatePercent ?? 1) || 0));
-    });
+    const fetchLoyalty = () => {
+      Promise.all([
+        loyaltyService.getMyLoyalty(accessToken).catch(() => null),
+        loyaltyService.getConfiguration(accessToken).catch(() => null),
+      ]).then(([loyalty, config]) => {
+        setLoyaltyPoints(Number(loyalty?.points ?? 0));
+        setEarningRatePercent(Math.max(0, Number(config?.earningRatePercent ?? 1) || 0));
+      });
+    };
+    fetchLoyalty();
+    window.addEventListener('loyalty-updated', fetchLoyalty);
+    return () => window.removeEventListener('loyalty-updated', fetchLoyalty);
   }, []);
 
   useEffect(() => {
@@ -412,21 +417,10 @@ export default function ConcessionsPage() {
   }, [requestedBookingId, showToast]);
 
   const effectiveFoodCatalog = useMemo(() => {
-    let combined = [];
     if (Array.isArray(foodCatalog) && foodCatalog.length > 0) {
-      const existingIds = new Set(foodCatalog.map((f) => String(f.id)));
-      const extras = DEFAULT_FALLBACK_FOODS.filter((df) => !existingIds.has(String(df.id)));
-      combined = [...foodCatalog, ...extras];
-    } else {
-      combined = DEFAULT_FALLBACK_FOODS;
+      return foodCatalog;
     }
-    const seen = new Set();
-    return combined.filter(item => {
-      const idKey = String(item.id);
-      if (seen.has(idKey)) return false;
-      seen.add(idKey);
-      return true;
-    });
+    return DEFAULT_FALLBACK_FOODS;
   }, [foodCatalog]);
 
   // Only active products
@@ -742,7 +736,7 @@ export default function ConcessionsPage() {
             };
           }
           localStorage.setItem('food_orders_cinema_map', JSON.stringify(map));
-        } catch {}
+        } catch { }
       }
 
       await refreshFoodOrders();
@@ -776,13 +770,12 @@ export default function ConcessionsPage() {
     return (
       <article
         key={item.id}
-        className={`group relative flex flex-col justify-between border bg-[#0a0a0a] transition-all duration-300 ${
-          isOutOfStock
-            ? 'opacity-65 border-white/5'
-            : quantity > 0
+        className={`group relative flex flex-col justify-between border bg-[#0a0a0a] transition-all duration-300 ${isOutOfStock
+          ? 'opacity-65 border-white/5'
+          : quantity > 0
             ? 'border-amber-400/70 shadow-lg shadow-amber-500/10'
             : 'border-white/10 hover:border-amber-400/50 hover:shadow-xl hover:shadow-black/50'
-        }`}
+          }`}
       >
         {/* Top Badges */}
         <div className="relative h-28 sm:h-32 w-full overflow-hidden bg-neutral-900">
@@ -790,9 +783,8 @@ export default function ConcessionsPage() {
             src={item.imageUrl || fallbackImage}
             alt={item.name}
             onError={(e) => { e.currentTarget.src = fallbackImage; }}
-            className={`h-full w-full object-cover transition-transform duration-500 ${
-              !isOutOfStock && 'group-hover:scale-105'
-            }`}
+            className={`h-full w-full object-cover transition-transform duration-500 ${!isOutOfStock && 'group-hover:scale-105'
+              }`}
             referrerPolicy="no-referrer"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-black/30" />
@@ -800,11 +792,10 @@ export default function ConcessionsPage() {
           {/* Left Badge: Type / Category */}
           <div className="absolute left-2 top-2 flex flex-wrap gap-1">
             <span
-              className={`px-1.5 py-0.5 text-[7.5px] font-black uppercase tracking-widest border backdrop-blur-md ${
-                isCombo
-                  ? 'border-amber-500/50 bg-amber-500/20 text-amber-300'
-                  : 'border-white/20 bg-black/70 text-neutral-300'
-              }`}
+              className={`px-1.5 py-0.5 text-[7.5px] font-black uppercase tracking-widest border backdrop-blur-md ${isCombo
+                ? 'border-amber-500/50 bg-amber-500/20 text-amber-300'
+                : 'border-white/20 bg-black/70 text-neutral-300'
+                }`}
             >
               {isCombo ? 'Combo' : item.categoryName || 'Món lẻ'}
             </span>
@@ -1268,20 +1259,18 @@ export default function ConcessionsPage() {
                   key={tab.id}
                   type="button"
                   onClick={() => setSelectedTab(tab.id)}
-                  className={`flex items-center gap-2 px-4 py-2.5 text-xs font-black uppercase tracking-wider whitespace-nowrap border transition ${
-                    isActive
-                      ? 'border-amber-400 bg-amber-400 text-black shadow-md shadow-amber-500/10'
-                      : tab.highlight
+                  className={`flex items-center gap-2 px-4 py-2.5 text-xs font-black uppercase tracking-wider whitespace-nowrap border transition ${isActive
+                    ? 'border-amber-400 bg-amber-400 text-black shadow-md shadow-amber-500/10'
+                    : tab.highlight
                       ? 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
                       : 'border-white/10 bg-black text-neutral-400 hover:text-white hover:border-white/30'
-                  }`}
+                    }`}
                 >
                   <Icon className={`h-3.5 w-3.5 ${isActive ? 'text-black' : tab.highlight ? 'text-amber-400' : 'text-neutral-400'}`} />
                   <span>{tab.label}</span>
                   <span
-                    className={`text-[9px] font-mono px-1.5 py-0.2 rounded-none font-bold ${
-                      isActive ? 'bg-black/20 text-black' : 'bg-white/10 text-neutral-300'
-                    }`}
+                    className={`text-[9px] font-mono px-1.5 py-0.2 rounded-none font-bold ${isActive ? 'bg-black/20 text-black' : 'bg-white/10 text-neutral-300'
+                      }`}
                   >
                     {tab.count}
                   </span>
@@ -1455,11 +1444,10 @@ export default function ConcessionsPage() {
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className={`px-1.5 py-0.2 text-[7px] font-black uppercase tracking-wider border ${
-                          row.category === 'combo'
-                            ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
-                            : 'border-white/10 bg-white/5 text-neutral-400'
-                        }`}>
+                        <span className={`px-1.5 py-0.2 text-[7px] font-black uppercase tracking-wider border ${row.category === 'combo'
+                          ? 'border-amber-500/40 bg-amber-500/15 text-amber-300'
+                          : 'border-white/10 bg-white/5 text-neutral-400'
+                          }`}>
                           {row.category === 'combo' ? 'Combo' : 'Món'}
                         </span>
                         <p className="text-xs font-black uppercase text-white truncate" title={row.name}>
@@ -1610,17 +1598,17 @@ export default function ConcessionsPage() {
                     {totalItems === 0
                       ? 'Chọn món để thanh toán'
                       : !linkedBooking && activeStandaloneOrder
-                      ? 'Hoàn tất đơn đang chờ'
-                      : 'Thanh toán qua VNPay'}
+                        ? 'Hoàn tất đơn đang chờ'
+                        : 'Thanh toán qua VNPay'}
                   </>
                 )}
               </button>
 
               <div className="text-center space-y-1">
-                <p className="text-[9px] text-neutral-500">
-                  Thanh toán an toàn qua cổng VNPay (QR Pay / Thẻ ATM / Visa).
+                <p className="text-[10px] text-neutral-500">
+                  Thanh toán an toàn qua cổng VNPay.
                 </p>
-                <p className="text-[9px] text-neutral-400 font-mono">
+                <p className="text-[10px] text-neutral-400 font-mono">
                   Sau khi thanh toán, xuất trình mã đơn tại quầy để nhận bắp nước.
                 </p>
               </div>
