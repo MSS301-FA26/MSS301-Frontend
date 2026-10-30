@@ -403,6 +403,17 @@ function VietnameseDatePicker({
 export default function AdminLoyaltyPanel({ ctx }) {
   const { activeTab, getAdminToken, showToast, isManager, currentUser, isAdmin } = ctx || {};
   const managerCinemaId = isManager && currentUser?.cinemaId ? Number(currentUser.cinemaId) : null;
+  const isEffectiveAdmin = Boolean(
+    isAdmin ||
+    currentUser?.role === 'admin' ||
+    (currentUser?.roles || []).some((r) => String(r).toUpperCase().includes('ADMIN'))
+  );
+  const isEffectiveManager = !isEffectiveAdmin && Boolean(
+    isManager ||
+    managerCinemaId ||
+    currentUser?.role === 'manager' ||
+    (currentUser?.roles || []).some((r) => String(r).toUpperCase().includes('MANAGER'))
+  );
 
   // 1. Cinemas & Selection
   const [cinemas, setCinemas] = useState([]);
@@ -550,11 +561,16 @@ export default function AdminLoyaltyPanel({ ctx }) {
     try {
       const queryParams = cinemaIdParam ? { cinemaId: Number(cinemaIdParam) } : {};
       const [nextConfig, nextTransactions] = await Promise.all([
-        adminService.getLoyaltyConfiguration(token, queryParams),
+        !isEffectiveManager
+          ? adminService.getLoyaltyConfiguration(token, queryParams).catch(() => DEFAULT_CONFIG)
+          : Promise.resolve(DEFAULT_CONFIG),
         adminService.getLoyaltyTransactions(token, {
           keyword: keyword.trim() || undefined,
           page,
           size: 10
+        }).catch((err) => {
+          console.warn('Lỗi tải giao dịch điểm:', err);
+          return { items: [], page: 0, totalPages: 1, totalItems: 0 };
         })
       ]);
       setConfig({ ...DEFAULT_CONFIG, ...nextConfig, expiryDate: getExpiryDateValue(nextConfig) });
@@ -929,10 +945,16 @@ export default function AdminLoyaltyPanel({ ctx }) {
         <div>
           <h3 className="text-xs font-black uppercase tracking-[0.18em] text-white flex items-center gap-2">
             <Coins className="w-4 h-4 text-amber-400" />
-            <span>QUẢN LÝ ĐIỂM THÀNH VIÊN & TỶ LỆ QUY ĐỔI</span>
+            <span>
+              {isEffectiveManager
+                ? 'LỊCH SỬ SỬ DỤNG ĐIỂM CỦA NGƯỜI DÙNG'
+                : 'QUẢN LÝ ĐIỂM THÀNH VIÊN & TỶ LỆ QUY ĐỔI'}
+            </span>
           </h3>
           <p className="mt-1 break-words text-[10px] leading-snug text-neutral-300">
-            Cấu hình tỷ lệ tích điểm, % quy đổi CinePoints sang tiền vé theo từng chi nhánh cụm rạp hoặc toàn hệ thống.
+            {isEffectiveManager
+              ? 'Theo dõi và tra cứu toàn bộ lịch sử tích điểm và sử dụng điểm thưởng của khách hàng (CinePoints).'
+              : 'Cấu hình tỷ lệ tích điểm, % quy đổi CinePoints sang tiền vé theo từng chi nhánh cụm rạp hoặc toàn hệ thống.'}
           </p>
         </div>
         <button
@@ -955,7 +977,7 @@ export default function AdminLoyaltyPanel({ ctx }) {
           <div>
             <div className="text-[10px] font-black uppercase tracking-wider text-neutral-400 flex items-center gap-2">
               <span>Phạm vi chi nhánh áp dụng:</span>
-              {managerCinemaId ? (
+              {isEffectiveManager ? (
                 <span className="text-[9px] px-2 py-0.5 bg-amber-400/15 text-amber-300 border border-amber-400/30 font-black uppercase">
                   Quản lý rạp (Cố định chi nhánh của bạn)
                 </span>
@@ -975,7 +997,7 @@ export default function AdminLoyaltyPanel({ ctx }) {
         </div>
 
         {/* Dropdown for Admin to choose branch */}
-        {!managerCinemaId && (
+        {!isEffectiveManager && (
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-neutral-400 font-bold uppercase tracking-wider shrink-0">
               Chọn chi nhánh:
@@ -1006,15 +1028,16 @@ export default function AdminLoyaltyPanel({ ctx }) {
         className="flex flex-col lg:flex-row gap-0 items-start relative w-full"
         style={{ userSelect: isDragging ? 'none' : 'auto' }}
       >
-        {/* LEFT COLUMN: FORM CẤU HÌNH */}
-        <div 
-          style={{ 
-            width: isLeftCollapsed ? 0 : `${leftWidth}px`, 
-            display: isLeftCollapsed ? 'none' : 'block',
-            transition: isDragging ? 'none' : 'width 0.15s ease' 
-          }}
-          className={`shrink-0 w-full lg:w-auto ${isLeftCollapsed ? "overflow-hidden" : "overflow-visible"}`}
-        >
+        {/* LEFT COLUMN: FORM CẤU HÌNH (Chỉ Admin mới có quyền cấu hình tỷ lệ đổi điểm) */}
+        {!isEffectiveManager && (
+          <div 
+            style={{ 
+              width: isLeftCollapsed ? 0 : `${leftWidth}px`, 
+              display: isLeftCollapsed ? 'none' : 'block',
+              transition: isDragging ? 'none' : 'width 0.15s ease' 
+            }}
+            className={`shrink-0 w-full lg:w-auto ${isLeftCollapsed ? "overflow-hidden" : "overflow-visible"}`}
+          >
           <form onSubmit={saveConfig} noValidate className="border border-white/[0.05] bg-neutral-950 p-4 space-y-4 overflow-visible relative">
             <div className="flex items-center justify-between border-b border-white/[0.05] pb-3">
               <div>
@@ -1310,8 +1333,10 @@ export default function AdminLoyaltyPanel({ ctx }) {
           )}
         </form>
         </div>
+        )}
 
         {/* CENTER RESIZE DIVIDER BAR */}
+        {!isEffectiveManager && (
         <div
           onMouseDown={handleMouseDown}
           className={`hidden lg:flex shrink-0 relative items-center justify-center transition-colors select-none z-10 ${
@@ -1339,9 +1364,10 @@ export default function AdminLoyaltyPanel({ ctx }) {
             <div className={`w-0.5 h-6 rounded-full transition-colors ${isDragging ? 'bg-amber-400' : 'bg-neutral-600 group-hover:bg-amber-400'}`} />
           </div>
         </div>
+        )}
 
         {/* RIGHT COLUMN: AUDIT TRAIL TABLE */}
-        <div className="flex-1 min-w-0 w-full space-y-4 lg:pl-3">
+        <div className={`flex-1 min-w-0 w-full space-y-4 ${isEffectiveManager ? 'w-full' : 'lg:pl-3'}`}>
           {isLeftCollapsed && (
             <div className="p-2 border border-amber-500/30 bg-amber-500/10 flex items-center justify-between text-xs text-amber-300 mb-2">
               <span className="flex items-center gap-1.5 font-sans font-bold text-[11px]">
@@ -1360,7 +1386,7 @@ export default function AdminLoyaltyPanel({ ctx }) {
             <div className="flex flex-col gap-3 border-b border-white/[0.05] bg-black p-4 md:flex-row md:items-center md:justify-between">
               <div>
                 <h4 className="text-[11px] font-black uppercase tracking-[0.16em] text-white">
-                  Audit trail lịch sử giao dịch điểm
+                  Lịch sử sử dụng điểm của người dùng
                 </h4>
                 <p className="mt-1 break-words text-[10px] leading-snug text-neutral-300">
                   Tìm theo mã khách hàng, số điện thoại, email hoặc mã đơn vé.

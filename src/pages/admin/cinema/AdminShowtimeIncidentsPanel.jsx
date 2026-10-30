@@ -490,8 +490,37 @@ export default function AdminShowtimeIncidentsPanel({ ctx }) {
     }
   };
 
-  // ── Filtered Incidents List (Tab 3) ─────────────────────────────────────────
-  const incidents = report?.incidents || [];
+  // Helper: Trích xuất thời điểm xảy ra sự cố/hoàn tiền để sắp xếp mới nhất lên đầu
+  const getIncidentTime = (inc) => {
+    if (!inc) return 0;
+    if (inc.cancelledAt) {
+      const t = new Date(inc.cancelledAt).getTime();
+      if (!Number.isNaN(t) && t > 0) return t;
+    }
+    if (Array.isArray(inc.refundedUsers) && inc.refundedUsers.length > 0) {
+      const times = inc.refundedUsers
+        .map((u) => new Date(u.refundedAt).getTime())
+        .filter((t) => !Number.isNaN(t) && t > 0);
+      if (times.length > 0) return Math.max(...times);
+    }
+    if (inc.showtimeStart) {
+      const t = new Date(inc.showtimeStart).getTime();
+      if (!Number.isNaN(t) && t > 0) return t;
+    }
+    return Number(inc.showtimeId || inc.id || 0);
+  };
+
+  // ── Incidents List (Sắp xếp sự cố hoàn tiền mới nhất lên đầu) ──────────────────
+  const incidents = useMemo(() => {
+    const raw = report?.incidents || [];
+    return [...raw].sort((a, b) => {
+      const timeA = getIncidentTime(a);
+      const timeB = getIncidentTime(b);
+      if (timeB !== timeA) return timeB - timeA;
+      return Number(b.showtimeId || b.id || 0) - Number(a.showtimeId || a.id || 0);
+    });
+  }, [report?.incidents]);
+
   const filteredIncidents = useMemo(() => {
     if (!searchQuery.trim()) return incidents;
     const q = searchQuery.toLowerCase().trim();
@@ -1243,7 +1272,12 @@ export default function AdminShowtimeIncidentsPanel({ ctx }) {
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-white/[0.03] text-neutral-300">
-                                  {incident.refundedUsers.map((u, uIdx) => (
+                                  {(incident.refundedUsers ? [...incident.refundedUsers].sort((a, b) => {
+                                    const tA = new Date(a.refundedAt || 0).getTime();
+                                    const tB = new Date(b.refundedAt || 0).getTime();
+                                    if (tB !== tA) return tB - tA;
+                                    return Number(b.bookingId || 0) - Number(a.bookingId || 0);
+                                  }) : []).map((u, uIdx) => (
                                     <tr key={u.bookingId || uIdx} className="transition hover:bg-white/[0.02]">
                                       <td className="px-4 py-3 font-mono text-neutral-400">{uIdx + 1}</td>
                                       <td className="px-4 py-3">

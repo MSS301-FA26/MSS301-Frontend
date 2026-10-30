@@ -42,7 +42,6 @@ const CHECK_IN_LEAD_MINUTES = 30;
 
 const FOOD_STATUS_META = {
   ACTIVE: { label: 'Mở bán', className: 'bg-emerald-400/10 text-emerald-300' },
-  LOW_STOCK: { label: 'Sắp hết', className: 'bg-purple-500/10 text-purple-300' },
   OUT_OF_STOCK: { label: 'Hết', className: 'bg-rose-500/10 text-rose-300' },
   INACTIVE: { label: 'Hết', className: 'bg-rose-500/10 text-rose-300' },
 };
@@ -575,14 +574,20 @@ function ResultCard({
       })()}
 
       {booking && (result.type === 'success' || ['PAID', 'USED'].includes(booking.status)) && (
-        <button
-          type="button"
-          onClick={() => onPrintTickets?.(booking)}
-          className="mt-4 flex w-full items-center justify-center gap-2 border border-emerald-400/40 bg-emerald-400 px-4 py-3 text-xs font-bold uppercase tracking-wider text-black transition hover:bg-emerald-300 active:bg-emerald-500 shadow-[0_4px_20px_rgba(16,185,129,0.3)] cursor-pointer"
-          title="In vé giấy vào cửa phòng chiếu cho khách"
-        >
-          <Printer className="h-4 w-4" /> In vé vào cửa
-        </button>
+        showtimeOver ? (
+          <div className="mt-4 flex items-center justify-center gap-2 rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-xs font-bold uppercase tracking-wider text-rose-400">
+            <XCircle className="h-4 w-4 shrink-0" /> Suất chiếu đã kết thúc · Không thể in vé
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onPrintTickets?.(booking)}
+            className="mt-4 flex w-full items-center justify-center gap-2 border border-emerald-400/40 bg-emerald-400 px-4 py-3 text-xs font-bold uppercase tracking-wider text-black transition hover:bg-emerald-300 active:bg-emerald-500 shadow-[0_4px_20px_rgba(16,185,129,0.3)] cursor-pointer"
+            title="In vé giấy vào cửa phòng chiếu cho khách"
+          >
+            <Printer className="h-4 w-4" /> In vé vào cửa
+          </button>
+        )
       )}
     </motion.div>
   );
@@ -732,10 +737,9 @@ export default function StaffCheckInPage() {
   }, [staffFoodSearch, staffFoods]);
 
   const foodStats = useMemo(() => {
-    const outOfStock = staffFoods.filter((item) => item.status === 'OUT_OF_STOCK' || item.status === 'INACTIVE').length;
-    const lowStock = staffFoods.filter((item) => item.status === 'LOW_STOCK').length;
     const active = staffFoods.filter((item) => item.status === 'ACTIVE').length;
-    return { active, lowStock, outOfStock, total: staffFoods.length };
+    const outOfStock = staffFoods.filter((item) => item.status !== 'ACTIVE').length;
+    return { active, outOfStock, total: staffFoods.length };
   }, [staffFoods]);
   const staffFoodTotalPages = Math.max(1, Math.ceil(filteredStaffFoods.length / FOOD_PAGE_SIZE));
   const safeStaffFoodPage = Math.min(staffFoodPage, staffFoodTotalPages);
@@ -1630,7 +1634,13 @@ export default function StaffCheckInPage() {
                 onOpenCounterSale={openCounterSale}
                 assignedCinemaId={assignedCinemaId}
                 activeCinema={activeCinema}
-                onPrintTickets={(b) => setPrintTicketsBooking(b)}
+                onPrintTickets={(b) => {
+                  if (isShowtimeOver(b)) {
+                    showToast('Suất chiếu đã kết thúc, không thể in vé vào cửa.', 'error');
+                    return;
+                  }
+                  setPrintTicketsBooking(b);
+                }}
               />
             </section>
 
@@ -1689,17 +1699,14 @@ export default function StaffCheckInPage() {
                     Trạng thái món/combo tại {activeCinema?.name}
                   </h3>
                   <p className="mt-2 text-xs leading-6 text-neutral-400">
-                    STAFF quản lý tình trạng mở bán / sắp hết / hết theo đúng rạp được phân công ({activeCinema?.name}).
+                    STAFF quản lý tình trạng mở bán / hết theo đúng rạp được phân công ({activeCinema?.name}).
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <span className="rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-neutral-300">
                     {foodStats.active}/{foodStats.total} đang bán
                   </span>
-                  <span className="rounded-xl border border-purple-400/30 bg-purple-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-purple-300">
-                    {foodStats.lowStock} sắp hết
-                  </span>
-                  <span className="rounded-xl border border-purple-400/30 bg-purple-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-purple-300">
+                  <span className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-rose-300">
                     {foodStats.outOfStock} hết
                   </span>
                   <button
@@ -1749,13 +1756,12 @@ export default function StaffCheckInPage() {
                         </span>
                       </div>
                       <select
-                        value={food.status || 'ACTIVE'}
+                        value={food.status === 'ACTIVE' ? 'ACTIVE' : 'OUT_OF_STOCK'}
                         onChange={(event) => updateStaffFoodStatus(food, event.target.value)}
                         disabled={savingStaffFoodKey === foodKey}
                         className="mt-4 w-full rounded-lg border border-white/10 bg-black/80 px-3 py-2.5 text-xs font-black text-white outline-none transition focus:border-purple-400 disabled:opacity-50"
                       >
                         <option value="ACTIVE">Mở bán</option>
-                        <option value="LOW_STOCK">Sắp hết</option>
                         <option value="OUT_OF_STOCK">Hết</option>
                       </select>
                     </div>
@@ -1979,7 +1985,7 @@ export default function StaffCheckInPage() {
                   ) : (
                     <>
                       <div className="mt-4 max-h-52 overflow-y-auto divide-y divide-neutral-900 border border-neutral-800 bg-black">
-                        {staffFoods.filter((food) => food.status === 'ACTIVE' || food.status === 'LOW_STOCK').map((food) => {
+                        {staffFoods.filter((food) => food.status === 'ACTIVE').map((food) => {
                           const foodKey = `${food.kind}-${food.id}`;
                           return (
                             <div key={foodKey} className="flex items-center justify-between gap-3 px-4 py-3">

@@ -193,6 +193,13 @@ export default function TicketPrintModal({
     return rawSeats.filter((s) => selectedSeatCodes.includes(s.ticketCode));
   }, [rawSeats, selectedSeatCodes]);
 
+  const movieTitle = booking?.movieTitle
+    || booking?.movie?.title
+    || booking?.movieName
+    || booking?.showtime?.movieTitle
+    || booking?.showtime?.movie?.title
+    || booking?.title
+    || 'PHIM CHIẾU RẠP';
   const cinemaName = booking?.cinemaName || activeCinema?.name || 'CINEPREMIER CINEMAS';
   const cinemaAddress = activeCinema?.address || booking?.cinemaAddress || 'Trung tâm chiếu phim CinePremier';
   const showDate = formatDateOnly(booking?.showtimeStart);
@@ -205,7 +212,18 @@ export default function TicketPrintModal({
     || (booking?.userId ? (Number(booking.userId) === 2 ? 'Nguyen Hieu Tuan' : `Khách #${booking.userId}`) : 'Khách xem phim');
   const staffName = currentUser?.fullName || currentUser?.name || 'STAFF';
 
+  const isShowtimeOver = useMemo(() => {
+    const effectiveEnd = booking?.showtimeEnd || (booking?.showtimeStart ? new Date(new Date(booking.showtimeStart).getTime() + 135 * 60000).toISOString() : null);
+    if (!effectiveEnd) return false;
+    const endTime = new Date(effectiveEnd);
+    return !Number.isNaN(endTime.getTime()) && Date.now() > endTime.getTime();
+  }, [booking]);
+
   const handleTriggerPrint = () => {
+    if (isShowtimeOver) {
+      alert('Suất chiếu đã kết thúc. Không thể in vé.');
+      return;
+    }
     if (seatsToPrint.length === 0 && !includeFoodReceipt) return;
     setIsPrinting(true);
     setTimeout(() => {
@@ -258,6 +276,12 @@ export default function TicketPrintModal({
           <div className="grid flex-1 overflow-hidden sm:grid-cols-[230px_1fr]">
             {/* Left Controls & Seat Selector (Compact) */}
             <div className="flex flex-col border-r border-white/10 bg-black/40 p-3 space-y-3 overflow-y-auto text-[11px]">
+              {isShowtimeOver && (
+                <div className="rounded-lg border border-rose-500/40 bg-rose-500/15 p-2.5 text-[10px] font-black uppercase tracking-wider text-rose-300">
+                  ⚠️ Suất chiếu đã kết thúc · Không thể in vé
+                </div>
+              )}
+
               {/* Quick Info Box */}
               <div className="rounded-lg border border-white/10 bg-black/60 p-2.5 space-y-1">
                 <p className="text-[9px] font-black uppercase tracking-wider text-emerald-400">
@@ -576,11 +600,11 @@ export default function TicketPrintModal({
               <button
                 type="button"
                 onClick={handleTriggerPrint}
-                disabled={seatsToPrint.length === 0 && !includeFoodReceipt}
+                disabled={isShowtimeOver || (seatsToPrint.length === 0 && !includeFoodReceipt)}
                 className="flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-emerald-400 px-5 py-1.5 text-xs font-black uppercase tracking-wider text-black shadow-[0_0_20px_rgba(16,185,129,0.35)] transition hover:from-emerald-400 hover:to-emerald-300 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
               >
                 <Printer className="h-3.5 w-3.5" />
-                {isPrinting ? 'Đang gửi...' : `In vé ngay (${seatsToPrint.length} vé)`}
+                {isPrinting ? 'Đang gửi...' : isShowtimeOver ? 'Suất chiếu đã kết thúc' : `In vé ngay (${seatsToPrint.length} vé)`}
               </button>
             </div>
           </div>

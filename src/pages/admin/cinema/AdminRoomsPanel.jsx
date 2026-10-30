@@ -79,7 +79,11 @@ function mapBackendSeatsToRows(backendSeats, rowCount, columnCount) {
 
   const rows = [];
   sortedLabels.forEach(label => {
-    const rowSeats = groupedByRow[label].sort((a, b) => a.displayColumn - b.displayColumn);
+    const rowSeats = groupedByRow[label].sort((a, b) => {
+      const colA = a.displayColumn || a.seatNumber || 0;
+      const colB = b.displayColumn || b.seatNumber || 0;
+      return colA - colB;
+    });
     const isCoupleRow = rowSeats.length >= 2 && rowSeats.every(s => s.seatType === 'COUPLE' || s.status === 'UNAVAILABLE');
 
     if (isCoupleRow && rowSeats.length % 2 === 0) {
@@ -101,24 +105,36 @@ function mapBackendSeatsToRows(backendSeats, rowCount, columnCount) {
       return;
     }
 
-    const maxCol = Math.max(columnCount || 10, ...rowSeats.map(s => s.displayColumn || s.seatNumber || 1));
-    const seatArray = Array(maxCol).fill('off');
-
-    // Fill seats
-    rowSeats.forEach(seat => {
-      const colIdx = (seat.displayColumn || seat.seatNumber || 1) - 1;
-      if (colIdx >= 0 && colIdx < maxCol) {
-        if (seat.status === 'UNAVAILABLE') {
-          seatArray[colIdx] = 'off';
-        } else if (seat.seatType === 'COUPLE') {
-          seatArray[colIdx] = 'couple';
-        } else if (seat.seatType === 'VIP') {
-          seatArray[colIdx] = 'vip';
-        } else {
-          seatArray[colIdx] = 'std';
-        }
-      }
+    const seatByCol = new Map();
+    rowSeats.forEach(s => {
+      const col = s.displayColumn || s.seatNumber;
+      if (col != null) seatByCol.set(col, s);
     });
+
+    const maxCol = Math.max(columnCount || 10, ...rowSeats.map(s => s.displayColumn || s.seatNumber || 1));
+    const seatArray = [];
+    let col = 1;
+    while (col <= maxCol) {
+      const s = seatByCol.get(col);
+      if (!s || s.status === 'UNAVAILABLE') {
+        seatArray.push('off');
+        col++;
+      } else if (s.seatType === 'COUPLE') {
+        seatArray.push('couple');
+        const nextS = seatByCol.get(col + 1);
+        if (nextS && nextS.seatType === 'COUPLE') {
+          col += 2;
+        } else {
+          col += 1;
+        }
+      } else if (s.seatType === 'VIP') {
+        seatArray.push('vip');
+        col++;
+      } else {
+        seatArray.push('std');
+        col++;
+      }
+    }
 
     rows.push({
       label,
@@ -484,12 +500,33 @@ export default function AdminRoomsPanel({ ctx }) {
   };
 
   const paintSingleSeat = (rIdx, sIdx) => {
-    if (!rows[rIdx] || rows[rIdx].seats[sIdx] === brush) return;
+    if (!rows[rIdx]) return;
+    const currentSeat = rows[rIdx].seats[sIdx];
+    if (currentSeat === brush) return;
+
     setRows(prevRows => {
       const next = prevRows.map((row, i) => {
         if (i !== rIdx) return row;
         const newSeats = [...row.seats];
-        newSeats[sIdx] = brush;
+
+        if (brush === 'couple') {
+          if (newSeats[sIdx] === 'couple') return row;
+
+          // Ghế đôi chiếm 2 ô cột: gộp 2 ghế đơn thành 1 ghế đôi để giữ nguyên chiều rộng hàng
+          if (sIdx + 1 < newSeats.length && newSeats[sIdx + 1] !== 'couple') {
+            newSeats.splice(sIdx, 2, 'couple');
+          } else if (sIdx - 1 >= 0 && newSeats[sIdx - 1] !== 'couple') {
+            newSeats.splice(sIdx - 1, 2, 'couple');
+          } else {
+            newSeats[sIdx] = 'couple';
+          }
+        } else if (currentSeat === 'couple') {
+          // Tách ghế đôi thành 2 ghế đơn loại brush để giữ nguyên số cột
+          newSeats.splice(sIdx, 1, brush, brush);
+        } else {
+          newSeats[sIdx] = brush;
+        }
+
         return { ...row, seats: newSeats };
       });
       return next;
@@ -509,7 +546,7 @@ export default function AdminRoomsPanel({ ctx }) {
   };
 
   const handlePointerEnterSeat = (rIdx, sIdx) => {
-    if (brush === 'delete_seat') return;
+    if (brush === 'delete_seat' || brush === 'couple') return;
     if (isPaintingRef.current) {
       paintSingleSeat(rIdx, sIdx);
     }
@@ -531,7 +568,12 @@ export default function AdminRoomsPanel({ ctx }) {
     pushHistory();
     setRows(prev => prev.map((row, i) => {
       if (i !== rIdx) return row;
-      return { ...row, seats: row.seats.map(() => brush) };
+      const totalCols = row.seats.reduce((sum, s) => sum + (s === 'couple' ? 2 : 1), 0);
+      if (brush === 'couple') {
+        const pairCount = Math.max(1, Math.floor(totalCols / 2));
+        return { ...row, seats: Array(pairCount).fill('couple') };
+      }
+      return { ...row, seats: Array(totalCols).fill(brush) };
     }));
     setSelectedRowIndex(rIdx);
     markDirty();
@@ -588,8 +630,14 @@ export default function AdminRoomsPanel({ ctx }) {
     pushHistory();
     setRows(prev => prev.map(row => {
       const nextSeats = [...row.seats];
-      while (nextSeats.length < c) nextSeats.push('std');
-      return { ...row, seats: nextSeats.slice(0, c) };
+      const getWidth = (seats) => seats.reduce((sum, s) => sum + (s === 'couple' ? 2 : 1), 0);
+      while (getWidth(nextSeats) < c) {
+        nextSeats.push('std');
+      }
+      while (getWidth(nextSeats) > c && nextSeats.length > 0) {
+        nextSeats.pop();
+      }
+      return { ...row, seats: nextSeats };
     }));
     markDirty();
   };
@@ -631,8 +679,14 @@ export default function AdminRoomsPanel({ ctx }) {
     setRows(prev => prev.map((row, i) => {
       if (i !== rIdx) return row;
       const nextSeats = [...row.seats];
-      while (nextSeats.length < c) nextSeats.push('std');
-      return { ...row, seats: nextSeats.slice(0, c) };
+      const getWidth = (seats) => seats.reduce((sum, s) => sum + (s === 'couple' ? 2 : 1), 0);
+      while (getWidth(nextSeats) < c) {
+        nextSeats.push('std');
+      }
+      while (getWidth(nextSeats) > c && nextSeats.length > 0) {
+        nextSeats.pop();
+      }
+      return { ...row, seats: nextSeats };
     }));
     markDirty();
   };
@@ -641,14 +695,15 @@ export default function AdminRoomsPanel({ ctx }) {
     pushHistory();
     setRows(prev => prev.map((row, i) => {
       if (i !== rIdx) return row;
-      let nextSeats = [...row.seats];
-      if (type === 'couple' && row.seats.length === defaultCols && defaultCols >= 4) {
-        const pairCount = Math.floor(defaultCols / 2);
+      const totalCols = row.seats.reduce((sum, s) => sum + (s === 'couple' ? 2 : 1), 0);
+      let nextSeats;
+      if (type === 'couple') {
+        const pairCount = Math.max(1, Math.floor(totalCols / 2));
         nextSeats = Array(pairCount).fill('couple');
-      } else if (type !== 'couple' && row.seats.length === Math.floor(defaultCols / 2)) {
-        nextSeats = Array(defaultCols).fill(type);
+      } else if (row.seats.some(s => s === 'couple')) {
+        nextSeats = Array(totalCols).fill(type);
       } else {
-        nextSeats = row.seats.map(s => s === 'off' ? 'off' : type);
+        nextSeats = row.seats.map(s => (s === 'off' ? 'off' : type));
       }
       return { ...row, seats: nextSeats };
     }));

@@ -2071,11 +2071,10 @@ export default function BookingPage() {
                 </div>
 
                 {/* Hold Timer Banner (Rule 19) */}
-                <div className={`border p-4 rounded-xl flex items-center justify-between ${
-                  holdSecondsLeft !== null && holdSecondsLeft <= 30
+                <div className={`border p-4 rounded-xl flex items-center justify-between ${holdSecondsLeft !== null && holdSecondsLeft <= 30
                     ? 'border-rose-500/40 bg-rose-950/20 text-rose-300'
                     : 'border-amber-500/30 bg-amber-950/20 text-amber-300'
-                }`}>
+                  }`}>
                   <div className="flex items-center gap-3">
                     <Clock className={`w-5 h-5 ${holdSecondsLeft !== null && holdSecondsLeft <= 30 ? 'text-rose-400 animate-bounce' : 'text-amber-400 animate-pulse'}`} />
                     <div>
@@ -3194,13 +3193,12 @@ export default function BookingPage() {
               {selectedShowtime && (
                 <div className="flex justify-between items-center pt-1 border-t border-white/5 text-[11px]">
                   <span>Trạng thái:</span>
-                  <span className={`font-semibold ${
-                    selectedShowtime.status === 'SCHEDULED'
+                  <span className={`font-semibold ${selectedShowtime.status === 'SCHEDULED'
                       ? 'text-amber-400'
                       : isShowtimeBookable(selectedShowtime)
                         ? 'text-emerald-400'
                         : 'text-rose-400'
-                  }`}>
+                    }`}>
                     {selectedShowtime.status === 'SCHEDULED'
                       ? '⏳ Chưa mở bán (Đã lên lịch)'
                       : isShowtimeBookable(selectedShowtime)

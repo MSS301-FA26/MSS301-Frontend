@@ -644,7 +644,7 @@ function AdminSystemOverviewView({ ctx }) {
                 ['statistics', BarChart3, 'Thống kê mua bán', 'Phân tích đa chiều doanh thu, tỷ lệ lấp đầy phòng và ghế'],
                 ['fnb-report', Popcorn, 'Báo cáo F&B chuỗi rạp', 'Sản phẩm bán chạy, cơ cấu combo và đóng góp kênh bán'],
                 ['cinema', Building2, 'Hệ thống cụm rạp', 'Quản lý thông tin rạp, địa chỉ và mở rộng chi nhánh'],
-                ['showtimes', Film, 'Điều phối lịch chiếu', 'Kiểm soát lịch chiếu, phòng chiếu và công suất ghế trống'],
+                ['movies', Film, 'Thư viện phim', 'Quản lý tác phẩm điện ảnh, kiểm duyệt và phát hành toàn chuỗi'],
                 ['transactions', ReceiptText, 'Quản lý giao dịch', 'Tra cứu hóa đơn thanh toán, đối soát và trạng thái cổng']
               ].map(([key, Icon, label, sub]) => (
                 <button
@@ -1104,7 +1104,7 @@ function ManagerCinemaOverviewView({ ctx }) {
                 ['showtimes', Film, 'Điều phối lịch chiếu rạp', 'Sắp xếp ca chiếu, mở bán vé và kiểm soát phòng'],
                 ['rooms', Layers, 'Quản lý phòng chiếu & ghế', 'Xem sơ đồ ghế, khóa / mở ghế hỏng cho khách'],
                 ['showtime-incidents', ShieldAlert, 'Sự cố & Hoàn tiền', 'Xử lý hoàn tiền cho khách khi phòng gặp sự cố kỹ thuật'],
-                ['staff', Users, 'Nhân viên rạp mình', 'Quản lý ca làm, phân công nhân viên soát vé & phục vụ'],
+                ['staff', Users, 'Nhân viên cụm rạp', 'Quản lý ca làm, phân công nhân viên soát vé & phục vụ'],
                 ['fnb-report', Popcorn, 'Báo cáo F&B chi nhánh', 'Doanh thu quầy bắp nước và mặt hàng bán chạy tại rạp'],
                 ['tickets', Ticket, 'Tra cứu vé khách hàng', 'Kiểm tra trạng thái vé, check-in và hỗ trợ khách']
               ].map(([key, Icon, label, sub]) => (

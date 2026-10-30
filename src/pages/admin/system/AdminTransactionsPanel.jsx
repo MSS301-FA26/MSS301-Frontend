@@ -401,7 +401,7 @@ export default function AdminTransactionsPanel({ ctx = {} }) {
       const params = {
         page: pageIdx,
         size: pageSize,
-        sort: 'createdAt,desc'
+        sort: 'id,desc'
       };
 
       const activeCinema = managerCinemaId ? String(managerCinemaId) : selectedCinemaId;
@@ -416,9 +416,15 @@ export default function AdminTransactionsPanel({ ctx = {} }) {
         params.keyword = search.trim();
       }
 
-      const res = await adminService.getAdminBookings(token, params);
+      const res = await adminService.getAdminBookings(token, { ...params, sort: 'id,desc' });
       const items = Array.isArray(res) ? res : (res?.items || res?.content || []);
-      setBookings(items);
+      const sortedItems = [...items].sort((a, b) => {
+        const timeA = new Date(a.createdAt || a.paidAt || 0).getTime();
+        const timeB = new Date(b.createdAt || b.paidAt || 0).getTime();
+        if (timeB !== timeA) return timeB - timeA;
+        return Number(b.id || 0) - Number(a.id || 0);
+      });
+      setBookings(sortedItems);
 
       if (res?.totalPages !== undefined) setTotalPages(Math.max(1, Number(res.totalPages)));
       else if (res?.totalElements !== undefined) setTotalPages(Math.max(1, Math.ceil(Number(res.totalElements) / pageSize)));

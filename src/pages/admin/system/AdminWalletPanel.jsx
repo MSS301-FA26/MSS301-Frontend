@@ -1043,7 +1043,13 @@ export default function AdminWalletPanel({ ctx }) {
 
       {/* ── BẢNG GIAO DỊCH VÍ GẦN ĐÂY (RECENT ACTIVITY) ──────────────── */}
       {(() => {
-        const recentTxs = (dashboard?.recentTransactions || []).filter((tx) => tx.type !== "WITHDRAWAL_PAID" && Math.abs(Number(tx.amount || 0)) > 0);
+        const rawRecentTxs = (dashboard?.recentTransactions || []).filter((tx) => tx.type !== "WITHDRAWAL_PAID" && Math.abs(Number(tx.amount || 0)) > 0);
+        const recentTxs = [...rawRecentTxs].sort((a, b) => {
+          const timeA = new Date(a.createdAt || a.timestamp || 0).getTime();
+          const timeB = new Date(b.createdAt || b.timestamp || 0).getTime();
+          if (timeB !== timeA) return timeB - timeA;
+          return Number(b.id || 0) - Number(a.id || 0);
+        });
         if (recentTxs.length === 0) return null;
         const txPageSize = 10;
         const txTotalPages = Math.ceil(recentTxs.length / txPageSize) || 1;

@@ -41,7 +41,7 @@ export function ReportFilters({ report, onExport }) {
   };
   const cinemaName = applied.cinemaId
     ? cinemas.find(c => String(c.id) === String(applied.cinemaId))?.name || `Rạp #${applied.cinemaId}`
-    : 'Toàn bộ hệ thống';
+    : 'Tất cả rạp';
 
   return (
     <div className="report-filter-wrap">
