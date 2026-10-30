@@ -202,20 +202,18 @@ export default function AdminUsersPanel({ ctx }) {
   );
 
   // View Category: 'users' (Khách hàng) vs 'staff' (Nhân sự)
-  const [viewCategory, setViewCategory] = useState(activeTab === 'staff' ? 'staff' : 'users');
+  // For Manager: strictly locked to 'staff' (never view or call customer accounts)
+  const [viewCategory, setViewCategory] = useState(isEffectiveManager || activeTab === 'staff' ? 'staff' : 'users');
   const [staffFilter, setStaffFilter] = useState('ALL'); // 'ALL' | 'STAFF' | 'MANAGER' | 'ADMIN'
   const [customerFilter, setCustomerFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'DISABLED'
 
   useEffect(() => {
-    if (activeTab === 'staff') {
+    if (isEffectiveManager || activeTab === 'staff') {
       setViewCategory('staff');
     } else if (activeTab === 'users') {
       setViewCategory('users');
     }
-    if (activeTab === 'users' || activeTab === 'staff') {
-      fetchAdminUsers();
-    }
-  }, [activeTab]);
+  }, [activeTab, isEffectiveManager]);
 
   // Modal / Form states
   const [isStaffFormOpen, setIsStaffFormOpen] = useState(false);
@@ -790,10 +788,14 @@ export default function AdminUsersPanel({ ctx }) {
       }
     });
 
-    if (isEffectiveManager && currentUser?.cinemaId) {
+    if (isEffectiveManager) {
       return list.filter((u) => {
-        if (!isStaffMember(u)) return true;
-        return !u.cinemaId || String(u.cinemaId) === String(currentUser.cinemaId);
+        // Manager ONLY manages branch staff - never customer accounts
+        if (!isStaffMember(u)) return false;
+        if (currentUser?.cinemaId && u.cinemaId && String(u.cinemaId) !== String(currentUser.cinemaId)) {
+          return false;
+        }
+        return true;
       });
     }
 
@@ -813,7 +815,7 @@ export default function AdminUsersPanel({ ctx }) {
   // Filtered Users List
   const filteredUsers = useMemo(() => {
     let list = effectiveUsers.filter((user) => {
-      if (viewCategory === 'staff') {
+      if (isEffectiveManager || viewCategory === 'staff') {
         if (!isStaffMember(user)) return false;
         if (staffFilter === 'STAFF') return getStaffCategory(user) === 'STAFF';
         if (staffFilter === 'MANAGER') return getStaffCategory(user) === 'MANAGER';
@@ -844,6 +846,14 @@ export default function AdminUsersPanel({ ctx }) {
 
   // Auto-switch selected user if current selection does not belong to active category
   useEffect(() => {
+    if (isEffectiveManager) {
+      if (selectedAdminUser && !isStaffMember(selectedAdminUser) && filteredUsers.length > 0) {
+        handleSelectAdminUser(filteredUsers[0]);
+      } else if (!selectedAdminUser && filteredUsers.length > 0) {
+        handleSelectAdminUser(filteredUsers[0]);
+      }
+      return;
+    }
     if (selectedAdminUser) {
       const isStaffSelected = isStaffMember(selectedAdminUser);
       if (viewCategory === 'staff' && !isStaffSelected && filteredUsers.length > 0) {
@@ -854,7 +864,7 @@ export default function AdminUsersPanel({ ctx }) {
     } else if (filteredUsers.length > 0) {
       handleSelectAdminUser(filteredUsers[0]);
     }
-  }, [viewCategory, filteredUsers.length]);
+  }, [viewCategory, filteredUsers.length, isEffectiveManager]);
 
   const selectedStatus = getStatusMeta(selectedAdminUser?.status);
   const SelectedStatusIcon = selectedStatus.icon;
@@ -875,66 +885,94 @@ export default function AdminUsersPanel({ ctx }) {
       transition={{ duration: 0.2 }}
       className="space-y-6"
     >
-      {/* 1. TOP SEGMENT SWITCHER: KHÁCH HÀNG vs NHÂN SỰ (STAFF) */}
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/[0.08] bg-[#070707] p-3 shadow-lg shadow-black/40">
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setViewCategory('users');
-              setStaffFilter('ALL');
-            }}
-            className={`flex items-center gap-2.5 rounded-lg px-5 py-2.5 text-xs font-black uppercase tracking-wider transition border ${
-              viewCategory === 'users'
-                ? 'border-emerald-500 bg-emerald-500/15 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.15)]'
-                : 'border-white/[0.06] bg-black/40 text-neutral-400 hover:text-white hover:border-white/20'
-            }`}
-          >
-            <User className="h-4 w-4 text-emerald-400" />
-            <span>Người dùng (Khách hàng)</span>
-            <span className="rounded-full border border-emerald-500/40 bg-emerald-950/70 px-2 py-0.5 font-mono text-[10px] text-emerald-300">
-              {customerCount}
-            </span>
-          </button>
+      {/* 1. TOP SEGMENT SWITCHER / BANNER: KHÁCH HÀNG vs NHÂN SỰ */}
+      {isEffectiveAdmin ? (
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/[0.08] bg-[#070707] p-3 shadow-lg shadow-black/40">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setViewCategory('users');
+                setStaffFilter('ALL');
+              }}
+              className={`flex items-center gap-2.5 rounded-lg px-5 py-2.5 text-xs font-black uppercase tracking-wider transition border ${
+                viewCategory === 'users'
+                  ? 'border-emerald-500 bg-emerald-500/15 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.15)]'
+                  : 'border-white/[0.06] bg-black/40 text-neutral-400 hover:text-white hover:border-white/20'
+              }`}
+            >
+              <User className="h-4 w-4 text-emerald-400" />
+              <span>Khách hàng (Toàn hệ thống)</span>
+              <span className="rounded-full border border-emerald-500/40 bg-emerald-950/70 px-2 py-0.5 font-mono text-[10px] text-emerald-300">
+                {customerCount}
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              setViewCategory('staff');
-              setCustomerFilter('ALL');
-            }}
-            className={`flex items-center gap-2.5 rounded-lg px-5 py-2.5 text-xs font-black uppercase tracking-wider transition border ${
-              viewCategory === 'staff'
-                ? 'border-amber-500 bg-amber-500/15 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.15)]'
-                : 'border-white/[0.06] bg-black/40 text-neutral-400 hover:text-white hover:border-white/20'
-            }`}
-          >
+            <button
+              type="button"
+              onClick={() => {
+                setViewCategory('staff');
+                setCustomerFilter('ALL');
+              }}
+              className={`flex items-center gap-2.5 rounded-lg px-5 py-2.5 text-xs font-black uppercase tracking-wider transition border ${
+                viewCategory === 'staff'
+                  ? 'border-amber-500 bg-amber-500/15 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.15)]'
+                  : 'border-white/[0.06] bg-black/40 text-neutral-400 hover:text-white hover:border-white/20'
+              }`}
+            >
+              <Shield className="h-4 w-4 text-amber-400" />
+              <span>Nhân sự (Staff / Quản lý / Admin)</span>
+              <span className="rounded-full border border-amber-500/40 bg-amber-950/70 px-2 py-0.5 font-mono text-[10px] text-amber-300">
+                {staffCount}
+              </span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={fetchAdminUsers}
+              disabled={isUsersLoading}
+              className="flex items-center justify-center gap-2 rounded-lg border border-white/[0.08] bg-black px-4 py-2.5 text-[10px] font-mono uppercase tracking-widest text-neutral-300 transition hover:border-amber-400 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isUsersLoading ? 'animate-spin' : ''}`} />
+              Làm mới dữ liệu
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/[0.08] bg-[#070707] p-3 shadow-lg shadow-black/40">
+          <div className="flex items-center gap-2.5 px-3 py-1.5">
             <Shield className="h-4 w-4 text-amber-400" />
-            <span>Nhân sự (Staff / Quản lý / Admin)</span>
-            <span className="rounded-full border border-amber-500/40 bg-amber-950/70 px-2 py-0.5 font-mono text-[10px] text-amber-300">
-              {staffCount}
+            <span className="text-xs font-black uppercase tracking-wider text-amber-300">
+              Đội ngũ nhân viên (Staff rạp)
             </span>
-          </button>
-        </div>
+            <span className="rounded-full border border-amber-500/40 bg-amber-950/70 px-2.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+              {staffCount} nhân sự
+            </span>
+          </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={fetchAdminUsers}
-            disabled={isUsersLoading}
-            className="flex items-center justify-center gap-2 rounded-lg border border-white/[0.08] bg-black px-4 py-2.5 text-[10px] font-mono uppercase tracking-widest text-neutral-300 transition hover:border-amber-400 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isUsersLoading ? 'animate-spin' : ''}`} />
-            Làm mới dữ liệu
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={fetchAdminUsers}
+              disabled={isUsersLoading}
+              className="flex items-center justify-center gap-2 rounded-lg border border-white/[0.08] bg-black px-4 py-2.5 text-[10px] font-mono uppercase tracking-widest text-neutral-300 transition hover:border-amber-400 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isUsersLoading ? 'animate-spin' : ''}`} />
+              Làm mới dữ liệu
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 2. STATS OVERVIEW CARDS */}
-      {viewCategory === 'staff' ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {isEffectiveManager || viewCategory === 'staff' ? (
+        <div className={`grid grid-cols-2 gap-3 ${isEffectiveAdmin ? 'sm:grid-cols-4' : 'sm:grid-cols-2'}`}>
           <div className="rounded-xl border border-white/[0.06] bg-[#070707] p-4 shadow-sm">
-            <span className="text-[9px] font-mono uppercase tracking-wider text-neutral-400">Tổng nhân sự</span>
+            <span className="text-[9px] font-mono uppercase tracking-wider text-neutral-400">
+              {isEffectiveAdmin ? 'Tổng nhân sự hệ thống' : 'Tổng nhân viên rạp'}
+            </span>
             <div className="mt-1.5 flex items-center justify-between">
               <span className="text-2xl font-black font-mono text-white">{staffCount}</span>
               <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04]">
@@ -943,7 +981,9 @@ export default function AdminUsersPanel({ ctx }) {
             </div>
           </div>
           <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-4 shadow-sm">
-            <span className="text-[9px] font-mono uppercase tracking-wider text-amber-400">Staff rạp</span>
+            <span className="text-[9px] font-mono uppercase tracking-wider text-amber-400">
+              {isEffectiveAdmin ? 'Staff rạp' : 'Nhân viên soát vé (Staff)'}
+            </span>
             <div className="mt-1.5 flex items-center justify-between">
               <span className="text-2xl font-black font-mono text-amber-300">{staffCinemaCount}</span>
               <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/10">
@@ -951,24 +991,28 @@ export default function AdminUsersPanel({ ctx }) {
               </div>
             </div>
           </div>
-          <div className="rounded-xl border border-sky-500/20 bg-sky-500/[0.04] p-4 shadow-sm">
-            <span className="text-[9px] font-mono uppercase tracking-wider text-sky-400">Quản lý (Manager)</span>
-            <div className="mt-1.5 flex items-center justify-between">
-              <span className="text-2xl font-black font-mono text-sky-300">{managerCount}</span>
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-sky-500/30 bg-sky-500/10">
-                <Building2 className="h-4 w-4 text-sky-400" />
+          {isEffectiveAdmin && (
+            <>
+              <div className="rounded-xl border border-sky-500/20 bg-sky-500/[0.04] p-4 shadow-sm">
+                <span className="text-[9px] font-mono uppercase tracking-wider text-sky-400">Quản lý (Manager)</span>
+                <div className="mt-1.5 flex items-center justify-between">
+                  <span className="text-2xl font-black font-mono text-sky-300">{managerCount}</span>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-sky-500/30 bg-sky-500/10">
+                    <Building2 className="h-4 w-4 text-sky-400" />
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-          <div className="rounded-xl border border-rose-500/20 bg-rose-500/[0.04] p-4 shadow-sm">
-            <span className="text-[9px] font-mono uppercase tracking-wider text-rose-400">Quản trị viên (Admin)</span>
-            <div className="mt-1.5 flex items-center justify-between">
-              <span className="text-2xl font-black font-mono text-rose-300">{adminCount}</span>
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-500/30 bg-rose-500/10">
-                <Crown className="h-4 w-4 text-rose-400" />
+              <div className="rounded-xl border border-rose-500/20 bg-rose-500/[0.04] p-4 shadow-sm">
+                <span className="text-[9px] font-mono uppercase tracking-wider text-rose-400">Quản trị viên (Admin)</span>
+                <div className="mt-1.5 flex items-center justify-between">
+                  <span className="text-2xl font-black font-mono text-rose-300">{adminCount}</span>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-500/30 bg-rose-500/10">
+                    <Crown className="h-4 w-4 text-rose-400" />
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
+            </>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -1006,12 +1050,14 @@ export default function AdminUsersPanel({ ctx }) {
       <div className="flex flex-col gap-4 rounded-xl border border-white/[0.06] bg-[#070707] p-4 md:flex-row md:items-center md:justify-between shadow-lg shadow-black/30">
         <div>
           <span className="text-[8px] font-mono font-black uppercase tracking-widest text-neutral-400">
-            {viewCategory === 'staff'
+            {isEffectiveManager || viewCategory === 'staff'
               ? (isEffectiveAdmin ? 'CENTRAL STAFF CONTROL' : 'BRANCH STAFF CONTROL')
               : 'CUSTOMER ACCOUNTS DIRECTORY'}
           </span>
           <h2 className="text-sm font-black uppercase tracking-[0.16em] text-white mt-0.5">
-            {viewCategory === 'staff' ? 'Quản lý nhân sự & phân quyền (Staff)' : 'Quản lý người dùng (Khách hàng)'}
+            {isEffectiveManager || viewCategory === 'staff'
+              ? (isEffectiveAdmin ? 'Quản lý nhân sự toàn hệ thống' : 'Quản lý nhân viên cụm rạp')
+              : 'Quản lý khách hàng toàn hệ thống'}
           </h2>
           {isEffectiveManager && currentUser?.cinemaId && (
             <p className="mt-0.5 text-[10px] text-sky-400 font-mono">
@@ -1020,7 +1066,7 @@ export default function AdminUsersPanel({ ctx }) {
           )}
         </div>
 
-        {viewCategory === 'staff' && (
+        {(isEffectiveManager || viewCategory === 'staff') && (
           <div className="flex flex-wrap items-center gap-2.5">
             {/* Cấp tài khoản MANAGER (Admin Only) */}
             {isEffectiveAdmin && (
@@ -1821,7 +1867,7 @@ export default function AdminUsersPanel({ ctx }) {
       {/* 4. SUB-FILTERS & SEARCH BAR */}
       <div className="flex flex-col gap-3 rounded-xl border border-white/[0.06] bg-[#070707] p-4 lg:flex-row lg:items-center lg:justify-between shadow-lg shadow-black/20">
         {/* Category-specific quick filters */}
-        {viewCategory === 'staff' ? (
+        {isEffectiveManager || viewCategory === 'staff' ? (
           <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
@@ -1915,7 +1961,7 @@ export default function AdminUsersPanel({ ctx }) {
           <input
             value={userSearch}
             onChange={(e) => setUserSearch(e.target.value)}
-            placeholder={viewCategory === 'staff' ? 'Tìm tên, email, rạp, vai trò...' : 'Tìm tên khách, email, SĐT...'}
+            placeholder={isEffectiveManager || viewCategory === 'staff' ? (isEffectiveAdmin ? 'Tìm tên, email, rạp, vai trò...' : 'Tìm tên nhân viên, email, mã NV...') : 'Tìm tên khách, email, SĐT...'}
             className="h-10 w-full rounded-lg border border-white/[0.08] bg-black/80 pl-9 pr-3 text-xs text-white outline-none transition placeholder:text-neutral-500 focus:border-amber-400"
           />
         </div>
@@ -1927,10 +1973,10 @@ export default function AdminUsersPanel({ ctx }) {
         <div className="xl:col-span-7 rounded-xl border border-white/[0.06] bg-neutral-950 overflow-hidden shadow-lg shadow-black/30">
           <div className="flex items-center justify-between border-b border-white/[0.05] bg-black px-4 py-3">
             <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-white">
-              {viewCategory === 'staff' ? (
+              {isEffectiveManager || viewCategory === 'staff' ? (
                 <>
                   <Shield className="h-4 w-4 text-amber-400" />
-                  <span>Danh sách nhân sự ({filteredUsers.length})</span>
+                  <span>{isEffectiveAdmin ? 'Danh sách nhân sự hệ thống' : 'Danh sách nhân sự'} ({filteredUsers.length})</span>
                 </>
               ) : (
                 <>
@@ -1945,7 +1991,7 @@ export default function AdminUsersPanel({ ctx }) {
           </div>
 
           <div className="divide-y divide-white/[0.03]">
-            {viewCategory === 'staff' ? (
+            {isEffectiveManager || viewCategory === 'staff' ? (
               <div className="hidden grid-cols-[36px_minmax(0,1.5fr)_minmax(80px,0.8fr)_minmax(85px,0.9fr)_minmax(80px,0.8fr)_minmax(80px,0.8fr)_36px] gap-2 bg-[#050505] px-3 py-3 text-[8px] uppercase tracking-widest text-neutral-400 lg:grid">
                 <span>ID</span>
                 <span>Nhân sự</span>
@@ -1981,7 +2027,7 @@ export default function AdminUsersPanel({ ctx }) {
                   user.roles?.includes('ADMIN') ? 'Toàn hệ thống' : '—'
                 );
 
-                if (viewCategory === 'staff') {
+                if (isEffectiveManager || viewCategory === 'staff') {
                   return (
                     <div
                       key={user.id}
@@ -2072,7 +2118,7 @@ export default function AdminUsersPanel({ ctx }) {
             <div className="space-y-5">
               <div className="border-b border-white/[0.05] pb-4">
                 <span className="text-[8px] font-mono font-black uppercase tracking-widest text-neutral-400">
-                  {viewCategory === 'staff' || isStaffMember(selectedAdminUser) ? 'CHI TIẾT NHÂN SỰ #' : 'CHI TIẾT KHÁCH HÀNG #'}{selectedAdminUser.id}
+                  {isEffectiveManager || viewCategory === 'staff' || isStaffMember(selectedAdminUser) ? (isEffectiveAdmin ? 'CHI TIẾT NHÂN SỰ #' : 'CHI TIẾT NHÂN VIÊN #') : 'CHI TIẾT KHÁCH HÀNG #'}{selectedAdminUser.id}
                 </span>
                 <h3 className="mt-1 text-sm font-black uppercase tracking-wider text-white">
                   {selectedAdminUser.fullName || (isStaffMember(selectedAdminUser) ? 'Chưa đặt tên' : 'Khách hàng')}

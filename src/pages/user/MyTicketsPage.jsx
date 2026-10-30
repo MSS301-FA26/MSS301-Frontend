@@ -191,8 +191,53 @@ export default function MyTicketsView({ embedded = false }) {
     const { accessToken } = getStoredAuth();
     if (!accessToken) return;
     setIsLoading(true);
-    return bookingService.getMyBookings(accessToken)
-      .then(data => setRealBookings(Array.isArray(data) ? data : []))
+    return Promise.allSettled([
+      bookingService.getMyBookings(accessToken),
+      bookingService.getMyFoodOrders(accessToken),
+    ])
+      .then(([bookingsRes, foodOrdersRes]) => {
+        const bookingsData = bookingsRes.status === 'fulfilled' && Array.isArray(bookingsRes.value) ? bookingsRes.value : [];
+        const foodOrdersData = foodOrdersRes.status === 'fulfilled' && Array.isArray(foodOrdersRes.value) ? foodOrdersRes.value : [];
+
+        const mergedBookings = bookingsData.map((b) => {
+          // Lấy tất cả các đơn bắp nước đặt thêm thành công (PAID / PARTIALLY_PICKED_UP / PICKED_UP) cho vé này
+          const linkedFoodOrders = foodOrdersData.filter((fo) =>
+            String(fo.bookingId) === String(b.id) &&
+            ['PAID', 'PARTIALLY_PICKED_UP', 'PICKED_UP'].includes(fo.status)
+          );
+
+          if (linkedFoodOrders.length === 0) {
+            return b;
+          }
+
+          // Tổng hợp món bắp nước từ các đơn đặt thêm vào danh sách foods của vé
+          const existingFoods = Array.isArray(b.foods) ? [...b.foods] : [];
+          linkedFoodOrders.forEach((fo) => {
+            (fo.items || []).forEach((it) => {
+              existingFoods.push({
+                name: it.productName || it.name || it.productNameSnapshot || 'Bắp nước',
+                productName: it.productName || it.name || it.productNameSnapshot || 'Bắp nước',
+                quantity: it.quantity || 1,
+                unitPrice: it.unitPrice || 0,
+                totalPrice: it.lineTotal || (it.unitPrice ? it.unitPrice * it.quantity : 0),
+                isCombo: Boolean(it.isCombo),
+                foodOrderId: fo.id,
+                foodOrderCode: fo.foodOrderCode || fo.orderCode,
+                status: fo.status,
+                isAddOn: true,
+              });
+            });
+          });
+
+          return {
+            ...b,
+            foods: existingFoods,
+            linkedFoodOrders,
+          };
+        });
+
+        setRealBookings(mergedBookings);
+      })
       .catch(() => setRealBookings([]))
       .finally(() => setIsLoading(false));
   };
@@ -470,6 +515,7 @@ export default function MyTicketsView({ embedded = false }) {
           isClientExpired,
           isHoldActive,
           foods,
+          linkedFoodOrders: b.linkedFoodOrders || [],
           totalAmount: b.totalAmount,
           seatDetails: Array.isArray(b.seats) ? b.seats : [],
           showtimeStart: b.showtimeStart || null,
@@ -1221,7 +1267,18 @@ export default function MyTicketsView({ embedded = false }) {
                       {/* BẮP NƯỚC ĐÃ ĐẶT (đã thanh toán) */}
                       {Array.isArray(t.foods) && t.foods.length > 0 && (
                         <div className="mt-2 pt-2 border-t border-neutral-850">
-                          <p className="text-[8px] font-black uppercase tracking-widest text-emerald-400/80 mb-1.5">🍿 Bắp nước đã đặt</p>
+                          <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
+                            <p className="text-[8px] font-black uppercase tracking-widest text-emerald-400/80">🍿 Bắp nước đã đặt</p>
+                            {Array.isArray(t.linkedFoodOrders) && t.linkedFoodOrders.length > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => navigate('/tickets?tab=food')}
+                                className="text-[8px] font-bold text-amber-300 hover:text-amber-200 underline cursor-pointer transition flex items-center gap-1"
+                              >
+                                <span>Mã nhận bắp nước ({t.linkedFoodOrders.length} đơn đặt thêm) →</span>
+                              </button>
+                            )}
+                          </div>
                           <div className="flex flex-wrap gap-1.5">
                             {t.foods.map((f, i) => (
                               <span

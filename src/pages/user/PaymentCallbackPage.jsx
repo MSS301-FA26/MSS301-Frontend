@@ -15,7 +15,7 @@ export default function PaymentCallbackPage() {
   const onContinue = () => {
     if (info.isFoodOrder) {
       if (info.linkedBookingId) {
-        navigate(`/tickets?highlightBookingId=${info.linkedBookingId}&tab=food`);
+        navigate(`/tickets?highlightBookingId=${info.linkedBookingId}&tab=tickets`);
       } else {
         navigate('/tickets?tab=food');
       }
@@ -276,12 +276,22 @@ export default function PaymentCallbackPage() {
           </>
         )}
 
-        <button
-          onClick={onContinue}
-          className="w-full bg-white text-black hover:bg-neutral-200 py-3 text-xs font-bold uppercase tracking-widest transition cursor-pointer"
-        >
-          {info.isFoodOrder ? (info.linkedBookingId ? 'Về vé đã đặt' : 'Về đơn bắp nước của tôi') : 'Về vé của tôi'}
-        </button>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={onContinue}
+            className="w-full bg-white text-black hover:bg-neutral-200 py-3 text-xs font-bold uppercase tracking-widest transition cursor-pointer"
+          >
+            {info.isFoodOrder ? (info.linkedBookingId ? 'Về vé đã đặt' : 'Về đơn bắp nước của tôi') : 'Về vé của tôi'}
+          </button>
+          {info.isFoodOrder && info.linkedBookingId && (
+            <button
+              onClick={() => navigate('/tickets?tab=food')}
+              className="w-full border border-purple-500/40 bg-purple-950/20 text-purple-300 hover:bg-purple-950/40 py-2.5 text-xs font-bold uppercase tracking-widest transition cursor-pointer"
+            >
+              Xem mã nhận bắp nước tại quầy
+            </button>
+          )}
+        </div>
 
       </div>
     </div>

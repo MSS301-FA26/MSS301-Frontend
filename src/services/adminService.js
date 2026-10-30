@@ -82,7 +82,7 @@ export const adminService = {
   uploadAdminVideo: (token, file, folder = 'videos') => uploadFile(token, file, folder, '/api/v1/admin/uploads/videos'),
 
   // ── Users ──────────────────────────────────────────────────────────────────
-  getAdminUsers: (token) => usersApi.getAll(token),
+  getAdminUsers: (token, params = {}) => usersApi.getAll(token, params),
   getAdminUserDetail: (token, userId) => usersApi.getOne(token, typeof userId === "object" && userId !== null ? (userId.id ?? userId.userId) : userId),
   createAdminStaff: (token, payload) => request('/api/v1/admin/users/staff', { method: 'POST', token, body: payload }),
   createAdminManager: (token, payload) => request('/api/v1/admin/users/manager', { method: 'POST', token, body: payload }),
@@ -336,7 +336,7 @@ export const adminService = {
   getAdminBooking: (token, id) => bookingsApi.getOne(token, id),
   // Hủy vé; nếu vé đã thanh toán (PAID) backend tự hoàn tiền về CineWallet của khách.
   cancelBookingAdmin: (token, id, reason) => request(`/api/v1/admin/bookings/${enc(id)}/cancel`, { method: 'POST', token, body: { reason: reason || 'Hủy vé theo yêu cầu' } }),
-  getTicketAuditLogs: (token, params = {}) => request(`/api/v1/admin/bookings/audit-logs${buildQueryString(params)}`, { token }),
+  getTicketAuditLogs: (token, params = {}) => request(`/api/v1/admin/bookings/audit-logs${buildQueryString(params)}`, { token }).then(unwrapListPayload),
   getAdminDashboardMetrics: (token, params = {}) => request(`/api/v1/admin/reports/dashboard${buildQueryString(params)}`, { token }),
 
 

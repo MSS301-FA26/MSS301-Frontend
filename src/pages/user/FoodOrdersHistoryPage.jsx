@@ -40,6 +40,7 @@ export default function FoodOrdersHistoryPage() {
   const { publicCinema, selectedCinema } = useMovies();
   const [cinemas, setCinemas] = useState([]);
   const [orders, setOrders] = useState([]);
+  const [filterType, setFilterType] = useState('ALL'); // 'ALL' | 'BOOKING' | 'STANDALONE'
   const [loading, setLoading] = useState(true);
   const [actionId, setActionId] = useState(null);
   const [cancelConfirmOrder, setCancelConfirmOrder] = useState(null);
@@ -128,12 +129,62 @@ export default function FoodOrdersHistoryPage() {
     const { accessToken } = getStoredAuth();
     if (!accessToken) return;
     try {
-      const result = await bookingService.getMyFoodOrders(accessToken);
-      const list = (Array.isArray(result) ? result : []).filter((order) => !order.bookingId);
-      setOrders(list);
+      const [foodOrdersRes, bookingsRes] = await Promise.allSettled([
+        bookingService.getMyFoodOrders(accessToken),
+        bookingService.getMyBookings(accessToken),
+      ]);
+
+      const foodOrdersList = foodOrdersRes.status === 'fulfilled' && Array.isArray(foodOrdersRes.value)
+        ? foodOrdersRes.value
+        : [];
+
+      const bookingsList = bookingsRes.status === 'fulfilled' && Array.isArray(bookingsRes.value)
+        ? bookingsRes.value
+        : [];
+
+      // Tổng hợp thêm các món bắp nước đặt kèm trong vé phim (đã thanh toán hoặc đã sử dụng)
+      const bookingFoodItems = [];
+      bookingsList.forEach((b) => {
+        const hasFoods = Array.isArray(b.foods) && b.foods.length > 0;
+        const isPaidOrUsed = ['PAID', 'USED', 'CHECKED_IN'].includes(b.status);
+        if (hasFoods && isPaidOrUsed) {
+          const items = b.foods.map((f, idx) => ({
+            id: f.id || idx,
+            name: f.productName || f.name || 'Bắp nước',
+            productName: f.productName || f.name || 'Bắp nước',
+            quantity: f.quantity || 1,
+            unitPrice: f.unitPrice || 0,
+            lineTotal: f.lineTotal || (f.unitPrice ? f.unitPrice * f.quantity : 0),
+            isCombo: Boolean(f.isCombo || f.combo),
+            pickedUp: b.status === 'USED',
+          }));
+
+          bookingFoodItems.push({
+            id: `booking-${b.id}`,
+            orderCode: b.bookingCode || `BK-${b.id}`,
+            foodOrderCode: b.bookingCode || `BK-${b.id}`,
+            bookingId: b.id,
+            bookingCode: b.bookingCode,
+            movieTitle: b.movieTitle || b.movieTitleSnapshot || '',
+            isFromTicketBooking: true,
+            createdAt: b.paidAt || b.createdAt,
+            cinemaId: b.cinemaId,
+            cinemaName: b.cinemaName || b.cinemaNameSnapshot,
+            cinemaAddress: b.cinemaAddress || b.cinemaAddressSnapshot,
+            status: b.status === 'USED' ? 'PICKED_UP' : 'PAID',
+            totalAmount: items.reduce((sum, item) => sum + (Number(item.lineTotal) || 0), 0),
+            items,
+            qrCode: b.qrCode || `TICKET:${b.bookingCode}:${b.id}`,
+          });
+        }
+      });
+
+      // Kết hợp đầy đủ: đơn mua riêng + đơn đặt thêm theo vé + món đặt cùng vé
+      const combined = [...foodOrdersList, ...bookingFoodItems];
+      setOrders(combined);
 
       // Tự động kiểm tra và đồng bộ trạng thái thanh toán cho các đơn đang CHỜ THANH TOÁN
-      const pendingList = list.filter((o) => o.status === 'PENDING_PAYMENT');
+      const pendingList = foodOrdersList.filter((o) => o.status === 'PENDING_PAYMENT');
       if (pendingList.length > 0) {
         Promise.allSettled(
           pendingList.map((o) => bookingService.syncFoodOrderPayment(accessToken, o.id))
@@ -141,7 +192,8 @@ export default function FoodOrdersHistoryPage() {
           const hasPaid = syncResults.some((r) => r.status === 'fulfilled' && r.value?.status === 'PAID');
           if (hasPaid) {
             bookingService.getMyFoodOrders(accessToken).then((latest) => {
-              setOrders((Array.isArray(latest) ? latest : []).filter((order) => !order.bookingId));
+              const latestList = Array.isArray(latest) ? latest : [];
+              setOrders([...latestList, ...bookingFoodItems]);
             });
           }
         });
@@ -164,14 +216,30 @@ export default function FoodOrdersHistoryPage() {
     new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
   )), [orders]);
 
-  const groupedOrders = useMemo(() => sortedOrders.reduce((groups, order) => {
+  const filteredOrders = useMemo(() => {
+    if (filterType === 'BOOKING') {
+      return sortedOrders.filter((o) => Boolean(o.bookingId || o.bookingCode || o.isFromTicketBooking));
+    }
+    if (filterType === 'STANDALONE') {
+      return sortedOrders.filter((o) => !o.bookingId && !o.bookingCode && !o.isFromTicketBooking);
+    }
+    return sortedOrders;
+  }, [sortedOrders, filterType]);
+
+  const counts = useMemo(() => {
+    const bookingCount = sortedOrders.filter((o) => Boolean(o.bookingId || o.bookingCode || o.isFromTicketBooking)).length;
+    const standaloneCount = sortedOrders.filter((o) => !o.bookingId && !o.bookingCode && !o.isFromTicketBooking).length;
+    return { all: sortedOrders.length, booking: bookingCount, standalone: standaloneCount };
+  }, [sortedOrders]);
+
+  const groupedOrders = useMemo(() => filteredOrders.reduce((groups, order) => {
     const seconds = countdown(order.expiresAt, now);
     const status = order.status === 'PENDING_PAYMENT' && seconds === 0 ? 'EXPIRED' : order.status;
     if (status === 'PENDING_PAYMENT') groups.pending.push(order);
     else if (status === 'PAID' || status === 'PARTIALLY_PICKED_UP') groups.ready.push(order);
     else groups.history.push(order);
     return groups;
-  }, { pending: [], ready: [], history: [] }), [sortedOrders, now]);
+  }, { pending: [], ready: [], history: [] }), [filteredOrders, now]);
 
   const retryPayment = async (order) => {
     const { accessToken } = getStoredAuth();
@@ -292,6 +360,31 @@ export default function FoodOrdersHistoryPage() {
               {isPartial ? `Đã nhận ${pickedItemsCount}/${totalItemsCount} món` : (labels[status] || status)}
             </span>
           </div>
+
+          {/* Phân loại: Đặt kèm vé hay mua riêng */}
+          {(order.bookingId || order.bookingCode || order.isFromTicketBooking) ? (
+            <div className="flex items-center justify-between rounded-lg border border-purple-500/25 bg-purple-500/[0.06] px-2.5 py-1.5 text-[10px]">
+              <span className="flex items-center gap-1.5 font-bold text-purple-300">
+                <ReceiptText className="h-3.5 w-3.5 text-purple-400" />
+                {order.isFromTicketBooking ? 'Đặt cùng vé phim' : 'Đặt thêm theo vé'}
+                {order.bookingCode && <span className="font-mono text-purple-200">({order.bookingCode})</span>}
+              </span>
+              {order.bookingId && (
+                <button
+                  type="button"
+                  onClick={() => navigate(`/tickets?highlightBookingId=${order.bookingId}&tab=tickets`)}
+                  className="font-bold text-amber-300 hover:text-amber-200 hover:underline cursor-pointer transition text-[9px]"
+                >
+                  Xem vé →
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[10px] text-neutral-400">
+              <ShoppingBag className="h-3 w-3 text-amber-400" />
+              <span>Đơn bắp nước mua riêng tại quầy</span>
+            </div>
+          )}
 
           {/* Thông tin Rạp nhận bắp nước - HIỆN RÕ RÀNG */}
           <div className="flex items-start gap-2.5 rounded-lg border border-amber-500/25 bg-amber-500/[0.05] p-2.5 text-xs transition-colors hover:border-amber-500/40">
@@ -505,8 +598,50 @@ export default function FoodOrdersHistoryPage() {
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
-        <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-neutral-400"><ReceiptText className="h-4 w-4 text-purple-400" /> {sortedOrders.length} đơn mua riêng</div>
-        <button type="button" onClick={() => navigate('/concessions')} className="flex min-h-11 items-center gap-2 whitespace-nowrap border border-purple-400/30 px-4 text-[9px] font-black uppercase tracking-widest text-purple-300 transition-colors hover:bg-purple-500 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-300 active:bg-purple-700"><Popcorn className="h-4 w-4" /> Đặt thêm bắp nước</button>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="inline-flex items-center gap-1 rounded bg-white/5 p-1 border border-white/10">
+            <button
+              type="button"
+              onClick={() => setFilterType('ALL')}
+              className={`rounded px-2.5 py-1 text-[10px] font-black uppercase tracking-wider transition cursor-pointer ${
+                filterType === 'ALL'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              Tất cả ({counts.all})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterType('BOOKING')}
+              className={`rounded px-2.5 py-1 text-[10px] font-black uppercase tracking-wider transition cursor-pointer ${
+                filterType === 'BOOKING'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              Kèm theo vé ({counts.booking})
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterType('STANDALONE')}
+              className={`rounded px-2.5 py-1 text-[10px] font-black uppercase tracking-wider transition cursor-pointer ${
+                filterType === 'STANDALONE'
+                  ? 'bg-purple-600 text-white shadow-sm'
+                  : 'text-neutral-400 hover:text-white'
+              }`}
+            >
+              Mua riêng ({counts.standalone})
+            </button>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => navigate('/concessions')}
+          className="flex min-h-10 items-center gap-2 whitespace-nowrap border border-purple-400/30 px-3.5 text-[9px] font-black uppercase tracking-widest text-purple-300 transition-colors hover:bg-purple-500 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-300 active:bg-purple-700 cursor-pointer"
+        >
+          <Popcorn className="h-3.5 w-3.5" /> Đặt thêm bắp nước
+        </button>
       </div>
 
       <div className="space-y-6">
