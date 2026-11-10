@@ -16,14 +16,16 @@ const enc = encodeURIComponent;
  *   remove:       (token, id) => Promise,
  * }}
  */
+const toId = (val) => (typeof val === 'object' && val !== null ? (val.id ?? val.userId ?? val.code ?? val) : val);
+
 export const createCrudApi = (basePath) => ({
   getAll:     (token, params = {}) => request(`${basePath}${buildQueryString(params)}`, { token }),
-  getOne:     (token, id)          => request(`${basePath}/${enc(id)}`, { token }),
+  getOne:     (token, id)          => request(`${basePath}/${enc(toId(id))}`, { token }),
   create:     (token, payload)     => request(basePath, { method: 'POST', token, body: payload }),
-  update:     (token, id, payload) => request(`${basePath}/${enc(id)}`, { method: 'PUT', token, body: payload }),
-  patchBody:  (token, id, body)    => request(`${basePath}/${enc(id)}/status`, { method: 'PATCH', token, body }),
-  patchQuery: (token, id, status)  => request(`${basePath}/${enc(id)}/status?status=${enc(status)}`, { method: 'PATCH', token }),
-  remove:     (token, id)          => request(`${basePath}/${enc(id)}`, { method: 'DELETE', token }),
+  update:     (token, id, payload) => request(`${basePath}/${enc(toId(id))}`, { method: 'PUT', token, body: payload }),
+  patchBody:  (token, id, body)    => request(`${basePath}/${enc(toId(id))}/status`, { method: 'PATCH', token, body }),
+  patchQuery: (token, id, status)  => request(`${basePath}/${enc(toId(id))}/status?status=${enc(status)}`, { method: 'PATCH', token }),
+  remove:     (token, id)          => request(`${basePath}/${enc(toId(id))}`, { method: 'DELETE', token }),
 });
 
 /**
@@ -34,9 +36,9 @@ export const createCrudApi = (basePath) => ({
  * @param {string} folder   - folder đích trên Cloudinary
  * @param {string} endpoint - VD: '/api/v1/admin/uploads/images'
  */
-export const uploadFile = (token, file, folder, endpoint) => {
+export const uploadFile = (token, file, folder, endpoint, timeout = 300000) => {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('folder', folder);
-  return request(endpoint, { method: 'POST', token, body: formData });
+  return request(endpoint, { method: 'POST', token, body: formData, timeout });
 };

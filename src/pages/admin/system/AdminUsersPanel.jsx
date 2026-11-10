@@ -1,107 +1,317 @@
-﻿import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { getStoredAuth } from '../../../services/authService';
 import { adminService } from '../../../services/adminService';
 import {
+  AlertCircle,
   BadgeCheck,
+  Building2,
+  Calendar,
+  Check,
+  CheckCircle2,
   Clock,
+  Crown,
   Eye,
   EyeOff,
+  KeyRound,
+  Lock,
   Mail,
+  MapPin,
   Phone,
   Plus,
   RefreshCw,
   Search,
-  ShieldAlert,
+  Send,
+  Shield,
+  Sparkles,
+  Ticket,
+  User,
   UserCheck,
   UserPlus,
   Users,
   UserX,
   X
 } from 'lucide-react';
-import { PASSWORD_VALIDATION_MESSAGE, isStrongPassword } from '../../../utils/validation';
+import {
+  PASSWORD_VALIDATION_MESSAGE,
+  isStrongPassword,
+  getPasswordValidationState,
+  validateBirthYear18Plus,
+  normalizeAuthErrorMessage
+} from '../../../utils/validation';
+
+const PasswordRequirements = ({ password }) => {
+  const state = getPasswordValidationState(password);
+  if (!password) return null;
+  const items = [
+    { label: 'Tối thiểu 8 ký tự', ok: state.hasLength },
+    { label: 'Chữ hoa (A-Z)', ok: state.hasUpper },
+    { label: 'Chữ thường (a-z)', ok: state.hasLower },
+    { label: 'Chữ số (0-9)', ok: state.hasDigit },
+    { label: 'Ký tự đặc biệt (!@#$...)', ok: state.hasSpecial }
+  ];
+  return (
+    <div className="mt-2.5 flex flex-wrap gap-1.5 text-[9px]">
+      {items.map((item, idx) => (
+        <span
+          key={idx}
+          className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-medium transition-colors ${
+            item.ok
+              ? 'border border-emerald-500/40 bg-emerald-950/60 text-emerald-300'
+              : 'border border-white/[0.08] bg-black/40 text-neutral-400'
+          }`}
+        >
+          <span className="font-bold">{item.ok ? '✓' : '•'}</span>
+          {item.label}
+        </span>
+      ))}
+    </div>
+  );
+};
 
 const USER_STATUS_OPTIONS = ['ACTIVE', 'DISABLED', 'PENDING_VERIFICATION'];
 const STAFF_PROFILE_STATUS_OPTIONS = ['ACTIVE', 'INACTIVE', 'SUSPENDED'];
+
 const EMPTY_STAFF_FORM = {
   email: '',
   password: '',
   fullName: '',
   phone: '',
-  birthYear: ''
-};
-const EMPTY_PROFILE_FORM = {
-  employeeCode: '',
-  position: '',
-  status: 'ACTIVE'
+  birthYear: '',
+  cinemaId: ''
 };
 
-const formatDateTime = (value) => {
-  if (!value) return 'Chưa có dữ liệu';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleString('vi-VN');
+const EMPTY_MANAGER_FORM = {
+  email: '',
+  password: '',
+  fullName: '',
+  phone: '',
+  birthYear: '',
+  cinemaId: ''
 };
 
-const getStatusMeta = (status = '') => {
-  const normalized = String(status).toUpperCase();
-  if (normalized === 'ACTIVE') {
-    return {
-      label: 'Đang hoạt động',
-      icon: UserCheck,
-      className: 'border-emerald-500/30 bg-emerald-950/20 text-emerald-300'
-    };
+const formatDateTime = (isoString) => {
+  if (!isoString) return '—';
+  try {
+    const date = new Date(isoString);
+    if (Number.isNaN(date.getTime())) return isoString;
+    return new Intl.DateTimeFormat('vi-VN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(date);
+  } catch {
+    return isoString;
   }
-  if (normalized === 'DISABLED') {
-    return {
-      label: 'Đã vô hiệu',
-      icon: UserX,
-      className: 'border-rose-500/35 bg-rose-950/20 text-rose-300'
-    };
+};
+
+const getStatusMeta = (status) => {
+  switch (status) {
+    case 'ACTIVE':
+      return {
+        label: 'HOẠT ĐỘNG',
+        className: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300',
+        icon: CheckCircle2
+      };
+    case 'DISABLED':
+      return {
+        label: 'ĐÃ KHÓA',
+        className: 'border-rose-500/40 bg-rose-500/10 text-rose-300',
+        icon: UserX
+      };
+    case 'PENDING_VERIFICATION':
+      return {
+        label: 'CHỜ XÁC MINH',
+        className: 'border-amber-500/40 bg-amber-500/10 text-amber-300',
+        icon: Clock
+      };
+    default:
+      return {
+        label: status || 'CHƯA RÕ',
+        className: 'border-neutral-700 bg-neutral-900 text-neutral-300',
+        icon: UserCheck
+      };
   }
-  return {
-    label: 'Chờ xác minh',
-    icon: ShieldAlert,
-    className: 'border-amber-500/35 bg-amber-950/20 text-amber-300'
-  };
+};
+
+const getRoleBadge = (roles = []) => {
+  const roleList = Array.isArray(roles) ? roles.map((r) => String(r).toUpperCase()) : [String(roles).toUpperCase()];
+  if (roleList.includes('ADMIN') || roleList.includes('ROLE_ADMIN')) {
+    return { label: 'ADMIN', color: 'border-rose-500/40 bg-rose-500/10 text-rose-300' };
+  }
+  if (roleList.includes('MANAGER') || roleList.includes('ROLE_MANAGER')) {
+    return { label: 'MANAGER', color: 'border-sky-500/40 bg-sky-500/10 text-sky-300' };
+  }
+  if (roleList.includes('STAFF') || roleList.includes('ROLE_STAFF')) {
+    return { label: 'STAFF RẠP', color: 'border-amber-500/40 bg-amber-500/10 text-amber-300' };
+  }
+  return { label: 'KHÁCH HÀNG', color: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' };
+};
+
+const isStaffMember = (user) => {
+  const roleList = Array.isArray(user?.roles)
+    ? user.roles.map((r) => String(r).toUpperCase())
+    : [String(user?.roles || '').toUpperCase()];
+  return roleList.some((r) => r.includes('STAFF') || r.includes('MANAGER') || r.includes('ADMIN'));
+};
+
+const isCustomerMember = (user) => !isStaffMember(user);
+
+const getStaffCategory = (user) => {
+  const roleList = Array.isArray(user?.roles)
+    ? user.roles.map((r) => String(r).toUpperCase())
+    : [String(user?.roles || '').toUpperCase()];
+  if (roleList.some((r) => r.includes('ADMIN'))) return 'ADMIN';
+  if (roleList.some((r) => r.includes('MANAGER'))) return 'MANAGER';
+  if (roleList.some((r) => r.includes('STAFF'))) return 'STAFF';
+  return 'OTHER';
 };
 
 export default function AdminUsersPanel({ ctx }) {
   const {
     activeTab,
-    adminUsers,
+    adminUsers = [],
     selectedAdminUser,
-    userSearch,
-    setUserSearch,
+    userSearch = '',
+    setUserSearch = () => {},
     isUsersLoading,
     isUserDetailLoading,
     isUserStatusSaving,
     isStaffCreating,
-    fetchAdminUsers,
-    handleSelectAdminUser,
-    handleCreateStaff,
-    handleUpdateAdminUserStatus,
-    currentUser
+    fetchAdminUsers = () => {},
+    handleSelectAdminUser = () => {},
+    handleCreateStaff = () => {},
+    handleUpdateAdminUserStatus = () => {},
+    currentUser = null,
+    isAdmin = false,
+    isManager = false,
+    showToast = () => {}
   } = ctx;
+
+  const isEffectiveAdmin = Boolean(
+    isAdmin ||
+    currentUser?.role === 'admin' ||
+    (currentUser?.roles || []).some((r) => String(r).toUpperCase() === 'ADMIN' || String(r).toUpperCase() === 'ROLE_ADMIN')
+  );
+  const isEffectiveManager = !isEffectiveAdmin && Boolean(
+    isManager ||
+    currentUser?.role === 'manager' ||
+    (currentUser?.roles || []).some((r) => String(r).toUpperCase() === 'MANAGER' || String(r).toUpperCase() === 'ROLE_MANAGER')
+  );
+
+  // View Category: 'users' (Khách hàng) vs 'staff' (Nhân sự)
+  // For Manager: strictly locked to 'staff' (never view or call customer accounts)
+  const [viewCategory, setViewCategory] = useState(isEffectiveManager || activeTab === 'staff' ? 'staff' : 'users');
+  const [staffFilter, setStaffFilter] = useState('ALL'); // 'ALL' | 'STAFF' | 'MANAGER' | 'ADMIN'
+  const [customerFilter, setCustomerFilter] = useState('ALL'); // 'ALL' | 'ACTIVE' | 'DISABLED'
+
+  useEffect(() => {
+    if (isEffectiveManager || activeTab === 'staff') {
+      setViewCategory('staff');
+    } else if (activeTab === 'users') {
+      setViewCategory('users');
+    }
+  }, [activeTab, isEffectiveManager]);
+
+  // Modal / Form states
   const [isStaffFormOpen, setIsStaffFormOpen] = useState(false);
   const [showStaffPassword, setShowStaffPassword] = useState(false);
   const [staffForm, setStaffForm] = useState(EMPTY_STAFF_FORM);
   const [staffFormErrors, setStaffFormErrors] = useState({});
-  const [staffProfiles, setStaffProfiles] = useState([]);
-  const [profileForm, setProfileForm] = useState(EMPTY_PROFILE_FORM);
-  const [profileError, setProfileError] = useState('');
-  const [isProfileLoading, setIsProfileLoading] = useState(false);
-  const [isProfileSaving, setIsProfileSaving] = useState(false);
+  const [staffEmailVerified, setStaffEmailVerified] = useState(false);
+  const [staffVerifiedEmail, setStaffVerifiedEmail] = useState('');
+  const [staffOtpSent, setStaffOtpSent] = useState(false);
+  const [staffOtpInput, setStaffOtpInput] = useState('');
+  const [staffOtpLoading, setStaffOtpLoading] = useState(false);
+  const [staffOtpVerifying, setStaffOtpVerifying] = useState(false);
+  const [staffOtpCountdown, setStaffOtpCountdown] = useState(0);
+  const [staffOtpNotice, setStaffOtpNotice] = useState('');
 
-  const selectedStaffProfile = staffProfiles.find((profile) => (
-    String(profile.userId) === String(selectedAdminUser?.id)
-  ));
-  const isSelectedStaff = (selectedAdminUser?.roles || []).some((role) => (
-    String(role).toUpperCase().replace('ROLE_', '') === 'STAFF'
-  ));
+  const [isManagerFormOpen, setIsManagerFormOpen] = useState(false);
+  const [showManagerPassword, setShowManagerPassword] = useState(false);
+  const [managerForm, setManagerForm] = useState(EMPTY_MANAGER_FORM);
+  const [managerFormErrors, setManagerFormErrors] = useState({});
+  const [isManagerCreating, setIsManagerCreating] = useState(false);
+  const [managerFormNotice, setManagerFormNotice] = useState('');
+  const [managerEmailVerified, setManagerEmailVerified] = useState(false);
+  const [managerVerifiedEmail, setManagerVerifiedEmail] = useState('');
+  const [managerOtpSent, setManagerOtpSent] = useState(false);
+  const [managerOtpInput, setManagerOtpInput] = useState('');
+  const [managerOtpLoading, setManagerOtpLoading] = useState(false);
+  const [managerOtpVerifying, setManagerOtpVerifying] = useState(false);
+  const [managerOtpCountdown, setManagerOtpCountdown] = useState(0);
+  const [managerOtpNotice, setManagerOtpNotice] = useState('');
 
   useEffect(() => {
-    if (activeTab !== 'users') return undefined;
+    if (staffOtpCountdown <= 0) return undefined;
+    const timer = setInterval(() => setStaffOtpCountdown((prev) => prev - 1), 1000);
+    return () => clearInterval(timer);
+  }, [staffOtpCountdown]);
+
+  useEffect(() => {
+    if (managerOtpCountdown <= 0) return undefined;
+    const timer = setInterval(() => setManagerOtpCountdown((prev) => prev - 1), 1000);
+    return () => clearInterval(timer);
+  }, [managerOtpCountdown]);
+
+  // Cinema list & lookup
+  const [cinemas, setCinemas] = useState([]);
+  const [isCinemasLoading, setIsCinemasLoading] = useState(false);
+
+  // Reassign cinema state (Admin only)
+  const [reassignCinemaId, setReassignCinemaId] = useState('');
+  const [isReassigning, setIsReassigning] = useState(false);
+  const [reassignNotice, setReassignNotice] = useState('');
+  const [reassignError, setReassignError] = useState('');
+
+  // Staff profiles
+  const [staffProfiles, setStaffProfiles] = useState([]);
+  const [isProfileLoading, setIsProfileLoading] = useState(false);
+  const [isProfileSaving, setIsProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState('');
+  const [profileForm, setProfileForm] = useState({ employeeCode: '', position: '', status: 'ACTIVE' });
+
+  // Load cinema list
+  useEffect(() => {
+    if (activeTab !== 'users' && activeTab !== 'staff') return undefined;
+    let cancelled = false;
+    const loadCinemas = async () => {
+      const { accessToken } = getStoredAuth();
+      if (!accessToken) return;
+      setIsCinemasLoading(true);
+      try {
+        let cinemaList = [];
+        try {
+          const res = await adminService.getAdminCinemas(accessToken);
+          cinemaList = Array.isArray(res) ? res : (res?.items || res?.content || []);
+        } catch {
+          const single = await adminService.getAdminCinema(accessToken);
+          if (single) cinemaList = [single];
+        }
+        if (!cancelled) setCinemas(cinemaList);
+      } catch (err) {
+        console.warn('Lỗi tải danh sách rạp:', err);
+      } finally {
+        if (!cancelled) setIsCinemasLoading(false);
+      }
+    };
+    loadCinemas();
+    return () => { cancelled = true; };
+  }, [activeTab]);
+
+  const cinemaMap = useMemo(() => {
+    const map = {};
+    (cinemas || []).forEach((c) => {
+      if (c?.id) map[c.id] = c.name || `Rạp #${c.id}`;
+    });
+    return map;
+  }, [cinemas]);
+
+  // Load staff profiles
+  useEffect(() => {
+    if (activeTab !== 'users' && activeTab !== 'staff') return undefined;
     let cancelled = false;
     const loadProfiles = async () => {
       const { accessToken } = getStoredAuth();
@@ -111,16 +321,34 @@ export default function AdminUsersPanel({ ctx }) {
         const profiles = await adminService.getAdminStaffProfiles(accessToken);
         if (!cancelled) setStaffProfiles(Array.isArray(profiles) ? profiles : []);
       } catch (error) {
-        if (!cancelled) setProfileError(error.message || 'Khong the tai staff profile.');
+        if (!cancelled) setProfileError(error.message || 'Không thể tải staff profile.');
       } finally {
         if (!cancelled) setIsProfileLoading(false);
       }
     };
     loadProfiles();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [activeTab]);
+
+  const selectedStaffProfile = useMemo(() => {
+    if (!selectedAdminUser?.id) return null;
+    return staffProfiles.find((profile) => String(profile.userId) === String(selectedAdminUser.id)) || null;
+  }, [staffProfiles, selectedAdminUser?.id]);
+
+  const isSelectedStaff = useMemo(() => {
+    const roles = selectedAdminUser?.roles || [];
+    return roles.some((role) => String(role).toUpperCase().includes('STAFF'));
+  }, [selectedAdminUser?.roles]);
+
+  const isSelectedManager = useMemo(() => {
+    const roles = selectedAdminUser?.roles || [];
+    return roles.some((role) => String(role).toUpperCase().includes('MANAGER'));
+  }, [selectedAdminUser?.roles]);
+
+  const isSelectedAdmin = useMemo(() => {
+    const roles = selectedAdminUser?.roles || [];
+    return roles.some((role) => String(role).toUpperCase().includes('ADMIN'));
+  }, [selectedAdminUser?.roles]);
 
   useEffect(() => {
     if (selectedStaffProfile) {
@@ -129,23 +357,358 @@ export default function AdminUsersPanel({ ctx }) {
         position: selectedStaffProfile.position || '',
         status: selectedStaffProfile.status || 'ACTIVE'
       });
-      setProfileError('');
-      return;
+    } else {
+      setProfileForm({ employeeCode: '', position: '', status: 'ACTIVE' });
     }
-    setProfileForm(EMPTY_PROFILE_FORM);
     setProfileError('');
   }, [selectedStaffProfile?.id, selectedAdminUser?.id]);
 
-  if (activeTab !== 'users') return null;
+  useEffect(() => {
+    if (selectedAdminUser?.cinemaId) {
+      setReassignCinemaId(String(selectedAdminUser.cinemaId));
+    } else {
+      setReassignCinemaId('');
+    }
+    setReassignNotice('');
+    setReassignError('');
+  }, [selectedAdminUser?.id, selectedAdminUser?.cinemaId]);
+
+  if (activeTab !== 'users' && activeTab !== 'staff') return null;
 
   const updateStaffForm = (field, value) => {
     setStaffForm((prev) => ({ ...prev, [field]: value }));
     setStaffFormErrors((prev) => ({ ...prev, [field]: '' }));
+    if (field === 'email') {
+      const trimmed = value.trim().toLowerCase();
+      if (trimmed !== staffVerifiedEmail.toLowerCase()) {
+        setStaffEmailVerified(false);
+        setStaffOtpNotice('');
+      }
+    }
+  };
+
+  const updateManagerForm = (field, value) => {
+    setManagerForm((prev) => ({ ...prev, [field]: value }));
+    setManagerFormErrors((prev) => ({ ...prev, [field]: '' }));
+    setManagerFormNotice('');
+    if (field === 'email') {
+      const trimmed = value.trim().toLowerCase();
+      if (trimmed !== managerVerifiedEmail.toLowerCase()) {
+        setManagerEmailVerified(false);
+        setManagerOtpNotice('');
+      }
+    }
+  };
+
+  const handleSendStaffOtp = async () => {
+    const email = staffForm.email.trim();
+    if (!email) {
+      setStaffFormErrors((prev) => ({ ...prev, email: 'Vui lòng nhập email trước khi gửi mã OTP.' }));
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setStaffFormErrors((prev) => ({ ...prev, email: 'Email không hợp lệ.' }));
+      return;
+    }
+    setStaffOtpLoading(true);
+    setStaffOtpNotice('');
+    setStaffFormErrors((prev) => ({ ...prev, email: '' }));
+    try {
+      const { accessToken } = getStoredAuth();
+      const res = await adminService.requestProvisionOtp(accessToken, email);
+      setStaffOtpSent(true);
+      setStaffOtpCountdown(60);
+      const msg = res?.message || `Mã OTP đã được gửi tới email ${email}.`;
+      setStaffOtpNotice(msg);
+      showToast?.(msg);
+    } catch (err) {
+      const msg = normalizeAuthErrorMessage(err.message || 'Không thể gửi mã OTP. Vui lòng kiểm tra lại.');
+      setStaffFormErrors((prev) => ({ ...prev, email: msg }));
+      showToast?.(msg);
+    } finally {
+      setStaffOtpLoading(false);
+    }
+  };
+
+  const handleVerifyStaffOtp = async () => {
+    const email = staffForm.email.trim();
+    const otp = staffOtpInput.trim();
+    if (!otp) {
+      setStaffOtpNotice('Vui lòng nhập mã OTP 6 chữ số.');
+      return;
+    }
+    setStaffOtpVerifying(true);
+    try {
+      const { accessToken } = getStoredAuth();
+      await adminService.verifyProvisionOtp(accessToken, email, otp);
+      setStaffEmailVerified(true);
+      setStaffVerifiedEmail(email);
+      setStaffOtpNotice('✓ Email đã được xác thực OTP thành công!');
+      setStaffFormErrors((prev) => ({ ...prev, email: '' }));
+      showToast?.('Xác thực email thành công!');
+    } catch (err) {
+      const msg = err.message || 'Mã OTP không chính xác hoặc đã hết hạn.';
+      setStaffOtpNotice(msg);
+      showToast?.(msg);
+    } finally {
+      setStaffOtpVerifying(false);
+    }
+  };
+
+  const handleSendManagerOtp = async () => {
+    const email = managerForm.email.trim();
+    if (!email) {
+      setManagerFormErrors((prev) => ({ ...prev, email: 'Vui lòng nhập email trước khi gửi mã OTP.' }));
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setManagerFormErrors((prev) => ({ ...prev, email: 'Email không hợp lệ.' }));
+      return;
+    }
+    setManagerOtpLoading(true);
+    setManagerOtpNotice('');
+    setManagerFormErrors((prev) => ({ ...prev, email: '' }));
+    try {
+      const { accessToken } = getStoredAuth();
+      const res = await adminService.requestProvisionOtp(accessToken, email);
+      setManagerOtpSent(true);
+      setManagerOtpCountdown(60);
+      const msg = res?.message || `Mã OTP đã được gửi tới email ${email}.`;
+      setManagerOtpNotice(msg);
+      showToast?.(msg);
+    } catch (err) {
+      const msg = normalizeAuthErrorMessage(err.message || 'Không thể gửi mã OTP. Vui lòng kiểm tra lại.');
+      setManagerFormErrors((prev) => ({ ...prev, email: msg }));
+      showToast?.(msg);
+    } finally {
+      setManagerOtpLoading(false);
+    }
+  };
+
+  const handleVerifyManagerOtp = async () => {
+    const email = managerForm.email.trim();
+    const otp = managerOtpInput.trim();
+    if (!otp) {
+      setManagerOtpNotice('Vui lòng nhập mã OTP 6 chữ số.');
+      return;
+    }
+    setManagerOtpVerifying(true);
+    try {
+      const { accessToken } = getStoredAuth();
+      await adminService.verifyProvisionOtp(accessToken, email, otp);
+      setManagerEmailVerified(true);
+      setManagerVerifiedEmail(email);
+      setManagerOtpNotice('✓ Email đã được xác thực OTP thành công!');
+      setManagerFormErrors((prev) => ({ ...prev, email: '' }));
+      showToast?.('Xác thực email thành công!');
+    } catch (err) {
+      const msg = err.message || 'Mã OTP không chính xác hoặc đã hết hạn.';
+      setManagerOtpNotice(msg);
+      showToast?.(msg);
+    } finally {
+      setManagerOtpVerifying(false);
+    }
+  };
+
+  const submitStaffForm = async (event) => {
+    event.preventDefault();
+    const errors = {};
+    const email = staffForm.email.trim();
+    const fullName = staffForm.fullName.trim();
+    const phone = staffForm.phone.trim();
+    const birthYear = staffForm.birthYear ? Number(staffForm.birthYear) : null;
+
+    if (!email) {
+      errors.email = 'Email là bắt buộc.';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errors.email = 'Email không hợp lệ.';
+    } else if (!staffEmailVerified || staffVerifiedEmail.toLowerCase() !== email.toLowerCase()) {
+      errors.email = 'Vui lòng gửi mã OTP và xác thực email trước khi cấp tài khoản.';
+    }
+
+    if (!fullName) errors.fullName = 'Họ tên là bắt buộc.';
+
+    const birthValidation = validateBirthYear18Plus(staffForm.birthYear);
+    if (!birthValidation.isValid) {
+      errors.birthYear = birthValidation.message;
+    }
+
+    if (!isStrongPassword(staffForm.password)) {
+      errors.password = PASSWORD_VALIDATION_MESSAGE;
+    }
+
+    if (phone && !/^\+?[0-9]{10,15}$/.test(phone)) {
+      errors.phone = 'Số điện thoại gồm 10-15 chữ số.';
+    }
+
+    if (isEffectiveAdmin && !staffForm.cinemaId) {
+      errors.cinemaId = 'Vui lòng chọn rạp phân công cho nhân viên.';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setStaffFormErrors(errors);
+      return;
+    }
+
+    try {
+      const payload = {
+        email,
+        password: staffForm.password,
+        fullName,
+        phone: phone || null,
+        birthYear: birthYear || null,
+        cinemaId: isEffectiveAdmin ? Number(staffForm.cinemaId) : Number(currentUser?.cinemaId || null)
+      };
+
+      await handleCreateStaff(payload);
+      setStaffForm(EMPTY_STAFF_FORM);
+      setStaffEmailVerified(false);
+      setStaffVerifiedEmail('');
+      setStaffOtpSent(false);
+      setStaffOtpInput('');
+      setStaffOtpNotice('');
+      setIsStaffFormOpen(false);
+      fetchAdminUsers();
+      showToast?.(`Đã cấp tài khoản STAFF thành công cho ${email}.`);
+    } catch (error) {
+      const msg = normalizeAuthErrorMessage(error.message || 'Không thể tạo tài khoản STAFF.');
+      const newErrors = { submit: msg };
+      const lower = msg.toLowerCase();
+      if (lower.includes('email') || lower.includes('tồn tại') || lower.includes('already')) {
+        newErrors.email = msg;
+      }
+      if (lower.includes('điện thoại') || lower.includes('phone') || lower.includes('số điện thoại')) {
+        newErrors.phone = msg;
+      }
+      if (lower.includes('tuổi') || lower.includes('năm sinh') || lower.includes('birth')) {
+        newErrors.birthYear = msg;
+      }
+      if (lower.includes('mật khẩu') || lower.includes('password')) {
+        newErrors.password = msg;
+      }
+      setStaffFormErrors(newErrors);
+      showToast?.(msg);
+    }
+  };
+
+  const submitManagerForm = async (event) => {
+    event.preventDefault();
+    const errors = {};
+    const email = managerForm.email.trim();
+    const fullName = managerForm.fullName.trim();
+    const phone = managerForm.phone.trim();
+    const birthYear = managerForm.birthYear ? Number(managerForm.birthYear) : null;
+    const cinemaId = managerForm.cinemaId ? Number(managerForm.cinemaId) : null;
+
+    if (!email) {
+      errors.email = 'Email là bắt buộc.';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      errors.email = 'Email không hợp lệ.';
+    } else if (!managerEmailVerified || managerVerifiedEmail.toLowerCase() !== email.toLowerCase()) {
+      errors.email = 'Vui lòng gửi mã OTP và xác thực email trước khi cấp tài khoản.';
+    }
+
+    if (!fullName) errors.fullName = 'Họ tên là bắt buộc.';
+
+    const birthValidation = validateBirthYear18Plus(managerForm.birthYear);
+    if (!birthValidation.isValid) {
+      errors.birthYear = birthValidation.message;
+    }
+
+    if (!isStrongPassword(managerForm.password)) {
+      errors.password = PASSWORD_VALIDATION_MESSAGE;
+    }
+
+    if (phone && !/^\+?[0-9]{10,15}$/.test(phone)) {
+      errors.phone = 'Số điện thoại gồm 10-15 chữ số.';
+    }
+
+    if (!cinemaId) {
+      errors.cinemaId = 'Vui lòng chọn cụm rạp phân công quản lý (Manager chỉ quản lý 1 rạp).';
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setManagerFormErrors(errors);
+      return;
+    }
+
+    const { accessToken } = getStoredAuth();
+    if (!accessToken) return;
+
+    setIsManagerCreating(true);
+    setManagerFormNotice('');
+    try {
+      const payload = {
+        email,
+        password: managerForm.password,
+        fullName,
+        phone: phone || null,
+        birthYear: birthYear || null,
+        cinemaId
+      };
+
+      const created = await adminService.createAdminManager(accessToken, payload);
+      setManagerForm(EMPTY_MANAGER_FORM);
+      setManagerEmailVerified(false);
+      setManagerVerifiedEmail('');
+      setManagerOtpSent(false);
+      setManagerOtpInput('');
+      setManagerOtpNotice('');
+      setIsManagerFormOpen(false);
+      fetchAdminUsers();
+      if (created) {
+        handleSelectAdminUser(created);
+      }
+      showToast?.(`Đã cấp tài khoản MANAGER thành công cho ${email}.`);
+    } catch (error) {
+      const msg = normalizeAuthErrorMessage(error.message || 'Không thể tạo tài khoản MANAGER.');
+      const newErrors = { submit: msg };
+      const lower = msg.toLowerCase();
+      if (lower.includes('email') || lower.includes('tồn tại') || lower.includes('already')) {
+        newErrors.email = msg;
+      }
+      if (lower.includes('điện thoại') || lower.includes('phone') || lower.includes('số điện thoại')) {
+        newErrors.phone = msg;
+      }
+      if (lower.includes('tuổi') || lower.includes('năm sinh') || lower.includes('birth')) {
+        newErrors.birthYear = msg;
+      }
+      if (lower.includes('mật khẩu') || lower.includes('password')) {
+        newErrors.password = msg;
+      }
+      setManagerFormErrors(newErrors);
+      showToast?.(msg);
+    } finally {
+      setIsManagerCreating(false);
+    }
+  };
+
+  const handleReassignCinema = async (e) => {
+    e.preventDefault();
+    if (!selectedAdminUser?.id || !reassignCinemaId) return;
+
+    const { accessToken } = getStoredAuth();
+    if (!accessToken) return;
+
+    setIsReassigning(true);
+    setReassignNotice('');
+    setReassignError('');
+    try {
+      const updated = await adminService.assignAdminUserCinema(accessToken, selectedAdminUser.id, Number(reassignCinemaId));
+      setReassignNotice(`Đã đổi rạp phân công thành công sang: ${cinemaMap[reassignCinemaId] || ('Rạp #' + reassignCinemaId)}`);
+      fetchAdminUsers();
+      if (updated && selectedAdminUser) {
+        handleSelectAdminUser({ ...selectedAdminUser, cinemaId: Number(reassignCinemaId) });
+      }
+    } catch (err) {
+      setReassignError(err.message || 'Không thể đổi rạp cho người dùng.');
+    } finally {
+      setIsReassigning(false);
+    }
   };
 
   const updateProfileForm = (field, value) => {
     setProfileForm((prev) => ({ ...prev, [field]: value }));
-    setProfileError('');
   };
 
   const saveStaffProfile = async (event) => {
@@ -155,13 +718,13 @@ export default function AdminUsersPanel({ ctx }) {
     const employeeCode = profileForm.employeeCode.trim();
     const position = profileForm.position.trim();
     if (!employeeCode || !position) {
-      setProfileError('Nhap ma nhan vien va vi tri truoc khi luu.');
+      setProfileError('Nhập mã nhân viên và vị trí trước khi lưu.');
       return;
     }
 
     const { accessToken } = getStoredAuth();
     if (!accessToken) {
-      setProfileError('Phien dang nhap admin khong hop le.');
+      setProfileError('Phiên đăng nhập admin không hợp lệ.');
       return;
     }
 
@@ -186,66 +749,132 @@ export default function AdminUsersPanel({ ctx }) {
       ]);
       setProfileError('');
     } catch (error) {
-      setProfileError(error.message || 'Khong the luu staff profile.');
+      setProfileError(error.message || 'Không thể lưu staff profile.');
     } finally {
       setIsProfileSaving(false);
     }
   };
 
-  const submitStaffForm = async (event) => {
-    event.preventDefault();
-    const errors = {};
-    const email = staffForm.email.trim();
-    const fullName = staffForm.fullName.trim();
-    const phone = staffForm.phone.trim();
-    const birthYear = staffForm.birthYear ? Number(staffForm.birthYear) : null;
+  // Merge adminUsers with staffProfiles so staff profiles are never missed
+  const effectiveUsers = useMemo(() => {
+    const list = [...adminUsers];
+    const userMap = new Map();
+    list.forEach((u) => {
+      userMap.set(String(u.id ?? u.userId), u);
+    });
 
-    if (!email) errors.email = 'Email là bắt buộc.';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) errors.email = 'Email không hợp lệ.';
-    if (!fullName) errors.fullName = 'Họ tên là bắt buộc.';
-    if (!isStrongPassword(staffForm.password)) errors.password = PASSWORD_VALIDATION_MESSAGE;
-    if (phone && !/^\+?[0-9]{10,15}$/.test(phone)) errors.phone = 'Số điện thoại gồm 10-15 chữ số.';
-    if (birthYear && (birthYear < 1900 || birthYear > 2100)) errors.birthYear = 'Năm sinh không hợp lệ.';
+    (staffProfiles || []).forEach((sp) => {
+      const spId = String(sp.userId || sp.id);
+      const existing = userMap.get(spId);
+      if (!existing) {
+        const synthesized = {
+          id: sp.userId || sp.id,
+          userId: sp.userId || sp.id,
+          email: sp.email || '',
+          fullName: sp.fullName || (sp.employeeCode ? ('Nhân viên ' + sp.employeeCode) : ('Nhân viên #' + spId)),
+          phone: sp.phone || '',
+          roles: ['STAFF'],
+          cinemaId: sp.cinemaId,
+          status: sp.status || 'ACTIVE',
+          employeeCode: sp.employeeCode,
+          position: sp.position
+        };
+        list.push(synthesized);
+        userMap.set(spId, synthesized);
+      } else {
+        if (sp.cinemaId && !existing.cinemaId) existing.cinemaId = sp.cinemaId;
+        if (sp.employeeCode && !existing.employeeCode) existing.employeeCode = sp.employeeCode;
+        if (sp.position && !existing.position) existing.position = sp.position;
+      }
+    });
 
-    if (Object.keys(errors).length > 0) {
-      setStaffFormErrors(errors);
+    if (isEffectiveManager) {
+      return list.filter((u) => {
+        // Manager ONLY manages branch staff - never customer accounts
+        if (!isStaffMember(u)) return false;
+        if (currentUser?.cinemaId && u.cinemaId && String(u.cinemaId) !== String(currentUser.cinemaId)) {
+          return false;
+        }
+        return true;
+      });
+    }
+
+    return list;
+  }, [adminUsers, staffProfiles, isEffectiveManager, currentUser?.cinemaId]);
+
+  // Metrics
+  const customerCount = useMemo(() => effectiveUsers.filter(isCustomerMember).length, [effectiveUsers]);
+  const staffCount = useMemo(() => effectiveUsers.filter(isStaffMember).length, [effectiveUsers]);
+  const staffCinemaCount = useMemo(() => effectiveUsers.filter((u) => getStaffCategory(u) === 'STAFF').length, [effectiveUsers]);
+  const managerCount = useMemo(() => effectiveUsers.filter((u) => getStaffCategory(u) === 'MANAGER').length, [effectiveUsers]);
+  const adminCount = useMemo(() => effectiveUsers.filter((u) => getStaffCategory(u) === 'ADMIN').length, [effectiveUsers]);
+
+  const activeCustomerCount = useMemo(() => effectiveUsers.filter((u) => isCustomerMember(u) && u.status === 'ACTIVE').length, [effectiveUsers]);
+  const disabledCustomerCount = useMemo(() => effectiveUsers.filter((u) => isCustomerMember(u) && u.status === 'DISABLED').length, [effectiveUsers]);
+
+  // Filtered Users List
+  const filteredUsers = useMemo(() => {
+    let list = effectiveUsers.filter((user) => {
+      if (isEffectiveManager || viewCategory === 'staff') {
+        if (!isStaffMember(user)) return false;
+        if (staffFilter === 'STAFF') return getStaffCategory(user) === 'STAFF';
+        if (staffFilter === 'MANAGER') return getStaffCategory(user) === 'MANAGER';
+        if (staffFilter === 'ADMIN') return getStaffCategory(user) === 'ADMIN';
+        return true;
+      } else {
+        if (!isCustomerMember(user)) return false;
+        if (customerFilter === 'ACTIVE') return user.status === 'ACTIVE';
+        if (customerFilter === 'DISABLED') return user.status === 'DISABLED';
+        return true;
+      }
+    });
+
+    const query = userSearch.trim().toLowerCase();
+    if (!query) return list;
+
+    return list.filter((user) => {
+      const cinemaName = user.cinemaId ? (cinemaMap[user.cinemaId] || '').toLowerCase() : '';
+      return (
+        user.email?.toLowerCase().includes(query) ||
+        user.fullName?.toLowerCase().includes(query) ||
+        user.phone?.toLowerCase().includes(query) ||
+        String(user.id || '').includes(query) ||
+        cinemaName.includes(query)
+      );
+    });
+  }, [effectiveUsers, viewCategory, staffFilter, customerFilter, userSearch, cinemaMap]);
+
+  // Auto-switch selected user if current selection does not belong to active category
+  useEffect(() => {
+    if (isEffectiveManager) {
+      if (selectedAdminUser && !isStaffMember(selectedAdminUser) && filteredUsers.length > 0) {
+        handleSelectAdminUser(filteredUsers[0]);
+      } else if (!selectedAdminUser && filteredUsers.length > 0) {
+        handleSelectAdminUser(filteredUsers[0]);
+      }
       return;
     }
-
-    try {
-      const createdStaff = await handleCreateStaff({
-        email,
-        password: staffForm.password,
-        fullName,
-        phone: phone || null,
-        birthYear
-      });
-      if (!createdStaff) return;
-      setStaffForm(EMPTY_STAFF_FORM);
-      setStaffFormErrors({});
-      setShowStaffPassword(false);
-      setIsStaffFormOpen(false);
-    } catch {
-      // The shared admin handler displays the backend validation/conflict message.
+    if (selectedAdminUser) {
+      const isStaffSelected = isStaffMember(selectedAdminUser);
+      if (viewCategory === 'staff' && !isStaffSelected && filteredUsers.length > 0) {
+        handleSelectAdminUser(filteredUsers[0]);
+      } else if (viewCategory === 'users' && isStaffSelected && filteredUsers.length > 0) {
+        handleSelectAdminUser(filteredUsers[0]);
+      }
+    } else if (filteredUsers.length > 0) {
+      handleSelectAdminUser(filteredUsers[0]);
     }
-  };
-
-  const query = userSearch.trim().toLowerCase();
-  const filteredUsers = adminUsers.filter((user) => {
-    if (!query) return true;
-    return (
-      user.email?.toLowerCase().includes(query) ||
-      user.fullName?.toLowerCase().includes(query) ||
-      user.phone?.toLowerCase().includes(query) ||
-      String(user.id || '').includes(query)
-    );
-  });
+  }, [viewCategory, filteredUsers.length, isEffectiveManager]);
 
   const selectedStatus = getStatusMeta(selectedAdminUser?.status);
   const SelectedStatusIcon = selectedStatus.icon;
-  const isViewingCurrentAdmin =
+  const isViewingSelf =
     String(currentUser?.id || '') === String(selectedAdminUser?.id || '') ||
     (currentUser?.email && selectedAdminUser?.email && currentUser.email === selectedAdminUser.email);
+
+  // Permission check for Manager: Manager cannot edit or disable Admin or other Managers
+  const isTargetPrivileged = isSelectedAdmin || isSelectedManager;
+  const canManagerModifyUser = isEffectiveAdmin || (!isTargetPrivileged && isSelectedStaff);
 
   return (
     <motion.div
@@ -256,384 +885,1377 @@ export default function AdminUsersPanel({ ctx }) {
       transition={{ duration: 0.2 }}
       className="space-y-6"
     >
-      <div className="flex flex-col gap-4 border border-white/[0.05] bg-[#070707] p-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <span className="text-[8px] font-mono font-black uppercase tracking-widest text-neutral-300">
-            ADMIN USER CONTROL
-          </span>
-          <h2 className="text-xs font-black uppercase tracking-[0.18em] text-neutral-200">
-            Quản lý người dùng hệ thống
-          </h2>
+      {/* 1. TOP SEGMENT SWITCHER / BANNER: KHÁCH HÀNG vs NHÂN SỰ */}
+      {isEffectiveAdmin ? (
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/[0.08] bg-[#070707] p-3 shadow-lg shadow-black/40">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setViewCategory('users');
+                setStaffFilter('ALL');
+              }}
+              className={`flex items-center gap-2.5 rounded-lg px-5 py-2.5 text-xs font-black uppercase tracking-wider transition border ${
+                viewCategory === 'users'
+                  ? 'border-emerald-500 bg-emerald-500/15 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.15)]'
+                  : 'border-white/[0.06] bg-black/40 text-neutral-400 hover:text-white hover:border-white/20'
+              }`}
+            >
+              <User className="h-4 w-4 text-emerald-400" />
+              <span>Khách hàng (Toàn hệ thống)</span>
+              <span className="rounded-full border border-emerald-500/40 bg-emerald-950/70 px-2 py-0.5 font-mono text-[10px] text-emerald-300">
+                {customerCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setViewCategory('staff');
+                setCustomerFilter('ALL');
+              }}
+              className={`flex items-center gap-2.5 rounded-lg px-5 py-2.5 text-xs font-black uppercase tracking-wider transition border ${
+                viewCategory === 'staff'
+                  ? 'border-amber-500 bg-amber-500/15 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.15)]'
+                  : 'border-white/[0.06] bg-black/40 text-neutral-400 hover:text-white hover:border-white/20'
+              }`}
+            >
+              <Shield className="h-4 w-4 text-amber-400" />
+              <span>Nhân sự (Staff / Quản lý / Admin)</span>
+              <span className="rounded-full border border-amber-500/40 bg-amber-950/70 px-2 py-0.5 font-mono text-[10px] text-amber-300">
+                {staffCount}
+              </span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={fetchAdminUsers}
+              disabled={isUsersLoading}
+              className="flex items-center justify-center gap-2 rounded-lg border border-white/[0.08] bg-black px-4 py-2.5 text-[10px] font-mono uppercase tracking-widest text-neutral-300 transition hover:border-amber-400 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isUsersLoading ? 'animate-spin' : ''}`} />
+              Làm mới dữ liệu
+            </button>
+          </div>
         </div>
-
-        <button
-          type="button"
-          onClick={() => setIsStaffFormOpen((prev) => !prev)}
-          className="flex items-center justify-center gap-2 border border-amber-500/60 bg-amber-500/10 px-4 py-2 text-[10px] font-mono font-black uppercase tracking-widest text-amber-300 transition hover:bg-amber-500 hover:text-black"
-        >
-          {isStaffFormOpen ? <X className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
-          {isStaffFormOpen ? 'Đóng biểu mẫu' : 'Cấp tài khoản STAFF'}
-        </button>
-
-        <button
-          type="button"
-          onClick={fetchAdminUsers}
-          disabled={isUsersLoading}
-          className="flex items-center justify-center gap-2 border border-white/[0.06] bg-black px-4 py-2 text-[10px] font-mono uppercase tracking-widest text-neutral-300 transition hover:border-amber-400 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${isUsersLoading ? 'animate-spin' : ''}`} />
-          Làm mới dữ liệu
-        </button>
-      </div>
-
-      {isStaffFormOpen && (
-        <motion.form
-          initial={{ opacity: 0, y: -8 }}
-          animate={{ opacity: 1, y: 0 }}
-          onSubmit={submitStaffForm}
-          className="border border-amber-500/30 bg-[#080704] p-5"
-        >
-          <div className="mb-4 flex items-start justify-between gap-4 border-b border-amber-500/15 pb-4">
-            <div>
-              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-amber-300">
-                <Plus className="h-4 w-4" />
-                Cấp tài khoản STAFF
-              </div>
-              <p className="mt-1 text-[10px] text-neutral-300">
-                Tài khoản được kích hoạt ngay và có quyền truy cập màn hình nghiệp vụ nhân viên.
-              </p>
-            </div>
-            <span className="border border-amber-500/30 bg-black px-2 py-1 text-[8px] font-black uppercase tracking-widest text-amber-300">
-              AUTH-12
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/[0.08] bg-[#070707] p-3 shadow-lg shadow-black/40">
+          <div className="flex items-center gap-2.5 px-3 py-1.5">
+            <Shield className="h-4 w-4 text-amber-400" />
+            <span className="text-xs font-black uppercase tracking-wider text-amber-300">
+              Đội ngũ nhân viên (Staff rạp)
+            </span>
+            <span className="rounded-full border border-amber-500/40 bg-amber-950/70 px-2.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+              {staffCount} nhân sự
             </span>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-            {[
-              { field: 'fullName', label: 'Họ và tên *', placeholder: 'Nguyễn Văn A', type: 'text' },
-              { field: 'email', label: 'Email đăng nhập *', placeholder: 'staff@cinepremier.vn', type: 'email' },
-              { field: 'phone', label: 'Số điện thoại', placeholder: '0901234567', type: 'tel' },
-              { field: 'birthYear', label: 'Năm sinh', placeholder: '2000', type: 'number' }
-            ].map(({ field, label, placeholder, type }) => (
-              <label key={field} className="space-y-1.5">
-                <span className="text-[9px] font-black uppercase tracking-widest text-neutral-200">{label}</span>
-                <input
-                  type={type}
-                  value={staffForm[field]}
-                  onChange={(event) => updateStaffForm(field, event.target.value)}
-                  placeholder={placeholder}
-                  min={field === 'birthYear' ? 1900 : undefined}
-                  max={field === 'birthYear' ? 2100 : undefined}
-                  className={`w-full border bg-black px-3 py-2.5 text-xs text-white outline-none transition placeholder:text-neutral-200 focus:border-amber-400 ${staffFormErrors[field] ? 'border-rose-500' : 'border-white/[0.06]'}`}
-                />
-                {staffFormErrors[field] && <span className="block text-[9px] text-rose-300">{staffFormErrors[field]}</span>}
-              </label>
-            ))}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={fetchAdminUsers}
+              disabled={isUsersLoading}
+              className="flex items-center justify-center gap-2 rounded-lg border border-white/[0.08] bg-black px-4 py-2.5 text-[10px] font-mono uppercase tracking-widest text-neutral-300 transition hover:border-amber-400 hover:text-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isUsersLoading ? 'animate-spin' : ''}`} />
+              Làm mới dữ liệu
+            </button>
+          </div>
+        </div>
+      )}
 
-            <label className="space-y-1.5">
-              <span className="text-[9px] font-black uppercase tracking-widest text-neutral-200">Mật khẩu cấp ban đầu *</span>
-              <div className="relative">
-                <input
-                  type={showStaffPassword ? 'text' : 'password'}
-                  value={staffForm.password}
-                  onChange={(event) => updateStaffForm('password', event.target.value)}
-                  placeholder="Tối thiểu 8 ký tự, có chữ hoa, chữ thường, số và ký tự đặc biệt"
-                  className={`w-full border bg-black px-3 py-2.5 pr-10 text-xs text-white outline-none transition placeholder:text-neutral-200 focus:border-amber-400 ${staffFormErrors.password ? 'border-rose-500' : 'border-white/[0.06]'}`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowStaffPassword((prev) => !prev)}
-                  className="absolute right-2.5 top-2.5 text-neutral-300 transition hover:text-white"
-                  aria-label={showStaffPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-                >
-                  {showStaffPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
+      {/* 2. STATS OVERVIEW CARDS */}
+      {isEffectiveManager || viewCategory === 'staff' ? (
+        <div className={`grid grid-cols-2 gap-3 ${isEffectiveAdmin ? 'sm:grid-cols-4' : 'sm:grid-cols-2'}`}>
+          <div className="rounded-xl border border-white/[0.06] bg-[#070707] p-4 shadow-sm">
+            <span className="text-[9px] font-mono uppercase tracking-wider text-neutral-400">
+              {isEffectiveAdmin ? 'Tổng nhân sự hệ thống' : 'Tổng nhân viên rạp'}
+            </span>
+            <div className="mt-1.5 flex items-center justify-between">
+              <span className="text-2xl font-black font-mono text-white">{staffCount}</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04]">
+                <Shield className="h-4 w-4 text-neutral-400" />
               </div>
-              {staffFormErrors.password && <span className="block text-[9px] text-rose-300">{staffFormErrors.password}</span>}
-            </label>
+            </div>
+          </div>
+          <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-4 shadow-sm">
+            <span className="text-[9px] font-mono uppercase tracking-wider text-amber-400">
+              {isEffectiveAdmin ? 'Staff rạp' : 'Nhân viên soát vé (Staff)'}
+            </span>
+            <div className="mt-1.5 flex items-center justify-between">
+              <span className="text-2xl font-black font-mono text-amber-300">{staffCinemaCount}</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/10">
+                <Ticket className="h-4 w-4 text-amber-400" />
+              </div>
+            </div>
+          </div>
+          {isEffectiveAdmin && (
+            <>
+              <div className="rounded-xl border border-sky-500/20 bg-sky-500/[0.04] p-4 shadow-sm">
+                <span className="text-[9px] font-mono uppercase tracking-wider text-sky-400">Quản lý (Manager)</span>
+                <div className="mt-1.5 flex items-center justify-between">
+                  <span className="text-2xl font-black font-mono text-sky-300">{managerCount}</span>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-sky-500/30 bg-sky-500/10">
+                    <Building2 className="h-4 w-4 text-sky-400" />
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-xl border border-rose-500/20 bg-rose-500/[0.04] p-4 shadow-sm">
+                <span className="text-[9px] font-mono uppercase tracking-wider text-rose-400">Quản trị viên (Admin)</span>
+                <div className="mt-1.5 flex items-center justify-between">
+                  <span className="text-2xl font-black font-mono text-rose-300">{adminCount}</span>
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-500/30 bg-rose-500/10">
+                    <Crown className="h-4 w-4 text-rose-400" />
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-white/[0.06] bg-[#070707] p-4 shadow-sm">
+            <span className="text-[9px] font-mono uppercase tracking-wider text-neutral-400">Tổng khách hàng</span>
+            <div className="mt-1.5 flex items-center justify-between">
+              <span className="text-2xl font-black font-mono text-white">{customerCount}</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04]">
+                <User className="h-4 w-4 text-neutral-400" />
+              </div>
+            </div>
+          </div>
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.04] p-4 shadow-sm">
+            <span className="text-[9px] font-mono uppercase tracking-wider text-emerald-400">Đang hoạt động</span>
+            <div className="mt-1.5 flex items-center justify-between">
+              <span className="text-2xl font-black font-mono text-emerald-300">{activeCustomerCount}</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-500/30 bg-emerald-500/10">
+                <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+              </div>
+            </div>
+          </div>
+          <div className="rounded-xl border border-rose-500/20 bg-rose-500/[0.04] p-4 shadow-sm">
+            <span className="text-[9px] font-mono uppercase tracking-wider text-rose-400">Tài khoản bị khóa</span>
+            <div className="mt-1.5 flex items-center justify-between">
+              <span className="text-2xl font-black font-mono text-rose-300">{disabledCustomerCount}</span>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-rose-500/30 bg-rose-500/10">
+                <UserX className="h-4 w-4 text-rose-400" />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 3. SECTION HEADER & ACTION BUTTONS */}
+      <div className="flex flex-col gap-4 rounded-xl border border-white/[0.06] bg-[#070707] p-4 md:flex-row md:items-center md:justify-between shadow-lg shadow-black/30">
+        <div>
+          <span className="text-[8px] font-mono font-black uppercase tracking-widest text-neutral-400">
+            {isEffectiveManager || viewCategory === 'staff'
+              ? (isEffectiveAdmin ? 'CENTRAL STAFF CONTROL' : 'BRANCH STAFF CONTROL')
+              : 'CUSTOMER ACCOUNTS DIRECTORY'}
+          </span>
+          <h2 className="text-sm font-black uppercase tracking-[0.16em] text-white mt-0.5">
+            {isEffectiveManager || viewCategory === 'staff'
+              ? (isEffectiveAdmin ? 'Quản lý nhân sự toàn hệ thống' : 'Quản lý nhân viên cụm rạp')
+              : 'Quản lý khách hàng toàn hệ thống'}
+          </h2>
+          {isEffectiveManager && currentUser?.cinemaId && (
+            <p className="mt-0.5 text-[10px] text-sky-400 font-mono">
+              Phạm vi quản trị: {cinemaMap[currentUser.cinemaId] || `Rạp #${currentUser.cinemaId}`}
+            </p>
+          )}
+        </div>
+
+        {(isEffectiveManager || viewCategory === 'staff') && (
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Cấp tài khoản MANAGER (Admin Only) */}
+            {isEffectiveAdmin && (
+              <button
+                type="button"
+                onClick={() => {
+                  setIsManagerFormOpen((prev) => !prev);
+                  setIsStaffFormOpen(false);
+                }}
+                className={`flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-xs font-mono font-bold uppercase tracking-wider transition ${
+                  isManagerFormOpen
+                    ? 'border-sky-400 bg-sky-500 text-black shadow-lg shadow-sky-500/20'
+                    : 'border-sky-500/50 bg-sky-500/10 text-sky-300 hover:bg-sky-500 hover:text-black'
+                }`}
+              >
+                {isManagerFormOpen ? <X className="h-3.5 w-3.5" /> : <Shield className="h-3.5 w-3.5" />}
+                {isManagerFormOpen ? 'Đóng Manager' : 'Cấp tài khoản MANAGER'}
+              </button>
+            )}
+
+            {/* Cấp tài khoản STAFF (Admin & Manager) */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsStaffFormOpen((prev) => !prev);
+                setIsManagerFormOpen(false);
+              }}
+              className={`flex items-center justify-center gap-2 rounded-lg border px-4 py-2.5 text-xs font-mono font-bold uppercase tracking-wider transition ${
+                isStaffFormOpen
+                  ? 'border-amber-400 bg-amber-500 text-black shadow-lg shadow-amber-500/20'
+                  : 'border-amber-500/50 bg-amber-500/10 text-amber-300 hover:bg-amber-500 hover:text-black'
+              }`}
+            >
+              {isStaffFormOpen ? <X className="h-3.5 w-3.5" /> : <UserPlus className="h-3.5 w-3.5" />}
+              {isStaffFormOpen ? 'Đóng Staff' : 'Cấp tài khoản STAFF'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Form Cấp STAFF */}
+      {isStaffFormOpen && viewCategory === 'staff' && (
+        <motion.form
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2 }}
+          onSubmit={submitStaffForm}
+          className="rounded-xl border border-amber-500/30 bg-gradient-to-b from-[#130f08] via-[#090805] to-[#040403] p-5 sm:p-6 shadow-2xl shadow-amber-500/5 space-y-6"
+        >
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-amber-500/20 pb-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-400">
+                <Ticket className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-black uppercase tracking-wider text-amber-300">
+                    Cấp tài khoản STAFF (Soát vé & Vận hành rạp)
+                  </h3>
+                  <span className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[9px] font-mono font-bold uppercase text-amber-300">
+                    ROLE_STAFF
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-neutral-300">
+                  {isEffectiveManager
+                    ? `Tài khoản nhân viên soát vé sẽ được phân công trực tiếp vào: ${cinemaMap[currentUser?.cinemaId] || ('Rạp #' + currentUser?.cinemaId)}.`
+                    : 'Tài khoản nhân viên soát vé. Phân công cụm rạp để nhân viên nhận ca và quét vé.'}
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsStaffFormOpen(false)}
+              className="self-start sm:self-center flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-neutral-300 hover:text-white hover:border-white/20 transition"
+            >
+              <X className="h-4 w-4" />
+              <span>Đóng form</span>
+            </button>
           </div>
 
-          <div className="mt-5 flex justify-end">
-            <button
-              type="submit"
-              disabled={isStaffCreating}
-              className="flex items-center gap-2 border border-amber-400 bg-amber-500 px-5 py-2.5 text-[10px] font-black uppercase tracking-widest text-black transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {isStaffCreating ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <UserPlus className="h-3.5 w-3.5" />}
-              {isStaffCreating ? 'Đang cấp tài khoản...' : 'Tạo tài khoản STAFF'}
-            </button>
+          {/* Section 1: Thông tin cá nhân */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-[10px] font-mono font-black uppercase tracking-widest text-amber-400">
+              <User className="h-3.5 w-3.5" />
+              <span>1. Thông tin cá nhân</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Họ và tên */}
+              <div>
+                <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-300 font-bold mb-1.5">
+                  Họ và tên <span className="text-amber-400">*</span>
+                </label>
+                <div className="relative">
+                  <User className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+                  <input
+                    type="text"
+                    value={staffForm.fullName}
+                    onChange={(e) => updateStaffForm('fullName', e.target.value)}
+                    placeholder="Ví dụ: Nguyễn Văn A"
+                    className={`h-11 w-full rounded-lg border bg-black/60 pl-10 pr-3.5 text-xs text-white outline-none transition placeholder:text-neutral-500 focus:border-amber-400 focus:ring-1 focus:ring-amber-400/40 ${
+                      staffFormErrors.fullName ? 'border-rose-500' : 'border-white/[0.08]'
+                    }`}
+                  />
+                </div>
+                {staffFormErrors.fullName && (
+                  <span className="mt-1 block text-[10px] font-medium text-rose-400">{staffFormErrors.fullName}</span>
+                )}
+              </div>
+
+              {/* Số điện thoại */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-300 font-bold">
+                    Số điện thoại
+                  </label>
+                  <span className="text-[9px] text-neutral-400 font-mono">Tùy chọn</span>
+                </div>
+                <div className="relative">
+                  <Phone className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+                  <input
+                    type="tel"
+                    value={staffForm.phone}
+                    onChange={(e) => updateStaffForm('phone', e.target.value)}
+                    placeholder="Ví dụ: 0901234567"
+                    className={`h-11 w-full rounded-lg border bg-black/60 pl-10 pr-3.5 text-xs text-white outline-none transition placeholder:text-neutral-500 focus:border-amber-400 focus:ring-1 focus:ring-amber-400/40 ${
+                      staffFormErrors.phone ? 'border-rose-500' : 'border-white/[0.08]'
+                    }`}
+                  />
+                </div>
+                {staffFormErrors.phone && (
+                  <span className="mt-1 block text-[10px] font-medium text-rose-400">{staffFormErrors.phone}</span>
+                )}
+              </div>
+
+              {/* Năm sinh (>= 18 tuổi) */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-300 font-bold">
+                    Năm sinh (từ 18 tuổi) <span className="text-amber-400">*</span>
+                  </label>
+                  {staffForm.birthYear && validateBirthYear18Plus(staffForm.birthYear).isValid && (
+                    <span className="text-[9px] font-bold text-emerald-400">
+                      ✓ {new Date().getFullYear() - Number(staffForm.birthYear)} tuổi (Đủ 18+)
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <Calendar className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+                  <input
+                    type="number"
+                    value={staffForm.birthYear}
+                    onChange={(e) => updateStaffForm('birthYear', e.target.value)}
+                    placeholder={`VD: ${new Date().getFullYear() - 20}`}
+                    min={new Date().getFullYear() - 100}
+                    max={new Date().getFullYear() - 18}
+                    className={`h-11 w-full rounded-lg border bg-black/60 pl-10 pr-3.5 text-xs text-white outline-none transition placeholder:text-neutral-500 focus:border-amber-400 focus:ring-1 focus:ring-amber-400/40 ${
+                      staffFormErrors.birthYear ? 'border-rose-500' : 'border-white/[0.08]'
+                    }`}
+                  />
+                </div>
+                {staffFormErrors.birthYear ? (
+                  <span className="mt-1 block text-[10px] font-medium text-rose-400">{staffFormErrors.birthYear}</span>
+                ) : !staffForm.birthYear ? (
+                  <span className="mt-1 block text-[9px] text-neutral-400">
+                    Tối thiểu 18 tuổi (sinh năm {new Date().getFullYear() - 18} trở về trước)
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          {/* Section 2: Tài khoản & Bảo mật */}
+          <div className="space-y-3 border-t border-white/[0.06] pt-5">
+            <div className="flex items-center gap-2 text-[10px] font-mono font-black uppercase tracking-widest text-amber-400">
+              <Lock className="h-3.5 w-3.5" />
+              <span>2. Tài khoản & Bảo mật</span>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+              {/* Email & OTP */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-300 font-bold">
+                    Email đăng nhập <span className="text-amber-400">*</span>
+                  </label>
+                  {staffEmailVerified && (
+                    <span className="inline-flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-950/60 px-2 py-0.5 text-[9px] font-bold text-emerald-300">
+                      <Check className="h-3 w-3 text-emerald-400" /> Đã xác thực OTP
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+                    <input
+                      type="email"
+                      value={staffForm.email}
+                      onChange={(e) => updateStaffForm('email', e.target.value)}
+                      placeholder="staff@cinepremier.vn"
+                      className={`h-11 w-full rounded-lg border bg-black/60 pl-10 pr-3.5 text-xs text-white outline-none transition placeholder:text-neutral-500 focus:border-amber-400 focus:ring-1 focus:ring-amber-400/40 ${
+                        staffEmailVerified
+                          ? 'border-emerald-500/50'
+                          : staffFormErrors.email
+                          ? 'border-rose-500'
+                          : 'border-white/[0.08]'
+                      }`}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSendStaffOtp}
+                    disabled={staffOtpLoading || staffOtpCountdown > 0}
+                    className="h-11 px-4 rounded-lg flex items-center justify-center gap-1.5 border border-amber-400/40 bg-amber-400/10 text-xs font-bold uppercase tracking-wider text-amber-300 transition hover:bg-amber-400 hover:text-black disabled:cursor-not-allowed disabled:opacity-50 shrink-0"
+                  >
+                    {staffOtpLoading ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Send className="h-3.5 w-3.5" />
+                    )}
+                    <span>
+                      {staffOtpCountdown > 0
+                        ? `${staffOtpCountdown}s`
+                        : staffEmailVerified
+                        ? 'Gửi lại'
+                        : 'Gửi mã OTP'}
+                    </span>
+                  </button>
+                </div>
+
+                {/* OTP Verification Box */}
+                {staffOtpSent && !staffEmailVerified && (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-950/20 p-3.5 space-y-2.5">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-amber-300 font-medium">Nhập mã OTP đã gửi về email:</span>
+                      {staffOtpNotice && <span className="font-mono text-[9px] text-amber-200">{staffOtpNotice}</span>}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        maxLength={6}
+                        value={staffOtpInput}
+                        onChange={(e) => setStaffOtpInput(e.target.value.replace(/\D/g, ''))}
+                        placeholder="6 số OTP"
+                        className="h-10 w-full flex-1 rounded-lg border border-amber-500/40 bg-black text-center font-mono text-sm font-bold tracking-[0.35em] text-amber-300 outline-none focus:border-amber-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleVerifyStaffOtp}
+                        disabled={staffOtpVerifying || !staffOtpInput.trim()}
+                        className="h-10 px-4 rounded-lg bg-amber-400 hover:bg-amber-300 text-black font-bold text-xs uppercase tracking-wider transition disabled:opacity-50 whitespace-nowrap"
+                      >
+                        {staffOtpVerifying ? 'Đang kiểm tra...' : 'Xác thực OTP'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {staffFormErrors.email && (
+                  <span className="block text-[10px] font-medium text-rose-400">{staffFormErrors.email}</span>
+                )}
+                {!staffFormErrors.email && staffOtpNotice && staffEmailVerified && (
+                  <span className="block text-[10px] font-medium text-emerald-400">{staffOtpNotice}</span>
+                )}
+              </div>
+
+              {/* Mật khẩu cấp ban đầu */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-300 font-bold">
+                    Mật khẩu cấp ban đầu <span className="text-amber-400">*</span>
+                  </label>
+                  <span className="text-[9px] text-neutral-400 font-mono">Bảo mật cao</span>
+                </div>
+
+                <div className="relative">
+                  <KeyRound className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+                  <input
+                    type={showStaffPassword ? 'text' : 'password'}
+                    value={staffForm.password}
+                    onChange={(e) => updateStaffForm('password', e.target.value)}
+                    placeholder="Hoa, thường, số, đặc biệt"
+                    className={`h-11 w-full rounded-lg border bg-black/60 pl-10 pr-10 text-xs text-white outline-none transition placeholder:text-neutral-500 focus:border-amber-400 focus:ring-1 focus:ring-amber-400/40 ${
+                      staffFormErrors.password ? 'border-rose-500' : 'border-white/[0.08]'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowStaffPassword((prev) => !prev)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 transition hover:text-white"
+                  >
+                    {showStaffPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+
+                <PasswordRequirements password={staffForm.password} />
+
+                {staffFormErrors.password && (
+                  <span className="block text-[10px] font-medium text-rose-400">{staffFormErrors.password}</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Section 3: Phân công cụm rạp */}
+          <div className="space-y-3 border-t border-white/[0.06] pt-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[10px] font-mono font-black uppercase tracking-widest text-amber-400">
+                <Building2 className="h-3.5 w-3.5" />
+                <span>3. Phân công cụm rạp làm việc</span>
+              </div>
+              {isCinemasLoading && (
+                <span className="text-[10px] text-neutral-400 flex items-center gap-1 font-mono">
+                  <RefreshCw className="h-3 w-3 animate-spin" /> Đang tải danh sách rạp...
+                </span>
+              )}
+            </div>
+
+            {isEffectiveAdmin ? (
+              <div className="space-y-2">
+                <p className="text-xs text-neutral-300">
+                  Chọn cụm rạp mà nhân viên soát vé này sẽ trực thuộc và quét vé:
+                </p>
+                {cinemas.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
+                    {cinemas.map((cinema) => {
+                      const isSelected = String(staffForm.cinemaId) === String(cinema.id);
+                      return (
+                        <label
+                          key={cinema.id}
+                          className={`relative flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-all ${
+                            isSelected
+                              ? 'border-amber-400 bg-amber-950/40 text-white shadow-[0_0_15px_rgba(245,158,11,0.15)] ring-1 ring-amber-400/50'
+                              : 'border-white/[0.08] bg-black/50 text-neutral-300 hover:border-white/20 hover:bg-white/[0.02]'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="staffCinema"
+                            value={cinema.id}
+                            checked={isSelected}
+                            onChange={(e) => updateStaffForm('cinemaId', e.target.value)}
+                            className="mt-0.5 accent-amber-400"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 font-bold text-xs text-white">
+                              <Building2 className={`h-3.5 w-3.5 shrink-0 ${isSelected ? 'text-amber-400' : 'text-neutral-400'}`} />
+                              <span className="truncate">{cinema.name || `Rạp #${cinema.id}`}</span>
+                            </div>
+                            {cinema.city && (
+                              <p className="mt-0.5 text-[10px] text-neutral-400 truncate flex items-center gap-1">
+                                <MapPin className="h-3 w-3 shrink-0" /> {cinema.city}
+                              </p>
+                            )}
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-neutral-400">Chưa có dữ liệu cụm rạp trong hệ thống.</p>
+                )}
+                {staffFormErrors.cinemaId && (
+                  <span className="block text-[10px] font-medium text-rose-400">{staffFormErrors.cinemaId}</span>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-3.5 rounded-lg border border-amber-500/30 bg-amber-950/20 p-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-400">
+                  <Building2 className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-amber-400 font-bold">
+                    Phân công tự động theo chi nhánh quản lý
+                  </div>
+                  <div className="text-sm font-bold text-white mt-0.5">
+                    {cinemaMap[currentUser?.cinemaId] || `Rạp #${currentUser?.cinemaId}`}
+                  </div>
+                  <p className="text-[10px] text-neutral-400 mt-0.5">
+                    Tài khoản nhân viên sau khi cấp sẽ thuộc quyền quản lý trực tiếp của cụm rạp này.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Form Submit Error */}
+          {staffFormErrors.submit && (
+            <div className="flex items-center gap-2.5 rounded-lg border border-rose-500/40 bg-rose-950/40 p-3.5 text-xs font-semibold text-rose-300">
+              <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
+              <span>{staffFormErrors.submit}</span>
+            </div>
+          )}
+
+          {/* Section 4: Action Footer */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-white/[0.08] pt-5">
+            <div className="text-[11px] text-neutral-400">
+              Các mục đánh dấu <span className="text-amber-400">*</span> là bắt buộc. Mật khẩu và OTP sẽ được mã hóa an toàn.
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsStaffFormOpen(false)}
+                className="rounded-lg border border-white/10 px-4 py-2.5 text-xs font-semibold text-neutral-300 transition hover:bg-white/5"
+              >
+                Hủy bỏ
+              </button>
+
+              <button
+                type="submit"
+                disabled={isStaffCreating}
+                className="flex items-center gap-2 rounded-lg bg-amber-400 px-6 py-2.5 text-xs font-black uppercase tracking-wider text-black transition hover:bg-amber-300 shadow-lg shadow-amber-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isStaffCreating ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <UserPlus className="h-4 w-4" />
+                )}
+                <span>{isStaffCreating ? 'Đang cấp tài khoản...' : 'Tạo tài khoản STAFF'}</span>
+              </button>
+            </div>
           </div>
         </motion.form>
       )}
 
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
-        <div className="xl:col-span-7 border border-white/[0.05] bg-neutral-950 overflow-hidden">
-          <div className="flex flex-col gap-3 border-b border-white/[0.05] bg-black p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-white">
-              <Users className="h-4 w-4 text-amber-400" />
-              Danh sách tài khoản
+      {/* Form Cấp MANAGER (Chỉ ADMIN) */}
+      {isManagerFormOpen && isEffectiveAdmin && viewCategory === 'staff' && (
+        <motion.form
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2 }}
+          onSubmit={submitManagerForm}
+          className="rounded-xl border border-sky-500/30 bg-gradient-to-b from-[#091119] via-[#05090e] to-[#030507] p-5 sm:p-6 shadow-2xl shadow-sky-500/5 space-y-6"
+        >
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-sky-500/20 pb-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-sky-500/40 bg-sky-500/10 text-sky-400">
+                <Shield className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-black uppercase tracking-wider text-sky-300">
+                    Cấp tài khoản MANAGER (Quản lý cụm rạp)
+                  </h3>
+                  <span className="rounded border border-sky-500/30 bg-sky-500/10 px-2 py-0.5 text-[9px] font-mono font-bold uppercase text-sky-300">
+                    ROLE_MANAGER
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-neutral-300">
+                  Tài khoản Quản lý chỉ được phân công đúng <strong>1 cụm rạp</strong> và chỉ có quyền quản trị dữ liệu thuộc cụm rạp đó.
+                </p>
+              </div>
             </div>
-            <div className="relative w-full sm:max-w-xs">
-              <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-neutral-200" />
-              <input
-                value={userSearch}
-                onChange={(e) => setUserSearch(e.target.value)}
-                placeholder="Tìm email, tên, SĐT..."
-                className="w-full border border-white/[0.06] bg-[#050505] py-2 pl-9 pr-3 text-xs text-white outline-none transition placeholder:text-neutral-200 focus:border-amber-400"
-              />
+
+            <button
+              type="button"
+              onClick={() => setIsManagerFormOpen(false)}
+              className="self-start sm:self-center flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-neutral-300 hover:text-white hover:border-white/20 transition"
+            >
+              <X className="h-4 w-4" />
+              <span>Đóng form</span>
+            </button>
+          </div>
+
+          {/* Section 1: Thông tin cá nhân */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-[10px] font-mono font-black uppercase tracking-widest text-sky-400">
+              <User className="h-3.5 w-3.5" />
+              <span>1. Thông tin cá nhân</span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Họ và tên */}
+              <div>
+                <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-300 font-bold mb-1.5">
+                  Họ và tên <span className="text-sky-400">*</span>
+                </label>
+                <div className="relative">
+                  <User className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+                  <input
+                    type="text"
+                    value={managerForm.fullName}
+                    onChange={(e) => updateManagerForm('fullName', e.target.value)}
+                    placeholder="Ví dụ: Trần Quản Lý"
+                    className={`h-11 w-full rounded-lg border bg-black/60 pl-10 pr-3.5 text-xs text-white outline-none transition placeholder:text-neutral-500 focus:border-sky-400 focus:ring-1 focus:ring-sky-400/40 ${
+                      managerFormErrors.fullName ? 'border-rose-500' : 'border-white/[0.08]'
+                    }`}
+                  />
+                </div>
+                {managerFormErrors.fullName && (
+                  <span className="mt-1 block text-[10px] font-medium text-rose-400">{managerFormErrors.fullName}</span>
+                )}
+              </div>
+
+              {/* Số điện thoại */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-300 font-bold">
+                    Số điện thoại
+                  </label>
+                  <span className="text-[9px] text-neutral-400 font-mono">Tùy chọn</span>
+                </div>
+                <div className="relative">
+                  <Phone className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+                  <input
+                    type="tel"
+                    value={managerForm.phone}
+                    onChange={(e) => updateManagerForm('phone', e.target.value)}
+                    placeholder="Ví dụ: 0912345678"
+                    className={`h-11 w-full rounded-lg border bg-black/60 pl-10 pr-3.5 text-xs text-white outline-none transition placeholder:text-neutral-500 focus:border-sky-400 focus:ring-1 focus:ring-sky-400/40 ${
+                      managerFormErrors.phone ? 'border-rose-500' : 'border-white/[0.08]'
+                    }`}
+                  />
+                </div>
+                {managerFormErrors.phone && (
+                  <span className="mt-1 block text-[10px] font-medium text-rose-400">{managerFormErrors.phone}</span>
+                )}
+              </div>
+
+              {/* Năm sinh (>= 18 tuổi) */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-300 font-bold">
+                    Năm sinh (từ 18 tuổi) <span className="text-sky-400">*</span>
+                  </label>
+                  {managerForm.birthYear && validateBirthYear18Plus(managerForm.birthYear).isValid && (
+                    <span className="text-[9px] font-bold text-emerald-400">
+                      ✓ {new Date().getFullYear() - Number(managerForm.birthYear)} tuổi (Đủ 18+)
+                    </span>
+                  )}
+                </div>
+                <div className="relative">
+                  <Calendar className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+                  <input
+                    type="number"
+                    value={managerForm.birthYear}
+                    onChange={(e) => updateManagerForm('birthYear', e.target.value)}
+                    placeholder="VD: 1990"
+                    min={new Date().getFullYear() - 100}
+                    max={new Date().getFullYear() - 18}
+                    className={`h-11 w-full rounded-lg border bg-black/60 pl-10 pr-3.5 text-xs text-white outline-none transition placeholder:text-neutral-500 focus:border-sky-400 focus:ring-1 focus:ring-sky-400/40 ${
+                      managerFormErrors.birthYear ? 'border-rose-500' : 'border-white/[0.08]'
+                    }`}
+                  />
+                </div>
+                {managerFormErrors.birthYear ? (
+                  <span className="mt-1 block text-[10px] font-medium text-rose-400">{managerFormErrors.birthYear}</span>
+                ) : !managerForm.birthYear ? (
+                  <span className="mt-1 block text-[9px] text-neutral-400">
+                    Tối thiểu 18 tuổi (sinh năm {new Date().getFullYear() - 18} trở về trước)
+                  </span>
+                ) : null}
+              </div>
             </div>
           </div>
 
-          <div className="divide-y divide-white/[0.03]">
-            <div className="hidden grid-cols-[42px_minmax(0,1.6fr)_minmax(86px,0.75fr)_minmax(74px,0.65fr)_minmax(118px,0.85fr)_48px] gap-2 bg-[#050505] px-3 py-3 text-[8px] uppercase tracking-widest text-neutral-300 lg:grid">
-              <span>ID</span>
-              <span>Người dùng</span>
-              <span>Liên hệ</span>
-              <span>Vai trò</span>
-              <span>Trạng thái</span>
-              <span className="text-right">Xem</span>
+          {/* Section 2: Tài khoản & Bảo mật */}
+          <div className="space-y-3 border-t border-white/[0.06] pt-5">
+            <div className="flex items-center gap-2 text-[10px] font-mono font-black uppercase tracking-widest text-sky-400">
+              <Lock className="h-3.5 w-3.5" />
+              <span>2. Tài khoản & Bảo mật</span>
             </div>
 
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+              {/* Email & OTP */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-300 font-bold">
+                    Email đăng nhập <span className="text-sky-400">*</span>
+                  </label>
+                  {managerEmailVerified && (
+                    <span className="inline-flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-950/60 px-2 py-0.5 text-[9px] font-bold text-emerald-300">
+                      <Check className="h-3 w-3 text-emerald-400" /> Đã xác thực OTP
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+                    <input
+                      type="email"
+                      value={managerForm.email}
+                      onChange={(e) => updateManagerForm('email', e.target.value)}
+                      placeholder="manager@cinepremier.vn"
+                      className={`h-11 w-full rounded-lg border bg-black/60 pl-10 pr-3.5 text-xs text-white outline-none transition placeholder:text-neutral-500 focus:border-sky-400 focus:ring-1 focus:ring-sky-400/40 ${
+                        managerEmailVerified
+                          ? 'border-emerald-500/50'
+                          : managerFormErrors.email
+                          ? 'border-rose-500'
+                          : 'border-white/[0.08]'
+                      }`}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSendManagerOtp}
+                    disabled={managerOtpLoading || managerOtpCountdown > 0}
+                    className="h-11 px-4 rounded-lg flex items-center justify-center gap-1.5 border border-sky-400/40 bg-sky-400/10 text-xs font-bold uppercase tracking-wider text-sky-300 transition hover:bg-sky-400 hover:text-black disabled:cursor-not-allowed disabled:opacity-50 shrink-0"
+                  >
+                    {managerOtpLoading ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Send className="h-3.5 w-3.5" />
+                    )}
+                    <span>
+                      {managerOtpCountdown > 0
+                        ? `${managerOtpCountdown}s`
+                        : managerEmailVerified
+                        ? 'Gửi lại'
+                        : 'Gửi mã OTP'}
+                    </span>
+                  </button>
+                </div>
+
+                {/* OTP Verification Box */}
+                {managerOtpSent && !managerEmailVerified && (
+                  <div className="rounded-lg border border-sky-500/30 bg-sky-950/20 p-3.5 space-y-2.5">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-sky-300 font-medium">Nhập mã OTP đã gửi về email:</span>
+                      {managerOtpNotice && <span className="font-mono text-[9px] text-sky-200">{managerOtpNotice}</span>}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        maxLength={6}
+                        value={managerOtpInput}
+                        onChange={(e) => setManagerOtpInput(e.target.value.replace(/\D/g, ''))}
+                        placeholder="6 số OTP"
+                        className="h-10 w-full flex-1 rounded-lg border border-sky-500/40 bg-black text-center font-mono text-sm font-bold tracking-[0.35em] text-sky-300 outline-none focus:border-sky-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleVerifyManagerOtp}
+                        disabled={managerOtpVerifying || !managerOtpInput.trim()}
+                        className="h-10 px-4 rounded-lg bg-sky-400 hover:bg-sky-300 text-black font-bold text-xs uppercase tracking-wider transition disabled:opacity-50 whitespace-nowrap"
+                      >
+                        {managerOtpVerifying ? 'Đang kiểm tra...' : 'Xác thực OTP'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {managerFormErrors.email && (
+                  <span className="block text-[10px] font-medium text-rose-400">{managerFormErrors.email}</span>
+                )}
+                {!managerFormErrors.email && managerOtpNotice && managerEmailVerified && (
+                  <span className="block text-[10px] font-medium text-emerald-400">{managerOtpNotice}</span>
+                )}
+              </div>
+
+              {/* Mật khẩu cấp ban đầu */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-[10px] font-mono uppercase tracking-wider text-neutral-300 font-bold">
+                    Mật khẩu cấp ban đầu <span className="text-sky-400">*</span>
+                  </label>
+                  <span className="text-[9px] text-neutral-400 font-mono">Bảo mật cao</span>
+                </div>
+
+                <div className="relative">
+                  <KeyRound className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-neutral-400" />
+                  <input
+                    type={showManagerPassword ? 'text' : 'password'}
+                    value={managerForm.password}
+                    onChange={(e) => updateManagerForm('password', e.target.value)}
+                    placeholder="Hoa, thường, số, đặc biệt"
+                    className={`h-11 w-full rounded-lg border bg-black/60 pl-10 pr-10 text-xs text-white outline-none transition placeholder:text-neutral-500 focus:border-sky-400 focus:ring-1 focus:ring-sky-400/40 ${
+                      managerFormErrors.password ? 'border-rose-500' : 'border-white/[0.08]'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowManagerPassword((prev) => !prev)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 transition hover:text-white"
+                  >
+                    {showManagerPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+
+                <PasswordRequirements password={managerForm.password} />
+
+                {managerFormErrors.password && (
+                  <span className="block text-[10px] font-medium text-rose-400">{managerFormErrors.password}</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Section 3: Phân công cụm rạp quản lý */}
+          <div className="space-y-3 border-t border-white/[0.06] pt-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[10px] font-mono font-black uppercase tracking-widest text-sky-400">
+                <Building2 className="h-3.5 w-3.5" />
+                <span>3. Rạp được phân công quản lý (Chỉ 1 rạp) *</span>
+              </div>
+              {isCinemasLoading && (
+                <span className="text-[10px] text-neutral-400 flex items-center gap-1 font-mono">
+                  <RefreshCw className="h-3 w-3 animate-spin" /> Đang tải danh sách rạp...
+                </span>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs text-neutral-300">
+                Chọn cụm rạp mà Quản lý này sẽ chịu trách nhiệm vận hành:
+              </p>
+              {cinemas.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
+                  {cinemas.map((cinema) => {
+                    const isSelected = String(managerForm.cinemaId) === String(cinema.id);
+                    return (
+                      <label
+                        key={cinema.id}
+                        className={`relative flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-all ${
+                          isSelected
+                            ? 'border-sky-400 bg-sky-950/40 text-white shadow-[0_0_15px_rgba(56,189,248,0.15)] ring-1 ring-sky-400/50'
+                            : 'border-white/[0.08] bg-black/50 text-neutral-300 hover:border-white/20 hover:bg-white/[0.02]'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="managerCinema"
+                          value={cinema.id}
+                          checked={isSelected}
+                          onChange={(e) => updateManagerForm('cinemaId', e.target.value)}
+                          className="mt-0.5 accent-sky-400"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 font-bold text-xs text-white">
+                            <Building2 className={`h-3.5 w-3.5 shrink-0 ${isSelected ? 'text-sky-400' : 'text-neutral-400'}`} />
+                            <span className="truncate">{cinema.name || `Rạp #${cinema.id}`}</span>
+                          </div>
+                          {cinema.city && (
+                            <p className="mt-0.5 text-[10px] text-neutral-400 truncate flex items-center gap-1">
+                              <MapPin className="h-3 w-3 shrink-0" /> {cinema.city}
+                            </p>
+                          )}
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="text-xs text-neutral-400">Chưa có dữ liệu cụm rạp để phân công. Vui lòng tạo cụm rạp trước.</p>
+              )}
+              {managerFormErrors.cinemaId && (
+                <span className="block text-[10px] font-medium text-rose-400">{managerFormErrors.cinemaId}</span>
+              )}
+            </div>
+          </div>
+
+          {/* Form Submit Error */}
+          {managerFormErrors.submit && (
+            <div className="flex items-center gap-2.5 rounded-lg border border-rose-500/40 bg-rose-950/40 p-3.5 text-xs font-semibold text-rose-300">
+              <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
+              <span>{managerFormErrors.submit}</span>
+            </div>
+          )}
+
+          {/* Section 4: Action Footer */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-white/[0.08] pt-5">
+            <div className="text-[11px] text-neutral-400">
+              Các mục đánh dấu <span className="text-sky-400">*</span> là bắt buộc. Mật khẩu và OTP sẽ được mã hóa an toàn.
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsManagerFormOpen(false)}
+                className="rounded-lg border border-white/10 px-4 py-2.5 text-xs font-semibold text-neutral-300 transition hover:bg-white/5"
+              >
+                Hủy bỏ
+              </button>
+
+              <button
+                type="submit"
+                disabled={isManagerCreating || isCinemasLoading || !cinemas.length}
+                className="flex items-center gap-2 rounded-lg bg-sky-400 px-6 py-2.5 text-xs font-black uppercase tracking-wider text-black transition hover:bg-sky-300 shadow-lg shadow-sky-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isManagerCreating ? (
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Shield className="h-4 w-4" />
+                )}
+                <span>{isManagerCreating ? 'Đang cấp tài khoản...' : 'Tạo tài khoản MANAGER'}</span>
+              </button>
+            </div>
+          </div>
+        </motion.form>
+      )}
+
+      {/* 4. SUB-FILTERS & SEARCH BAR */}
+      <div className="flex flex-col gap-3 rounded-xl border border-white/[0.06] bg-[#070707] p-4 lg:flex-row lg:items-center lg:justify-between shadow-lg shadow-black/20">
+        {/* Category-specific quick filters */}
+        {isEffectiveManager || viewCategory === 'staff' ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setStaffFilter('ALL')}
+              className={`rounded-lg px-3 py-1.5 text-[10px] font-mono font-black uppercase tracking-wider transition border ${
+                staffFilter === 'ALL'
+                  ? 'border-amber-400 bg-amber-500 text-black'
+                  : 'border-white/[0.08] bg-black/60 text-neutral-300 hover:border-amber-400/60'
+              }`}
+            >
+              Tất cả nhân sự ({staffCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStaffFilter('STAFF')}
+              className={`rounded-lg px-3 py-1.5 text-[10px] font-mono font-black uppercase tracking-wider transition border ${
+                staffFilter === 'STAFF'
+                  ? 'border-amber-400 bg-amber-500/20 text-amber-300'
+                  : 'border-white/[0.08] bg-black/60 text-neutral-300 hover:border-amber-400/60'
+              }`}
+            >
+              🎫 Staff rạp ({staffCinemaCount})
+            </button>
+            {isEffectiveAdmin && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setStaffFilter('MANAGER')}
+                  className={`rounded-lg px-3 py-1.5 text-[10px] font-mono font-black uppercase tracking-wider transition border ${
+                    staffFilter === 'MANAGER'
+                      ? 'border-sky-400 bg-sky-500/20 text-sky-300'
+                      : 'border-white/[0.08] bg-black/60 text-neutral-300 hover:border-sky-400/60'
+                  }`}
+                >
+                  🏢 Quản lý ({managerCount})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStaffFilter('ADMIN')}
+                  className={`rounded-lg px-3 py-1.5 text-[10px] font-mono font-black uppercase tracking-wider transition border ${
+                    staffFilter === 'ADMIN'
+                      ? 'border-rose-400 bg-rose-500/20 text-rose-300'
+                      : 'border-white/[0.08] bg-black/60 text-neutral-300 hover:border-rose-400/60'
+                  }`}
+                >
+                  👑 Admin ({adminCount})
+                </button>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setCustomerFilter('ALL')}
+              className={`rounded-lg px-3 py-1.5 text-[10px] font-mono font-black uppercase tracking-wider transition border ${
+                customerFilter === 'ALL'
+                  ? 'border-emerald-400 bg-emerald-500 text-black'
+                  : 'border-white/[0.08] bg-black/60 text-neutral-300 hover:border-emerald-400/60'
+              }`}
+            >
+              Tất cả khách hàng ({customerCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setCustomerFilter('ACTIVE')}
+              className={`rounded-lg px-3 py-1.5 text-[10px] font-mono font-black uppercase tracking-wider transition border ${
+                customerFilter === 'ACTIVE'
+                  ? 'border-emerald-400 bg-emerald-500/20 text-emerald-300'
+                  : 'border-white/[0.08] bg-black/60 text-neutral-300 hover:border-emerald-400/60'
+              }`}
+            >
+              🟢 Hoạt động ({activeCustomerCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setCustomerFilter('DISABLED')}
+              className={`rounded-lg px-3 py-1.5 text-[10px] font-mono font-black uppercase tracking-wider transition border ${
+                customerFilter === 'DISABLED'
+                  ? 'border-rose-400 bg-rose-500/20 text-rose-300'
+                  : 'border-white/[0.08] bg-black/60 text-neutral-300 hover:border-rose-400/60'
+              }`}
+            >
+              🔒 Đã khóa ({disabledCustomerCount})
+            </button>
+          </div>
+        )}
+
+        <div className="relative w-full lg:max-w-xs">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-neutral-400" />
+          <input
+            value={userSearch}
+            onChange={(e) => setUserSearch(e.target.value)}
+            placeholder={isEffectiveManager || viewCategory === 'staff' ? (isEffectiveAdmin ? 'Tìm tên, email, rạp, vai trò...' : 'Tìm tên nhân viên, email, mã NV...') : 'Tìm tên khách, email, SĐT...'}
+            className="h-10 w-full rounded-lg border border-white/[0.08] bg-black/80 pl-9 pr-3 text-xs text-white outline-none transition placeholder:text-neutral-500 focus:border-amber-400"
+          />
+        </div>
+      </div>
+
+      {/* 5. MAIN GRID: TABLE & DETAIL PANEL */}
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+        {/* Left Column: Users / Staff Table */}
+        <div className="xl:col-span-7 rounded-xl border border-white/[0.06] bg-neutral-950 overflow-hidden shadow-lg shadow-black/30">
+          <div className="flex items-center justify-between border-b border-white/[0.05] bg-black px-4 py-3">
+            <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-white">
+              {isEffectiveManager || viewCategory === 'staff' ? (
+                <>
+                  <Shield className="h-4 w-4 text-amber-400" />
+                  <span>{isEffectiveAdmin ? 'Danh sách nhân sự hệ thống' : 'Danh sách nhân sự'} ({filteredUsers.length})</span>
+                </>
+              ) : (
+                <>
+                  <Users className="h-4 w-4 text-emerald-400" />
+                  <span>Danh sách người dùng / khách hàng ({filteredUsers.length})</span>
+                </>
+              )}
+            </div>
+            <span className="font-mono text-[10px] text-neutral-400">
+              {filteredUsers.length} tài khoản
+            </span>
+          </div>
+
+          <div className="divide-y divide-white/[0.03]">
+            {isEffectiveManager || viewCategory === 'staff' ? (
+              <div className="hidden grid-cols-[36px_minmax(0,1.5fr)_minmax(80px,0.8fr)_minmax(85px,0.9fr)_minmax(80px,0.8fr)_minmax(80px,0.8fr)_36px] gap-2 bg-[#050505] px-3 py-3 text-[8px] uppercase tracking-widest text-neutral-400 lg:grid">
+                <span>ID</span>
+                <span>Nhân sự</span>
+                <span>Vai trò</span>
+                <span>Rạp phân công</span>
+                <span>Liên hệ</span>
+                <span>Trạng thái</span>
+                <span className="text-right">Xem</span>
+              </div>
+            ) : (
+              <div className="hidden grid-cols-[36px_minmax(0,1.8fr)_minmax(90px,0.9fr)_minmax(60px,0.6fr)_minmax(85px,0.8fr)_minmax(80px,0.8fr)_36px] gap-2 bg-[#050505] px-3 py-3 text-[8px] uppercase tracking-widest text-neutral-400 lg:grid">
+                <span>ID</span>
+                <span>Khách hàng</span>
+                <span>Điện thoại</span>
+                <span>Năm sinh</span>
+                <span>Xác minh</span>
+                <span>Trạng thái</span>
+                <span className="text-right">Xem</span>
+              </div>
+            )}
+
             {isUsersLoading ? (
-              <div className="px-4 py-10 text-center font-mono text-[10px] uppercase tracking-widest text-neutral-300">
-                Đang tải danh sách người dùng...
+              <div className="px-4 py-12 text-center font-mono text-[10px] uppercase tracking-widest text-neutral-400">
+                Đang tải dữ liệu tài khoản...
               </div>
             ) : filteredUsers.length > 0 ? (
               filteredUsers.map((user) => {
                 const statusMeta = getStatusMeta(user.status);
                 const StatusIcon = statusMeta.icon;
+                const roleBadge = getRoleBadge(user.roles);
                 const isSelected = String(selectedAdminUser?.id) === String(user.id);
+                const assignedCinemaName = user.cinemaId ? (cinemaMap[user.cinemaId] || `Rạp #${user.cinemaId}`) : (
+                  user.roles?.includes('ADMIN') ? 'Toàn hệ thống' : '—'
+                );
 
+                if (isEffectiveManager || viewCategory === 'staff') {
+                  return (
+                    <div
+                      key={user.id}
+                      onClick={() => handleSelectAdminUser(user)}
+                      className={`grid cursor-pointer grid-cols-1 gap-2 px-3 py-3 transition hover:bg-white/[0.02] lg:grid-cols-[36px_minmax(0,1.5fr)_minmax(80px,0.8fr)_minmax(85px,0.9fr)_minmax(80px,0.8fr)_minmax(80px,0.8fr)_36px] lg:items-center ${
+                        isSelected ? 'border-l-2 border-amber-400 bg-white/[0.03]' : ''
+                      }`}
+                    >
+                      <div className="font-mono text-[10px] text-neutral-400">#{user.id}</div>
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-bold text-white">{user.fullName || 'Chưa đặt tên'}</div>
+                        <div className="truncate text-[10px] text-neutral-400">{user.email}</div>
+                      </div>
+                      <div>
+                        <span className={`inline-block border px-2 py-0.5 text-[8px] font-black uppercase tracking-wider ${roleBadge.color}`}>
+                          {roleBadge.label}
+                        </span>
+                      </div>
+                      <div className="truncate text-[10px] text-sky-300 font-mono">
+                        {assignedCinemaName}
+                      </div>
+                      <div className="truncate text-[10px] text-neutral-400">
+                        {user.phone || '—'}
+                      </div>
+                      <div>
+                        <span className={`inline-flex items-center gap-1 border px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider ${statusMeta.className}`}>
+                          <StatusIcon className="h-3 w-3" />
+                          {user.status || 'ACTIVE'}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] text-amber-400 font-mono">→</span>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Render for Customer (Khách hàng)
                 return (
                   <div
                     key={user.id}
-                    className={`grid grid-cols-1 gap-3 px-3 py-3 text-xs transition lg:grid-cols-[42px_minmax(0,1.6fr)_minmax(86px,0.75fr)_minmax(74px,0.65fr)_minmax(118px,0.85fr)_48px] lg:items-center ${isSelected ? 'bg-amber-500/5' : 'hover:bg-white/[0.02]'}`}
+                    onClick={() => handleSelectAdminUser(user)}
+                    className={`grid cursor-pointer grid-cols-1 gap-2 px-3 py-3 transition hover:bg-white/[0.02] lg:grid-cols-[36px_minmax(0,1.8fr)_minmax(90px,0.9fr)_minmax(60px,0.6fr)_minmax(85px,0.8fr)_minmax(80px,0.8fr)_36px] lg:items-center ${
+                      isSelected ? 'border-l-2 border-emerald-400 bg-white/[0.03]' : ''
+                    }`}
                   >
-                    <div className="font-mono text-neutral-300">#{user.id}</div>
-
+                    <div className="font-mono text-[10px] text-neutral-400">#{user.id}</div>
                     <div className="min-w-0">
-                      <div className="truncate font-black text-white">
-                        {user.fullName || 'Chưa cập nhật tên'}
-                      </div>
-                      <div className="truncate text-[10px] text-neutral-300">{user.email}</div>
+                      <div className="truncate text-xs font-bold text-white">{user.fullName || 'Khách hàng'}</div>
+                      <div className="truncate text-[10px] text-neutral-400">{user.email}</div>
                     </div>
-
-                    <div className="min-w-0 text-neutral-200">
-                      <span className="lg:hidden text-[8px] uppercase tracking-widest text-neutral-200">
-                        Liên hệ:{' '}
-                      </span>
-                      <span className="break-words">{user.phone || 'Chưa có SĐT'}</span>
+                    <div className="truncate text-[10px] text-neutral-300 font-mono">
+                      {user.phone || '—'}
                     </div>
-
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap gap-1">
-                        {(user.roles || []).map((role) => (
-                          <span
-                            key={role}
-                            className="border border-white/[0.06] bg-black px-1.5 py-0.5 text-[8px] font-bold uppercase text-neutral-300"
-                          >
-                            {role}
-                          </span>
-                        ))}
-                      </div>
+                    <div className="text-[10px] text-neutral-400 font-mono">
+                      {user.birthYear || '—'}
                     </div>
-
-                    <div className="min-w-0">
-                      <span className={`inline-flex max-w-full items-center gap-1.5 border px-2 py-1 text-[8px] font-black uppercase ${statusMeta.className}`}>
-                        <StatusIcon className="h-3 w-3 shrink-0" />
-                        <span className="truncate">{statusMeta.label}</span>
+                    <div>
+                      <span className={`inline-block border px-1.5 py-0.5 text-[8px] font-mono uppercase tracking-wider ${
+                        user.emailVerified ? 'border-emerald-500/40 text-emerald-300 bg-emerald-500/10' : 'border-neutral-700 text-neutral-500'
+                      }`}>
+                        {user.emailVerified ? '✓ Email' : 'Chưa xác thực'}
                       </span>
                     </div>
-
-                    <div className="lg:text-right">
-                      <button
-                        type="button"
-                        onClick={() => handleSelectAdminUser(user.id)}
-                        className="border border-white/[0.06] px-2.5 py-1.5 text-[9px] font-bold uppercase text-neutral-300 transition hover:border-white hover:text-white"
-                      >
-                        Xem
-                      </button>
+                    <div>
+                      <span className={`inline-flex items-center gap-1 border px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider ${statusMeta.className}`}>
+                        <StatusIcon className="h-3 w-3" />
+                        {user.status || 'ACTIVE'}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-[10px] text-emerald-400 font-mono">→</span>
                     </div>
                   </div>
                 );
               })
             ) : (
-              <div className="px-4 py-10 text-center font-mono text-[10px] uppercase tracking-widest text-neutral-300">
-                Không tìm thấy người dùng phù hợp
+              <div className="px-4 py-12 text-center font-mono text-[10px] uppercase tracking-widest text-neutral-400">
+                {viewCategory === 'staff' ? 'Không tìm thấy nhân sự nào phù hợp.' : 'Không tìm thấy khách hàng nào phù hợp.'}
               </div>
             )}
           </div>
         </div>
 
-        <div className="xl:col-span-5 border border-white/[0.05] bg-[#070707] p-5">
+        {/* Right Column: User Detail & Actions */}
+        <div className="xl:col-span-5 rounded-xl border border-white/[0.06] bg-neutral-950 p-5 shadow-lg shadow-black/30">
           {selectedAdminUser ? (
             <div className="space-y-5">
-              <div className="flex items-start justify-between gap-3 border-b border-white/[0.05] pb-4">
-                <div className="min-w-0">
-                  <span className="text-[9px] font-mono uppercase tracking-widest text-neutral-300">
-                    Hồ sơ người dùng
-                  </span>
-                  <h3 className="mt-1 break-words text-sm font-black text-white">
-                    {selectedAdminUser.fullName || selectedAdminUser.email}
-                  </h3>
-                  <p className="text-[10px] font-mono text-neutral-300">ID #{selectedAdminUser.id}</p>
-                </div>
-                <span className={`inline-flex shrink-0 items-center gap-1.5 border px-2.5 py-1.5 text-[9px] font-black uppercase ${selectedStatus.className}`}>
-                  <SelectedStatusIcon className="h-3.5 w-3.5" />
-                  {selectedStatus.label}
+              <div className="border-b border-white/[0.05] pb-4">
+                <span className="text-[8px] font-mono font-black uppercase tracking-widest text-neutral-400">
+                  {isEffectiveManager || viewCategory === 'staff' || isStaffMember(selectedAdminUser) ? (isEffectiveAdmin ? 'CHI TIẾT NHÂN SỰ #' : 'CHI TIẾT NHÂN VIÊN #') : 'CHI TIẾT KHÁCH HÀNG #'}{selectedAdminUser.id}
                 </span>
+                <h3 className="mt-1 text-sm font-black uppercase tracking-wider text-white">
+                  {selectedAdminUser.fullName || (isStaffMember(selectedAdminUser) ? 'Chưa đặt tên' : 'Khách hàng')}
+                </h3>
+                <p className="text-xs text-neutral-400">{selectedAdminUser.email}</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className={`border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${getRoleBadge(selectedAdminUser.roles).color}`}>
+                    {getRoleBadge(selectedAdminUser.roles).label}
+                  </span>
+                  <span className={`inline-flex items-center gap-1 border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${selectedStatus.className}`}>
+                    <SelectedStatusIcon className="h-3 w-3" />
+                    {selectedAdminUser.status}
+                  </span>
+                </div>
               </div>
 
-              {isUserDetailLoading ? (
-                <div className="py-12 text-center font-mono text-[10px] uppercase tracking-widest text-neutral-300">
-                  Đang tải chi tiết...
-                </div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    <div className="border border-white/[0.05] bg-black p-3">
-                      <div className="flex items-center gap-2 text-[9px] uppercase text-neutral-300">
-                        <Mail className="h-3.5 w-3.5" /> Email
-                      </div>
-                      <div className="mt-1 break-all text-xs font-bold text-white">{selectedAdminUser.email}</div>
-                    </div>
-                    <div className="border border-white/[0.05] bg-black p-3">
-                      <div className="flex items-center gap-2 text-[9px] uppercase text-neutral-300">
-                        <Phone className="h-3.5 w-3.5" /> Số điện thoại
-                      </div>
-                      <div className="mt-1 break-words text-xs font-bold text-white">
-                        {selectedAdminUser.phone || 'Chưa cập nhật'}
-                      </div>
-                    </div>
-                    <div className="border border-white/[0.05] bg-black p-3">
-                      <div className="flex items-center gap-2 text-[9px] uppercase text-neutral-300">
-                        <BadgeCheck className="h-3.5 w-3.5" /> Xác minh
-                      </div>
-                      <div className="mt-1 text-xs font-bold leading-relaxed text-white">
-                        Email: {selectedAdminUser.emailVerified ? 'Đã xác minh' : 'Chưa xác minh'} / SĐT:{' '}
-                        {selectedAdminUser.phoneVerified ? 'Đã xác minh' : 'Chưa xác minh'}
-                      </div>
-                    </div>
-                    <div className="border border-white/[0.05] bg-black p-3">
-                      <div className="flex items-center gap-2 text-[9px] uppercase text-neutral-300">
-                        <Clock className="h-3.5 w-3.5" /> Cập nhật
-                      </div>
-                      <div className="mt-1 text-xs font-bold text-white">
-                        {formatDateTime(selectedAdminUser.updatedAt)}
-                      </div>
-                    </div>
+              {/* Thông tin Rạp phân công & Đổi rạp (Dành cho Staff / Manager) */}
+              {isStaffMember(selectedAdminUser) && (
+                <div className="border border-white/[0.05] bg-black p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest text-neutral-300">
+                    <Building2 className="h-3.5 w-3.5 text-sky-400" />
+                    Cụm rạp phân công
                   </div>
 
-                  {isSelectedStaff && (
-                    <form onSubmit={saveStaffProfile} className="border border-amber-500/20 bg-black p-4 space-y-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <div className="text-[10px] font-black uppercase tracking-widest text-amber-300">
-                            Staff profile
-                          </div>
-                          <p className="mt-1 text-[10px] text-neutral-300">
-                            Ma nhan vien, vi tri, trang thai va rap duy nhat cua STAFF.
-                          </p>
-                        </div>
-                        {isProfileLoading && <RefreshCw className="h-4 w-4 animate-spin text-amber-300" />}
-                      </div>
+                  <div className="text-xs font-bold text-white">
+                    {selectedAdminUser.cinemaId ? (
+                      <span className="text-sky-300">
+                        {cinemaMap[selectedAdminUser.cinemaId] || `Rạp #${selectedAdminUser.cinemaId}`}
+                      </span>
+                    ) : isSelectedAdmin ? (
+                      <span className="text-rose-300">Toàn bộ hệ thống (Admin)</span>
+                    ) : (
+                      <span className="text-neutral-500 italic">Chưa phân công cụm rạp nào</span>
+                    )}
+                  </div>
 
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <label className="space-y-1.5">
-                          <span className="text-[9px] font-black uppercase tracking-widest text-neutral-200">Ma nhan vien *</span>
-                          <input
-                            value={profileForm.employeeCode}
-                            onChange={(event) => updateProfileForm('employeeCode', event.target.value)}
-                            placeholder="EMP001"
-                            className="w-full border border-white/[0.06] bg-neutral-950 px-3 py-2.5 text-xs text-white outline-none transition placeholder:text-neutral-200 focus:border-amber-400"
-                          />
-                        </label>
-                        <label className="space-y-1.5">
-                          <span className="text-[9px] font-black uppercase tracking-widest text-neutral-200">Vi tri *</span>
-                          <input
-                            value={profileForm.position}
-                            onChange={(event) => updateProfileForm('position', event.target.value)}
-                            placeholder="Gate Staff"
-                            className="w-full border border-white/[0.06] bg-neutral-950 px-3 py-2.5 text-xs text-white outline-none transition placeholder:text-neutral-200 focus:border-amber-400"
-                          />
-                        </label>
+                  {/* Đổi rạp: Chỉ ADMIN có quyền đổi rạp cho Manager hoặc Staff */}
+                  {isEffectiveAdmin && (isSelectedManager || isSelectedStaff) && (
+                    <form onSubmit={handleReassignCinema} className="mt-3 border-t border-white/[0.06] pt-3 space-y-2">
+                      <span className="block text-[8px] font-black uppercase tracking-widest text-neutral-400">
+                        Chuyển phân công sang rạp khác
+                      </span>
+                      <div className="flex gap-2">
+                        <select
+                          value={reassignCinemaId}
+                          onChange={(e) => setReassignCinemaId(e.target.value)}
+                          className="flex-1 border border-white/[0.1] bg-[#0a0a0a] px-2.5 py-1.5 text-xs text-white outline-none focus:border-sky-400"
+                        >
+                          <option value="">-- Chọn rạp mới --</option>
+                          {cinemas.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name || `Rạp #${c.id}`}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="submit"
+                          disabled={isReassigning || !reassignCinemaId || String(reassignCinemaId) === String(selectedAdminUser.cinemaId)}
+                          className="border border-sky-400 bg-sky-500 px-3 py-1.5 text-[9px] font-black uppercase tracking-wider text-black transition hover:bg-sky-400 disabled:opacity-40"
+                        >
+                          {isReassigning ? <RefreshCw className="h-3 w-3 animate-spin" /> : 'Lưu rạp'}
+                        </button>
                       </div>
-
-                      <div className="grid grid-cols-3 gap-2">
-                        {STAFF_PROFILE_STATUS_OPTIONS.map((status) => (
-                          <button
-                            key={status}
-                            type="button"
-                            onClick={() => updateProfileForm('status', status)}
-                            className={`border px-2 py-2 text-[8px] font-black uppercase tracking-wider transition ${
-                              profileForm.status === status
-                                ? 'border-amber-400 bg-amber-500 text-black'
-                                : 'border-white/[0.06] bg-neutral-950 text-neutral-300 hover:border-amber-400 hover:text-amber-300'
-                            }`}
-                          >
-                            {status}
-                          </button>
-                        ))}
-                      </div>
-
-                      {selectedStaffProfile?.cinemaName && (
-                        <div className="border border-white/[0.05] bg-neutral-950 px-3 py-2 text-[10px] text-neutral-200">
-                          Rap: <span className="font-bold text-neutral-200">{selectedStaffProfile.cinemaName}</span>
-                        </div>
-                      )}
-                      {profileError && <div className="text-[10px] font-bold text-rose-300">{profileError}</div>}
-                      <button
-                        type="submit"
-                        disabled={isProfileSaving}
-                        className="flex items-center justify-center gap-2 border border-amber-400 bg-amber-500 px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-black transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {isProfileSaving ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <BadgeCheck className="h-3.5 w-3.5" />}
-                        {selectedStaffProfile ? 'Cap nhat profile' : 'Tao profile'}
-                      </button>
+                      {reassignNotice && <p className="text-[9px] text-emerald-300 font-bold">{reassignNotice}</p>}
+                      {reassignError && <p className="text-[9px] text-rose-300">{reassignError}</p>}
                     </form>
                   )}
-
-                  <div className="border border-white/[0.05] bg-black p-4 space-y-3">
-                    <div className="text-[10px] font-black uppercase tracking-widest text-neutral-200">
-                      Đổi trạng thái tài khoản
-                    </div>
-                    {isViewingCurrentAdmin && (
-                      <div className="border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[10px] font-bold leading-relaxed text-amber-200">
-                        Không thể đổi trạng thái của chính tài khoản admin đang đăng nhập.
-                      </div>
-                    )}
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                      {USER_STATUS_OPTIONS.map((status) => (
-                        <button
-                          key={status}
-                          type="button"
-                          disabled={isViewingCurrentAdmin || isUserStatusSaving || selectedAdminUser.status === status}
-                          onClick={() => handleUpdateAdminUserStatus(selectedAdminUser.id, status)}
-                          className={`min-w-0 border px-2 py-2 text-[8px] font-black uppercase tracking-wider transition disabled:cursor-not-allowed disabled:opacity-45 ${
-                            selectedAdminUser.status === status
-                              ? 'border-amber-400 bg-amber-500 text-black'
-                              : 'border-white/[0.06] bg-neutral-950 text-neutral-300 hover:border-amber-400 hover:text-amber-300'
-                          }`}
-                        >
-                          <span className="block truncate">{status}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="text-[10px] leading-relaxed text-neutral-300">
-                    Tạo lúc:{' '}
-                    <span className="font-mono text-neutral-300">
-                      {formatDateTime(selectedAdminUser.createdAt)}
-                    </span>
-                  </div>
-                </>
+                </div>
               )}
+
+              {/* Thông tin xác minh & ngày tạo */}
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div className="border border-white/[0.05] bg-black p-3">
+                  <div className="flex items-center gap-2 text-[9px] uppercase text-neutral-400">
+                    <BadgeCheck className="h-3.5 w-3.5" /> Xác minh
+                  </div>
+                  <div className="mt-1 text-xs font-bold text-white">
+                    Email: {selectedAdminUser.emailVerified ? 'Đã xác minh' : 'Chưa'}
+                  </div>
+                  <div className="text-[10px] text-neutral-400">
+                    SĐT: {selectedAdminUser.phone || 'Chưa cung cấp'}
+                  </div>
+                </div>
+                <div className="border border-white/[0.05] bg-black p-3">
+                  <div className="flex items-center gap-2 text-[9px] uppercase text-neutral-400">
+                    <Clock className="h-3.5 w-3.5" /> Cập nhật
+                  </div>
+                  <div className="mt-1 text-xs font-bold text-white">
+                    {formatDateTime(selectedAdminUser.updatedAt)}
+                  </div>
+                  <div className="text-[10px] text-neutral-400">
+                    Tạo: {formatDateTime(selectedAdminUser.createdAt)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Đổi trạng thái tài khoản (Khóa / Kích hoạt) */}
+              <div className="border border-white/[0.05] bg-black p-4 space-y-3">
+                <div className="text-[10px] font-black uppercase tracking-widest text-neutral-200">
+                  {isStaffMember(selectedAdminUser) ? 'Trạng thái tài khoản nhân sự' : 'Trạng thái tài khoản khách hàng'}
+                </div>
+
+                {isViewingSelf ? (
+                  <div className="border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[10px] font-bold text-amber-200">
+                    Không thể đổi trạng thái của chính tài khoản đang đăng nhập.
+                  </div>
+                ) : !canManagerModifyUser ? (
+                  <div className="border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-[10px] font-bold text-rose-200">
+                    Manager không có quyền khóa hoặc đổi trạng thái của tài khoản Admin / Manager khác.
+                  </div>
+                ) : null}
+
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {USER_STATUS_OPTIONS.map((status) => (
+                    <button
+                      key={status}
+                      type="button"
+                      disabled={isViewingSelf || !canManagerModifyUser || isUserStatusSaving || selectedAdminUser.status === status}
+                      onClick={() => handleUpdateAdminUserStatus(selectedAdminUser.id, status)}
+                      className={`min-w-0 border px-2 py-2 text-[8px] font-black uppercase tracking-wider transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                        selectedAdminUser.status === status
+                          ? (viewCategory === 'users' ? 'border-emerald-400 bg-emerald-500 text-black' : 'border-amber-400 bg-amber-500 text-black')
+                          : 'border-white/[0.06] bg-neutral-950 text-neutral-300 hover:border-amber-400 hover:text-amber-300'
+                      }`}
+                    >
+                      <span className="block truncate">{status}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           ) : (
-            <div className="py-20 text-center text-neutral-300">
-              <Users className="mx-auto h-8 w-8 text-neutral-300" />
-              <p className="mt-3 text-xs font-mono uppercase tracking-widest">Chưa chọn người dùng</p>
+            <div className="py-20 text-center text-neutral-400">
+              <Users className="mx-auto h-8 w-8 text-neutral-400" />
+              <p className="mt-3 text-xs font-mono uppercase tracking-widest">
+                {viewCategory === 'staff' ? 'Chưa chọn nhân sự' : 'Chưa chọn khách hàng'}
+              </p>
             </div>
           )}
         </div>
@@ -641,5 +2263,3 @@ export default function AdminUsersPanel({ ctx }) {
     </motion.div>
   );
 }
-
-

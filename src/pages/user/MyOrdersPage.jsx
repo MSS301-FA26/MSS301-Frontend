@@ -16,7 +16,7 @@ export default function MyOrdersPage() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+    <div className="site-container py-8">
       <header className="border-b border-white/10 pb-7">
         <p className="text-[10px] font-black uppercase tracking-[0.24em] text-amber-300">CinePremier Account</p>
         <h1 className="mt-3 text-1xl font-black uppercase tracking-tight text-white sm:text-3xl">Đơn của tôi</h1>

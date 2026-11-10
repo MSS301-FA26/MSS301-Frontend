@@ -32,7 +32,7 @@ export const normalizeMovie = (movie = {}, fallback = {}) => {
   const status = normalizeMovieStatus(movie) || normalizeMovieStatus(fallback);
   const id = movie.id ?? movie.movieId ?? movie.slug ?? movie.code ?? fallback.id;
   const ratings = movie.ratings || {};
-  const overall = Number(movie.rating ?? movie.averageRating ?? ratings.overall ?? fallback.ratings?.overall ?? 8.8);
+  const overall = Number(movie.rating ?? movie.averageRating ?? ratings.overall ?? fallback.ratings?.overall ?? 0);
   const statusFromFlags = (movie.isUpcoming ?? fallback.isUpcoming) ? 'UPCOMING' : 'NOW_SHOWING';
   const effectiveStatus = status || statusFromFlags;
   const isUpcoming = ['UPCOMING', 'COMING_SOON', 'SCHEDULED', 'DRAFT'].includes(effectiveStatus);
@@ -47,8 +47,8 @@ export const normalizeMovie = (movie = {}, fallback = {}) => {
     englishTitle: movie.englishTitle || movie.originalTitle || movie.subTitle || movie.titleEn || fallback.englishTitle || movie.title || movie.name || 'CinePremier Feature',
     genre: normalizeGenres(movie),
     synopsis: movie.synopsis || movie.description || movie.overview || movie.content || fallback.synopsis || 'Thong tin noi dung phim dang duoc cap nhat.',
-    duration: Number(movie.duration ?? movie.durationMinutes ?? movie.runningTime ?? fallback.duration ?? 100),
-    ageRating: movie.ageRating || movie.ratingLabel || movie.ageLimit || fallback.ageRating || 'P',
+    duration: Number(movie.duration ?? movie.durationMinutes ?? movie.runningTime ?? fallback.duration ?? 0),
+    ageRating: movie.ageRating || movie.ratingLabel || movie.ageLimit || fallback.ageRating || '',
     posterUrl: movie.posterUrl || movie.poster || movie.posterImageUrl || movie.imageUrl || movie.thumbnailUrl || fallback.posterUrl || 'https://res.cloudinary.com/dmcodhbcc/image/upload/v1784275470/cinemams/posters/placeholder.jpg',
     bannerUrl: movie.bannerUrl || movie.avatarUrl || movie.backdropUrl || movie.coverUrl || movie.bannerImageUrl || fallback.bannerUrl || movie.posterUrl || fallback.posterUrl || 'https://res.cloudinary.com/dmcodhbcc/image/upload/v1784275470/cinemams/posters/placeholder.jpg',
     releaseDate: movie.releaseDate || movie.premiereDate || movie.startDate || fallback.releaseDate || 'Dang cap nhat',
@@ -63,6 +63,7 @@ export const normalizeMovie = (movie = {}, fallback = {}) => {
     mainActorIds: movie.mainActorIds || fallback.mainActorIds || [],
     actors: movie.actors || fallback.actors || [],
     language: movie.language || fallback.language || 'Dang cap nhat',
+    subtitleLanguage: movie.subtitleLanguage || fallback.subtitleLanguage || '',
     status: effectiveStatus,
     isUpcoming: Boolean(isUpcoming),
     isInactive,
@@ -78,6 +79,19 @@ export const normalizeMovie = (movie = {}, fallback = {}) => {
       visual: Number(ratings.visual ?? fallback.ratings?.visual ?? overall),
       audio: Number(ratings.audio ?? fallback.ratings?.audio ?? Math.max(0, overall - 0.1))
     },
+    approvalStatus: movie.approvalStatus || fallback.approvalStatus || 'APPROVED',
+    publicationStatus: movie.publicationStatus || (effectiveStatus === 'ENDED' || effectiveStatus === 'INACTIVE' ? 'ARCHIVED' : (fallback.publicationStatus || 'PUBLISHED')),
+    submittedAt: movie.submittedAt || fallback.submittedAt || null,
+    submittedById: movie.submittedById || fallback.submittedById || null,
+    submittedByName: movie.submittedByName || fallback.submittedByName || '',
+    approvedAt: movie.approvedAt || fallback.approvedAt || null,
+    approvedById: movie.approvedById || fallback.approvedById || null,
+    approvedByName: movie.approvedByName || fallback.approvedByName || '',
+    rejectedAt: movie.rejectedAt || fallback.rejectedAt || null,
+    rejectedById: movie.rejectedById || fallback.rejectedById || null,
+    rejectedByName: movie.rejectedByName || fallback.rejectedByName || '',
+    rejectionReason: movie.rejectionReason || fallback.rejectionReason || '',
+    publishedAt: movie.publishedAt || fallback.publishedAt || null,
     tags: movie.tags || fallback.tags || [],
     raw: movie
   };
@@ -108,11 +122,46 @@ export const normalizeMoviePageResponse = (payload) => {
   };
 };
 
+const getAllMoviePages = async (params = {}) => {
+  const firstPage = await movieService.searchMoviesPage({ ...params, page: 0 });
+  const remainingPages = await Promise.all(
+    Array.from({ length: Math.max(0, firstPage.totalPages - 1) }, (_, index) => (
+      movieService.searchMoviesPage({ ...params, page: index + 1, size: firstPage.size })
+    ))
+  );
+  return [firstPage, ...remainingPages].flatMap((page) => page.items);
+};
+
+const DEAD_IMAGE_URL = '1576107232684';
+const FALLBACK_FOOD_IMAGE = 'https://images.unsplash.com/photo-1585647347384-2593bc35786b?auto=format&fit=crop&w=800&q=80';
+
+const sanitizeItemImage = (item) => {
+  if (!item || typeof item !== 'object') return item;
+  const currentImg = item.imageUrl || item.image || item.posterUrl || '';
+  if (currentImg && currentImg.includes(DEAD_IMAGE_URL)) {
+    return {
+      ...item,
+      imageUrl: FALLBACK_FOOD_IMAGE,
+      image: item.image ? FALLBACK_FOOD_IMAGE : item.image,
+      posterUrl: item.posterUrl ? FALLBACK_FOOD_IMAGE : item.posterUrl
+    };
+  }
+  return item;
+};
+
+const sanitizeItemList = (list) => {
+  if (!Array.isArray(list)) return list;
+  return list.map(sanitizeItemImage);
+};
+
 export const movieService = {
+  getMovies: (params = {}) => request(`/api/v1/movies${buildQueryString(params)}`)
+    .then(normalizeMovieListResponse),
   searchMovies: (params = {}) => request(`/api/v1/movies${buildQueryString(params)}`)
     .then(normalizeMovieListResponse),
   searchMoviesPage: (params = {}) => request(`/api/v1/movies${buildQueryString(params)}`)
     .then(normalizeMoviePageResponse),
+  getAllMovies: (params = {}) => getAllMoviePages(params),
   getMovieDetail: (movieId) => request(`/api/v1/movies/${encodeURIComponent(movieId)}`)
     .then((movie) => normalizeMovie(movie)),
   getActors: () => request('/api/v1/actors'),
@@ -120,8 +169,16 @@ export const movieService = {
   getMoviesByActor: (actorId) => request(`/api/v1/actors/${encodeURIComponent(actorId)}/movies`)
     .then(normalizeMovieListResponse),
   getGenres: () => request('/api/v1/genres'),
-  getFoodItems: () => request('/api/v1/foods/items').then(unwrapListPayload),
-  getFoodCombos: () => request('/api/v1/foods/combos').then(unwrapListPayload),
-  getPublicCinema: () => request('/api/v1/cinema')
+  getFoodItems: () => request('/api/v1/foods/items?size=100')
+    .then(unwrapListPayload)
+    .then(sanitizeItemList)
+    .catch(() => []),
+  getFoodCombos: () => request('/api/v1/foods/combos?size=100')
+    .then(unwrapListPayload)
+    .then(sanitizeItemList)
+    .catch(() => []),
+  getFoodCategories: () => request('/api/v1/foods/categories').then(unwrapListPayload),
+  getPublicCinema: () => request('/api/v1/cinema'),
+  getPublicCinemas: () => request('/api/v1/cinemas').then(unwrapListPayload),
+  getDirectors: (params = {}) => request(`/api/v1/directors${buildQueryString(params)}`).then(unwrapListPayload),
 };
-

@@ -1,4 +1,4 @@
-import { request } from './authService';
+import { aiRequest } from './aiClient.js';
 
 const CONVERSATION_ID_KEY_PREFIX = 'cinepremier_chat_conversation_id';
 
@@ -18,16 +18,19 @@ export const clearAllStoredConversationIds = () => {
     .forEach((key) => localStorage.removeItem(key));
 };
 
-// Ollama chạy local trên CPU có thể mất 15-60s+ mỗi lượt (cold start, tool-calling nhiều vòng),
-// nên chat cần timeout dài hơn hẳn timeout mặc định 30s của axios cho các API khác.
 const CHAT_TIMEOUT_MS = 120000;
 
 export const chatService = {
   sendMessage: ({ message, movieId, userId, token, scope = 'default' }) => {
     const conversationId = getStoredConversationId(scope);
-    return request('/api/v1/chat', {
+    return aiRequest('/api/v1/chat/message', {
       method: 'POST',
-      body: { message, movieId, userId, conversationId },
+      body: {
+        message,
+        movieId: movieId ? Number(movieId) : null,
+        userId: userId ? Number(userId) : null,
+        conversationId
+      },
       token,
       timeout: CHAT_TIMEOUT_MS
     }).then((res) => {

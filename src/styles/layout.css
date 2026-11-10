@@ -1,0 +1,128 @@
+/* Shared page edges. Change these tokens to adjust spacing across all portals. */
+:root {
+  --page-gutter: clamp(12px, 2vw, 48px);
+  --workspace-gutter: clamp(12px, 1.5vw, 32px);
+}
+
+.site-container,
+.workspace-container {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  margin-inline: auto;
+}
+
+.site-container,
+.site-gutter {
+  padding-left: max(var(--page-gutter), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--page-gutter), env(safe-area-inset-right, 0px));
+}
+
+.workspace-container {
+  padding-inline: var(--workspace-gutter);
+}
+
+.workspace-container .workspace-container {
+  padding-inline: 0;
+}
+
+/* Grid/flex children must be allowed to shrink; wide tables scroll locally. */
+:where(.site-container, .workspace-container) .grid > * {
+  min-width: 0;
+}
+
+:where(.site-container, .workspace-container) :where(input, select, textarea) {
+  max-width: 100%;
+}
+
+.catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (min-width: 640px) {
+  .catalog-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .catalog-grid {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  }
+}
+
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+}
+
+/* Size posters using the carousel's available width, including narrow panels. */
+.movie-carousel {
+  container: movie-row / inline-size;
+  --movie-gap: 10px;
+  gap: var(--movie-gap);
+  padding-inline: 10px;
+}
+
+.movie-card-column {
+  --movie-columns: 2;
+  --movie-width: calc((100% - 20px - (var(--movie-columns) - 1) * var(--movie-gap)) / var(--movie-columns));
+  flex: 0 0 var(--movie-width);
+  width: var(--movie-width);
+  max-width: var(--movie-width);
+}
+
+@container movie-row (max-width: 259px) {
+  .movie-card-column { --movie-columns: 1; }
+}
+@container movie-row (min-width: 560px) {
+  .movie-card-column { --movie-columns: 3; }
+}
+@container movie-row (min-width: 820px) {
+  .movie-card-column { --movie-columns: 4; }
+}
+@container movie-row (min-width: 1080px) {
+  .movie-card-column { --movie-columns: 5; }
+}
+@container movie-row (min-width: 1340px) {
+  .movie-card-column { --movie-columns: 6; }
+}
+@container movie-row (min-width: 1600px) {
+  .movie-card-column { --movie-columns: 7; }
+}
+@container movie-row (min-width: 1860px) {
+  .movie-card-column { --movie-columns: 8; }
+}
+@container movie-row (min-width: 2120px) {
+  .movie-card-column { --movie-columns: 9; }
+}
+@container movie-row (min-width: 2380px) {
+  .movie-card-column { --movie-columns: 10; }
+}
+@container movie-row (min-width: 2640px) {
+  .movie-card-column { --movie-columns: 11; }
+}
+@container movie-row (min-width: 2900px) {
+  .movie-card-column { --movie-columns: 12; }
+}
+@container movie-row (min-width: 3160px) {
+  .movie-card-column { --movie-columns: 13; }
+}
+@container movie-row (min-width: 3420px) {
+  .movie-card-column { --movie-columns: 14; }
+}
+
+.food-card-column {
+  --food-card-width: 265px;
+  flex: 0 0 min(var(--food-card-width), calc(100% - 8px));
+  width: min(var(--food-card-width), calc(100% - 8px));
+}
+
+@media (min-width: 640px) {
+  .food-card-column { --food-card-width: 285px; }
+}
+@media (min-width: 1024px) {
+  .food-card-column { --food-card-width: 305px; }
+}

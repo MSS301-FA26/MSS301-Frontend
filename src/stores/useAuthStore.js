@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { authService, clearAuthSession, getStoredAuth, hasBackendAdminAccess, hasBackendStaffAccess, normalizeUser, saveAuthSession } from '../services/authService';
+import { authService, clearAuthSession, getStoredAuth, hasBackendAdminAccess, hasBackendManagerAccess, hasBackendStaffAccess, normalizeUser, saveAuthSession } from '../services/authService';
 import { userService } from '../services/userService';
 
 const resolveNextValue = (nextValue, previousValue) => (
@@ -43,9 +43,11 @@ export const useAuthStore = create((set, get) => ({
       if (user) {
         const restoredRole = hasBackendAdminAccess(accessToken, user)
           ? 'admin'
-          : hasBackendStaffAccess(accessToken, user)
-            ? 'staff'
-            : user.role || 'user';
+          : hasBackendManagerAccess(accessToken, user)
+            ? 'manager'
+            : hasBackendStaffAccess(accessToken, user)
+              ? 'staff'
+              : user.role || 'user';
         get().setAuthSession({ ...user, role: restoredRole }, restoredRole);
       }
       if (!accessToken && !refreshToken) return;
@@ -102,24 +104,40 @@ export const useAuthStore = create((set, get) => ({
   },
 
   performLogout: async ({ navigate, showToast } = {}) => {
+    const state = get();
+    const role = state.currentRole || state.currentUser?.role;
     const { refreshToken } = getStoredAuth();
-    if (!refreshToken) {
-      showToast?.('Không tìm thấy refresh token. Vui lòng đăng nhập lại.');
-      return;
-    }
     try {
-      await authService.logout(refreshToken);
+      if (refreshToken) {
+        await authService.logout(refreshToken);
+      }
+    } catch (error) {
+      console.warn('Backend logout error:', error);
+    } finally {
       clearAuthSession();
       get().clearAuth();
       get().setIsAuthReady(true);
       navigate?.('/');
-      showToast?.('Đăng xuất tài khoản thành công.');
-    } catch (error) {
-      showToast?.(error.message || 'Không thể kết nối BE để đăng xuất.');
+      if (role === 'staff') {
+        showToast?.('Đã kết thúc ca trực và đăng xuất khỏi hệ thống Staff.');
+      } else {
+        showToast?.('Đăng xuất tài khoản thành công.');
+      }
     }
   },
 
   handleLogout: ({ navigate, showToast } = {}) => {
+    const state = get();
+    const role = state.currentRole || state.currentUser?.role;
+    if (role === 'staff') {
+      showToast?.(
+        'Xác nhận kết thúc ca trực và đăng xuất khỏi tài khoản Nhân viên (Staff)?',
+        10000,
+        { label: 'Đăng xuất', onClick: () => get().performLogout({ navigate, showToast }) },
+        'sad'
+      );
+      return;
+    }
     showToast?.(
       'Bạn có chắc muốn đăng xuất không?\nCinePremier sẽ nhớ bạn lắm đó...',
       10000,
@@ -140,7 +158,9 @@ export const useAuthStore = create((set, get) => ({
       navigate?.('/setup-password');
       return;
     }
-    if (userData.role === 'admin') {
+    if (userData.role === 'admin' || userData.role === 'manager') {
+      navigate?.('/admin/overview');
+    } else if (userData.role === 'manager') {
       navigate?.('/admin/overview');
     } else if (userData.role === 'staff') {
       navigate?.('/staff');
